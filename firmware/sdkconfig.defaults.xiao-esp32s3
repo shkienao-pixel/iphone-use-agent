@@ -1,0 +1,8 @@
+# Seeed Studio XIAO ESP32-S3 overrides for sdkconfig.defaults.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=n
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_AGENTMOUSE_STATUS_RGB=n
+# BLE HID/control does not require external RAM.
+CONFIG_SPIRAM=n
+# Keep the XIAO native USB console available for development.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

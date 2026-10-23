@@ -1,0 +1,127 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Start the current task with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 ${applicationName} 执行当前任务"
+          }
+        }
+      }
+    },
+    "Run my phone task with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让 ${applicationName} 开始干活"
+          }
+        }
+      }
+    },
+    "Run a new task with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让 ${applicationName} 执行新任务"
+          }
+        }
+      }
+    },
+    "Stop the task in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止 ${applicationName} 的任务"
+          }
+        }
+      }
+    },
+    "Stop ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止 ${applicationName}"
+          }
+        }
+      }
+    },
+    "Pause the task in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停 ${applicationName} 的任务"
+          }
+        }
+      }
+    },
+    "Take over the task in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接管 ${applicationName} 的任务"
+          }
+        }
+      }
+    },
+    "Resume the task in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续 ${applicationName} 的任务"
+          }
+        }
+      }
+    },
+    "Add instructions in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给 ${applicationName} 补充要求"
+          }
+        }
+      }
+    },
+    "Update the task in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 ${applicationName} 的任务"
+          }
+        }
+      }
+    },
+    "Talk to ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "和 ${applicationName} 说话"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

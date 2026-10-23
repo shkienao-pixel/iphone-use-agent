@@ -1,0 +1,3 @@
+interface:
+  display_name: "手机操控"
+  short_description: "通过当前截图操控 iPhone，找不到应用时优先使用桌面搜索并验证结果"
