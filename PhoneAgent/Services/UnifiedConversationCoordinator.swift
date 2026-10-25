@@ -212,12 +212,12 @@ import UIKit
                     let linked = conversation.linkTask(id, to: messageID, in: origin)
                     if linked && startNativeForeground {
                         conversation.reportTaskHandoff(text: "已接收原生任务，正在准备执行；原草稿已保留。", to: messageID, in: origin, onlyIfUnlinked: false)
-                        let queueToken = queueGeneration
+                        let queueToken = conversationControlContext.queueID
                         // The current send still owns conversation.loading until
                         // its action callback returns. Start on the next actor
                         // turn, then recheck cancellation and the exact queue ID.
                         Task { @MainActor [weak self] in
-                            guard let self, self.queueGeneration == queueToken,
+                            guard let self, self.conversationControlContext.queueID == queueToken,
                                   self.conversation.currentConversationID == origin,
                                   self.taskQueue.items.first(where: { $0.id == id })?.state == .waiting else { return }
                             let started = self.continueTask(id)
