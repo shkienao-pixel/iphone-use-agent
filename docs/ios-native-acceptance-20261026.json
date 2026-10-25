@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "asOfLocal": "2026-10-26 03:42 +08:00",
+  "asOfLocal": "2026-10-26 05:18 +08:00",
   "targetDevice": "iPhone 13 Pro",
   "esp32Used": false,
   "microphoneTested": false,
@@ -22,12 +22,13 @@
     "H14": "202 oneSend noContinue63reads/cards/report/cold; networknotexecuted USBguard",
     "H21": "203 normal Agent seededthrough existing debug3actualreads,sourcecards/report IDs/source revision; no physicalUI acceptance",
     "H22": "203actualmain Stop backend after2reads;36.565s stable;realcold6stores unchanged; no physicalStopbutton acceptance",
-    "H20": "840read nativeBackend longrun started03:39, not countedpassed"
+    "H20": "203 normal Agent840real reads280distinctranges,5633.0135s841models;all sources/metadata/report/snapshots/cold6stores pass;120min targetnotreached,physicalUIpending",
+    "H24": "203newemptychat stop-control hasno taskauthority/newtask;originaltask continues21realreads125.9185s22models;allsource/report/snapshots/cold6stores pass;physicalUIpending"
   },
   "remaining": [
     "Mac unlock required for native Mac interface inspection; XCTest19/20 automation init failed",
     "203 exact duplicate-draft marker cold regression pending",
-    "H20 duration/full source audit/card UI pending",
+    "Independent120minute duration target not reached;203new physical input/card/rendering/Stop-button checks pending",
     "positive actual asleep duration/workout accuracy and Music positive playback pending",
     "new controlled60-120s radio-off case not executed; current control transport network"
   ],
@@ -36,5 +37,10 @@
     "deadlineLocal": "2026-10-26 08:30 +08:00",
     "repository": "shkienao-pixel/iphone-use-agent",
     "status": "prepared_not_pushed"
+  },
+  "finalBuildPreparation": {
+    "targetBuild": 204,
+    "fullFrozenChecksAndSignInstallStillPending": true,
+    "settingsCopyAlignedWithAutomaticExecution": true
   }
 }
