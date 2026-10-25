@@ -30,5 +30,23 @@
   "remaining": [
     "Same-name ambiguity and per-contact phone/email field limits"
   ],
-  "esp32Used": false
+  "esp32Used": false,
+  "latestActualRuntimeGuideLoad": {
+    "case": "ATOMIC-GUIDES-A16",
+    "build": 202,
+    "actualAllTenGuideByteLengthsMatched": true,
+    "bodyUTF8Bytes": 3059,
+    "actualRuntimeSourceRevision": "64f797a3321cd272e5fe9e5ad51294aaa945af2f+sha256:b61ea7f5c6eef35a0bf9e0fd9421d9c565360773b50d1f74c31d24fc35743edd",
+    "actualNativeCalls": 1,
+    "actualNativeOperation": "alarm_list",
+    "actualBusinessWrites": 0,
+    "businessAcceptanceForThisSkillFromThisProbe": false,
+    "loadingDoesNotProveOtherAppBusinessAcceptance": true,
+    "physicalInputOneSend": true,
+    "extraExecutionApprovalTaps": 0,
+    "rawGuideBodyHashNotLoggedByPhone": true,
+    "exactSignedPackageGuideBodyMatchedSource": true,
+    "evidence": "output/ios-native-longrun-20261025/ATOMIC-GUIDES-A16/verification.json"
+  },
+  "lastEvidenceReviewLocal": "2026-10-26 03:42 +08:00"
 }

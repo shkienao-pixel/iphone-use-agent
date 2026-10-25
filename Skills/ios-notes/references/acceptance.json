@@ -144,10 +144,21 @@
     "evidence": "output/ios-native-longrun-20261025/ALARM-SKILL-A06/verification.json"
   },
   "latestActualRuntimeGuideLoad": {
-    "build": 128,
-    "bodyUTF8Bytes": 3583,
-    "evidence": "output/ios-native-longrun-20261025/ALARM-SKILL-A07/verification.json",
-    "businessCall": "one alarm_list; actual updated Health/Notes guides loaded,but this is not their business acceptance"
+    "case": "ATOMIC-GUIDES-A16",
+    "build": 202,
+    "actualAllTenGuideByteLengthsMatched": true,
+    "bodyUTF8Bytes": 5375,
+    "actualRuntimeSourceRevision": "64f797a3321cd272e5fe9e5ad51294aaa945af2f+sha256:b61ea7f5c6eef35a0bf9e0fd9421d9c565360773b50d1f74c31d24fc35743edd",
+    "actualNativeCalls": 1,
+    "actualNativeOperation": "alarm_list",
+    "actualBusinessWrites": 0,
+    "businessAcceptanceForThisSkillFromThisProbe": false,
+    "loadingDoesNotProveOtherAppBusinessAcceptance": true,
+    "physicalInputOneSend": true,
+    "extraExecutionApprovalTaps": 0,
+    "rawGuideBodyHashNotLoggedByPhone": true,
+    "exactSignedPackageGuideBodyMatchedSource": true,
+    "evidence": "output/ios-native-longrun-20261025/ATOMIC-GUIDES-A16/verification.json"
   },
   "latestLongArchiveInterruptedPrefix": {
     "case": "HW105 original HTTP503 partial prefix",
@@ -203,5 +214,12 @@
     "independentSystemObjectReviewPending": false,
     "currentRootGuideCardInstructionsNotYetRepackaged": true,
     "independentSystemObjectMatched": true
-  }
+  },
+  "priorRuntimeGuideLoadBefore20261026": {
+    "build": 128,
+    "bodyUTF8Bytes": 3583,
+    "evidence": "output/ios-native-longrun-20261025/ALARM-SKILL-A07/verification.json",
+    "businessCall": "one alarm_list; actual updated Health/Notes guides loaded,but this is not their business acceptance"
+  },
+  "lastEvidenceReviewLocal": "2026-10-26 03:42 +08:00"
 }

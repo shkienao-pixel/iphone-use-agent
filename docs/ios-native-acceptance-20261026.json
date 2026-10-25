@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "asOfLocal": "2026-10-26 03:42 +08:00",
+  "targetDevice": "iPhone 13 Pro",
+  "esp32Used": false,
+  "microphoneTested": false,
+  "atomicSkills": 10,
+  "atomicSteps": 61,
+  "currentInstalledBuild": 203,
+  "actualRuntimeSourceRevision": "e80151bcf335c91a9651f2ed9cef98f813143b15+sha256:f836887f93a9655d034965388684a4ee5973b1f83e356b7fe9639401ab500053",
+  "latestFrozenFullChecks": {
+    "inputFileCount": 676,
+    "passed": true,
+    "commit": "e80151bcf335c91a9651f2ed9cef98f813143b15"
+  },
+  "additionalOwnedHarnessCommit": "6d414d9",
+  "additionalHarnessGuardsPhysicalAcceptancePending": true,
+  "cases": {
+    "A16": "202 all ten actual guide lengths, one real alarm_list, actual card/report; guide loading is not other App acceptance",
+    "M02": "201 two real structured EventKit writes/system Apps/cards/cold;202 both creation cards in default3; original failure preserved",
+    "M03": "51actual queries force real history eviction; both source fallback cards/reports restored; initial202cold legacydraftbug retained",
+    "H14": "202 oneSend noContinue63reads/cards/report/cold; networknotexecuted USBguard",
+    "H21": "203 normal Agent seededthrough existing debug3actualreads,sourcecards/report IDs/source revision; no physicalUI acceptance",
+    "H22": "203actualmain Stop backend after2reads;36.565s stable;realcold6stores unchanged; no physicalStopbutton acceptance",
+    "H20": "840read nativeBackend longrun started03:39, not countedpassed"
+  },
+  "remaining": [
+    "Mac unlock required for native Mac interface inspection; XCTest19/20 automation init failed",
+    "203 exact duplicate-draft marker cold regression pending",
+    "H20 duration/full source audit/card UI pending",
+    "positive actual asleep duration/workout accuracy and Music positive playback pending",
+    "new controlled60-120s radio-off case not executed; current control transport network"
+  ],
+  "privateEvidencePolicy": "Raw health values, phone containers, auth, env, screenshots and output remain local and are excluded from GitHub",
+  "githubPublication": {
+    "deadlineLocal": "2026-10-26 08:30 +08:00",
+    "repository": "shkienao-pixel/iphone-use-agent",
+    "status": "prepared_not_pushed"
+  }
+}
