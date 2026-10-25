@@ -1,0 +1,785 @@
+{
+  "label": "v6-merged",
+  "passed": true,
+  "source_manifest": "source-manifest.json",
+  "device_actions": false,
+  "model_evaluated": false,
+  "core_runtime_integrated": false,
+  "verification_scope": "offline_rules_source_boundaries_and_optional_reference_processing_not_live_acceptance",
+  "swift_exit_code": 0,
+  "tests": {
+    "executed": 184,
+    "passed": 184,
+    "failed_cases": 0,
+    "skipped": 0,
+    "complete_report": true,
+    "reported_failure_assertions": 0,
+    "passed_all": true,
+    "cases": [
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testAtomicContractCannotDecodeAnActionArrayOrMacro]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testClipboardPreparationRequiresHostForeground]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testControlFromOldFrameCannotBeReused]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testExpiredOrOverwrittenClipboardCannotBeUsed]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testForeignDraftCannotBeTypedIntoOrDeleted]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testInvalidAndNonfiniteRectanglesAreRejected]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testNavigationAndInputAreDifferentActions]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testOrdinaryTapCannotBypassSubmissionJournal]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testPureMousePasteUsesVisibleMenuAsSeparateAction]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testScrollCannotUseLikeOrSendAsAnchor]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testStaleFutureAndReferenceFramesFail]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.AtomicTests testUnicodeReturnAndTabCannotHideInsideTyping]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointIdentityRegressionTests testArchivedMomentBindingUUIDCannotStandInForFreshIdentification]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointIdentityRegressionTests testOldProfilePixelsCannotBecomeFreshProofByChangingMetadata]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testArchivedProfileProofIDCannotBeReusedAsFreshBinding]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testCancelledRestoreDoesNotAppendBindingOrChangeCheckpoint]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testChangedOriginalTaskCannotResumeExistingCheckpoint]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testCheckpointPreservesRequestAndPartialReadbackBeforeRestart]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testCommentRecoveryRequiresFreshUniqueFullPostEvidence]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testCorruptCheckpointFileIsNeverOverwrittenByNewSession]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testEmptySubmissionJournalAllowsNewPreparationUnderOriginalAuthorization]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testExternalDraftIsPreservedAfterRestart]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testFileCheckpointRoundTripAndStaleWriterRejection]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testFreshProfileMustBeForOriginalAccount]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testInputCompletedWhileStoppedIsVerifiedByFreshReadback]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testIntentPersistenceFailureReturnsNoActionAndInvalidatesSession]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testNewConstructorCannotSilentlyResetExistingDraftStore]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testOldProposedTicketCannotBeUsedInRestoredSession]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testPartialInputWhileStoppedGeneratesOnlyFreshSuffixAction]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testPartialPostSearchCoverageCannotAuthorizeRestoredCommentEditing]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testPendingSubmittedMessageBlocksRefillingEmptyComposer]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testPendingTextCannotBeRewrittenInArchive]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testReadbackBeforeFreshRebindingCannotBecomeCurrentEvidence]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testRestorationDoesNotRecoverClipboardLeaseOrPasteWholeOriginal]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testSimilarExcerptButDifferentCompleteBodyDoesNotMatchArchivedPost]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testSubmittingTaskRequiresActualSubmissionJournalOnRecovery]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testTwoIdenticalPostCandidatesCannotBeReboundByPosition]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testUnknownInputIsNotReplayedWhenRestoredFieldIsStillEmpty]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testUnresolvedIntentCannotBeClearedBySavingUnchangedReadback]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftCheckpointTests testVerifiedSubmittedMessageDoesNotRestartPreparation]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testClipboardChangeBeforeTakeInvalidatesPasteProposal]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testCorrectingOwnedDraftUsesSelectAllAndSeparateReadback]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testExactlyAuthorizedForeignTextCanBeReadWithoutEditing]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testFocusAndTypingRequireDifferentObservedActions]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testForeignPrefixIsPreservedRatherThanAdopted]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testIncompleteReadbackCannotBecomeVerified]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testLongASCIIDraftIsChunkedWithoutOverallStepLimit]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testMarkedInputTextIsNotCommittedText]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testMenuThatNeverAppearsDoesNotTriggerBlindLongPress]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testMissingSelectionFeedbackDoesNotTypeOverUnknownRange]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testPartialASCIIReadbackAppendsOnlyMissingSuffix]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testPartialChineseRequiresSuffixClipboardNotOriginalFullText]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testPauseAndCancellationInvalidatePreparationTickets]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testPreparationVerificationNeverGrantsSubmissionAuthorization]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testProposalIsIdempotentButTicketIsSingleUse]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testPureMouseMenuOpeningAndPastingAreSeparate]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testReplyFieldIsRejectedEvenWithoutReadableReplyName]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testSearchPreparesKeywordWithoutClaimingContactIdentity]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testTopLevelCommentPreparationRejectsReplyTarget]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testTrailingNewlineUsesClipboardNotReturnKey]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testUnchangedAfterTypingDoesNotIssueSecondInput]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testUnknownCaretMustBeObservedOrSelectedBeforeAppending]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testUnknownCompositionStateCannotDefaultToCommittedText]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testUnknownObservedFieldKindCannotBeInferredFromTask]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testUnknownOwnershipCannotAuthorizeAppending]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.DraftPreparationTests testWrongAccountAndWrongComposerCannotReusePreparation]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.IterationRegressionTests testArchiveCannotClaimLikeSuccessAgainstObservedState]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.IterationRegressionTests testCancelledTakeCannotLeaveReusableTicket]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.IterationRegressionTests testOlderResultCannotOverwriteNewerPendingObservation]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.IterationRegressionTests testReusingSameResultFrameDoesNotCreateNewEvidence]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.IterationRegressionTests testSaveCannotDeletePendingHistory]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.IterationRegressionTests testSaveCannotRewriteFrozenTaskRequest]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.IterationRegressionTests testTerminalSuccessCannotReturnToPending]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testAtomicFileRoundTripKeepsExactTextAndPendingState]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testCancellationBeforeReservationProducesNoRecord]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testCorruptFileIsPreservedRatherThanOverwritten]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testDispatchWriteFailureInvalidatesPermitBeforeReturningTap]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testDuplicateTaskEffectInArchiveIsRejected]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testInconsistentVerifiedArchiveIsRejected]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testRehydratedArchiveDoesNotAuthorizeAnyLiveAction]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testReservationWriteFailureReleasesNoTicket]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testStaleWriterCannotOverwriteNewRecord]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTests testWriteSavedButThrewCannotCauseAutomaticReplay]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTransitionTests testArchiveCannotClaimOldSameTextIsNewMessage]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTransitionTests testCannotChangeAlreadyReleasedTimestamp]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTransitionTests testCannotReorderOperationHistory]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTransitionTests testCannotSkipReservationToCreateDispatchedRecord]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTransitionTests testFileStoreAlsoRejectsHistoryDeletion]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTransitionTests testFreshPendingItemCanBecomeVerifiedWithoutAnotherDispatch]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTransitionTests testRevisionOverflowIsRejectedBeforeArithmetic]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.JournalTransitionTests testSingleSaveCannotReleaseTwoAtomicEffects]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testAlreadyLikedProducesNoTicketAndNoClick]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testCommentOnlyDoesNotRequireOrCreateLike]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testFriendsFeedStillRequiresAuthorAccountBinding]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testLikeAndCommentRemainSeparateThroughPartialRecovery]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testLikeHasItsOwnResult]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testLikePendingCannotStartCommentInCombinedTask]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testPostCountChangeCannotProveComment]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testProfileBindingChangeInvalidatesOutstandingPermit]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testReplyToPersonCannotMasqueradeAsTopLevelComment]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testUnknownLikeStateNeverToggles]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testUnlikeControlIsNeverUsedForLikeTask]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.MomentTests testWrongPostBindingCannotSubmit]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.PreparationRegressionTests testFocusBooleanAloneCannotAuthorizeTypingIntoAnyField]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.PreparationRegressionTests testPasteMenuMustBelongToObservedFocusedField]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.PreparationRegressionTests testWhitespaceOnlyLeasePreservesOriginalTrailingCharacters]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.PreparationRegressionTests testWhitespaceSuffixCanBePreparedWithoutUsingReturn]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testAChatTitleAloneCannotIdentifyAnEmptyComposer]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testBodyCopyOfSectionNamesCannotPretendToBeSearchHeaders]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testDiscoverNeedsRealTopHeadingEntryAndBottomTabs]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testDuplicateAccountFieldsDoNotSelectAProfileIdentity]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testEmptyComposerNeedsIndependentGraphicalOutlines]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testModelAuthoredLabelsAndInvalidCoordinatesAreRejected]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testMomentDetailRequiresBottomComposerAndActualBodyRegion]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testReferenceImagesRequireHashAndNeverBecomeLiveEvidence]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testSearchResultsOnlyExtractRowsBetweenContactAndGroupHeaders]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testSplitAccountLabelAndSameLineValueAreNotAutocorrected]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testWeixinUnreadCountWithFourTabsIsChatList]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ReferenceUITests testWrappedMomentsAndDecoratedButtonsPreserveAccountSpelling]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testAnotherReaderRequiresNewProofAndInvalidatesOldReviewTimeline]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testCancellationDoesNotAppendReviewAndStopsReader]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testChangedCompletePostCannotMatchByExcerpt]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testFreshEmptyHistoryResultIsVerifiedWithoutRewritingOriginalEvidence]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testLaterReadCanResolvePendingWithoutNewProfileOrSubmission]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testLegacyLocalAnchorIDsAloneDoNotEstablishRecoveryContinuity]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testLikeAndTopLevelCommentResolveIndependently]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testModelAuthoredLandmarkCannotEstablishHistory]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testOldIdentityEvidenceAndWrongAccountAreRejected]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testOldSameTextStillCannotCountAsNewSend]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testOrderedHistorySurvivesChangedLocalItemIDs]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testOtherPersonSameTextAndFailureStateAreSeparated]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testPostCoverageAndDuplicateCandidatesPreventRecovery]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testRecoveredArchiveRechecksEvidenceInsteadOfTrustingStatus]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testRecoveredSubmissionClosesDraftRecoveryWithoutRefilling]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testRecoveryNeverRecreatesDispatchTicketOrAllowsDuplicateReservation]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testRepeatedHistoryWithTwoValidMappingsRemainsUnknown]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testReplayedRecoveryFrameCannotOverwriteNewerResult]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testTerminalRecoveredStateCannotBeResetOrReviewedAgain]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testTimestampNeighborsDisambiguateRepeatedSameText]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testUnknownLikeStateDoesNotToggleOrClaimSuccess]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testUnreleasedReservationCannotBeInventedAsSubmittedEffect]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testWriteFailureInvalidatesReaderWithoutRetryingInput]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.ResultRecoveryTests testWrongTimestampCannotReuseMatchingMessageText]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testAnotherTaskCannotReuseContactBinding]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testBlockedFrameCannotDispatch]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testCannotChangeAuthorizedText]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testChangedDraftAfterReservationCannotUseTicket]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testChangedStreamCannotDispatch]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testCorrectNewSelfMessageVerifies]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testDispatchReturnsOnlyOneTapAndPersistsFirst]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testDraftOnlyCannotSubmit]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testEmptyComposerWithoutNewBubbleRemainsUncertain]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testLiveModeAcceptsHostDeclaredLiveSemanticInput]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testModelAuthoredControlCannotDispatch]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testNewOperationIDCannotBypassExistingTaskEffect]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testNormalizedUnicodeDraftIsNotExactOriginal]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testOldChatPixelsCannotInheritLaterProfileIdentity]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testOldSameTextBubbleIsNotNewSubmission]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testOtherPersonsSameTextIsNotSelfSubmission]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testPauseInvalidatesUnconsumedTicketButPreservesAudit]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testPendingAndFailureIndicatorsDoNotBecomeSuccess]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testProcessRestartCannotRecreatePendingTicket]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testReferenceScreenshotCannotBecomeLiveBinding]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testScrollingAwayCannotCreateNewnessEvidence]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testSystemReconfirmationCannotMakeOldPixelsPostSubmitEvidence]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testTicketCannotBeConsumedTwice]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testTwoNewSameTextBubblesAreAmbiguous]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testUncertainResultCanBeVerifiedByLaterReadWithoutResend]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.SubmissionTests testWrongRecipientCannotReserve]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testDuplicateRowsAreInvalid]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testExactTextPreservesUnicodeEncodingAndWhitespace]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testExcerptDoesNotNormalizeUnicode]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testIdenticalContactNamesNeedSelection]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testInvalidCluesAndEmptyTaskAreRejected]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testKnownAccountDoesNotBeatUnknownPlausibleCandidate]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testMediaClueNotInferredFromText]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testMissingYearNeedsMoreEvidence]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testMixedSearchOnlySelectsContacts]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testNoVisibleMatchDoesNotClaimContactAbsent]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testOneMatchPlusTruncatedCandidateCannotSelectFirst]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testRepeatedFullPostsAreAmbiguous]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testUnknownOwnerNeedsDetail]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testWrongAccountCaseDoesNotMatch]",
+        "result": "passed"
+      },
+      {
+        "id": "-[WeChatSkillCoreTests.TargetTests testWrongOwnerCannotSupplyDateOrBody]",
+        "result": "passed"
+      }
+    ]
+  },
+  "recovery_probe_build_exit_code": 0,
+  "separate_process_recovery": {
+    "passed": true,
+    "case_count": 6,
+    "evidence": "recovery-processes.json",
+    "draft_case_count": 3,
+    "result_case_count": 3,
+    "input_source": "synthetic_semantic_fixtures_no_device_io"
+  },
+  "reference_probe_build_exit_code": 0,
+  "reference_ui": {
+    "processing_passed": true,
+    "matched_pages": 5,
+    "all_expected_pages_matched": false,
+    "image_count": 7,
+    "evidence": "reference-ui.json",
+    "live_acceptance": false
+  },
+  "skill_validator_exit_code": 0,
+  "skill_format_passed": true,
+  "isolation_exit_code": 0,
+  "module_isolation_passed": true,
+  "app_guide_integrated": true,
+  "shared_workspace_baseline_unchanged": false,
+  "source_unchanged_during_verification": true,
+  "source_changed_files": [],
+  "model_scenario_count": 16,
+  "toolchain": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0"
+}

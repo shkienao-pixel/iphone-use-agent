@@ -13,7 +13,8 @@ enum PhoneAppSkillCatalog {
     }
 
     private static let entries: [(name: String, triggers: [String])] = [
-        ("xiaohongshu-assistant", ["小红书", "小紅書", "xiaohongshu", "rednote", "xhslink.cn/", "xhslink.com/"])
+        ("xiaohongshu-assistant", ["小红书", "小紅書", "xiaohongshu", "rednote", "xhslink.cn/", "xhslink.com/"]),
+        ("wechat-assistant", ["微信", "朋友圈", "wechat", "weixin"])
     ]
 
     static func selection(for task: String, visualMode: Bool, in bundle: Bundle = .main) throws -> Selection {
@@ -21,7 +22,12 @@ enum PhoneAppSkillCatalog {
         let normalized = task.lowercased()
         let selected = entries.filter { entry in
             entry.triggers.contains { trigger in
-                guard trigger == "xiaohongshu" || trigger == "rednote" else { return normalized.contains(trigger) }
+                if trigger == "微信" {
+                    // Enterprise WeChat / WeCom is a different app. An explicit
+                    // ordinary WeChat mention in a mixed task still selects it.
+                    return normalized.range(of: "(?<!企业)(?<!企業)微信", options: .regularExpression) != nil
+                }
+                guard ["xiaohongshu", "rednote", "wechat", "weixin"].contains(trigger) else { return normalized.contains(trigger) }
                 // English app names must not match unrelated identifiers such
                 // as rednotebook, rednote_backup or my_xiaohongshu_helper.
                 let pattern = "(?<![a-z0-9_])" + NSRegularExpression.escapedPattern(for: trigger) + "(?![a-z0-9_])"

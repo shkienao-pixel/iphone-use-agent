@@ -1,0 +1,442 @@
+{
+  "all_expected_pages_matched" : false,
+  "device_actions" : false,
+  "images" : [
+    {
+      "account_field_observed" : false,
+      "anchors" : [
+        {
+          "rect" : [
+            0.034659568024626261,
+            0.14961953224091507,
+            0.13572818040847778,
+            0.013260935297293441
+          ],
+          "role" : "contactsSection",
+          "source_ids" : [
+            "text-4"
+          ]
+        },
+        {
+          "rect" : [
+            0.034563775795839732,
+            0.26273286588133216,
+            0.18954752683639525,
+            0.01668543030596914
+          ],
+          "role" : "groupsSection",
+          "source_ids" : [
+            "text-6"
+          ]
+        },
+        {
+          "rect" : [
+            0.034293433904597846,
+            0.37754932598682389,
+            0.18695228099822997,
+            0.015026902912504636
+          ],
+          "role" : "historySection",
+          "source_ids" : [
+            "text-9"
+          ]
+        },
+        {
+          "rect" : [
+            0.116719241148816,
+            0.085755813693931482,
+            0.13880126476287841,
+            0.015988372539462614
+          ],
+          "role" : "searchQuery",
+          "source_ids" : [
+            "text-3"
+          ]
+        }
+      ],
+      "candidate_count" : 1,
+      "detected" : "searchResults",
+      "expected" : "searchResults",
+      "file" : "5b88b9e5f78f75ad6913b5edd2346194.jpg",
+      "gaps" : [
+        "contact_rows_are_candidates_not_identity"
+      ],
+      "height" : 2781,
+      "image" : 1,
+      "matched" : true,
+      "query_observed" : true,
+      "sha256" : "9a5d065e85d7f2f2e5d799729d2638ba1cffdf7d18143d0694a7643bdf1f6a2e",
+      "width" : 1280
+    },
+    {
+      "account_field_observed" : false,
+      "anchors" : [
+        {
+          "rect" : [
+            0.36277602383788432,
+            0.075485262550843868,
+            0.27129337787628172,
+            0.016175413371675051
+          ],
+          "role" : "chatTitle",
+          "source_ids" : [
+            "text-2"
+          ]
+        },
+        {
+          "rect" : [
+            0.039278134703636169,
+            0.07373046875,
+            0.017739847302436829,
+            0.01647186279296875
+          ],
+          "role" : "backOutline",
+          "source_ids" : [
+            "contour-18"
+          ]
+        },
+        {
+          "rect" : [
+            0.025676753371953964,
+            0.92120742797851562,
+            0.058850850909948349,
+            0.027599334716796875
+          ],
+          "role" : "leftComposerOutline",
+          "source_ids" : [
+            "contour-188"
+          ]
+        },
+        {
+          "rect" : [
+            0.82479935884475708,
+            0.92121505737304688,
+            0.059696793556213379,
+            0.027591705322265625
+          ],
+          "role" : "middleComposerOutline",
+          "source_ids" : [
+            "contour-194"
+          ]
+        },
+        {
+          "rect" : [
+            0.91553878784179688,
+            0.92117691040039062,
+            0.058751344680786133,
+            0.027629852294921875
+          ],
+          "role" : "rightComposerOutline",
+          "source_ids" : [
+            "contour-191"
+          ]
+        }
+      ],
+      "candidate_count" : 0,
+      "detected" : "chat",
+      "expected" : "chat",
+      "file" : "0f5de1eeac1e6be116cbe1115ee2bded.jpg",
+      "gaps" : [
+        "outline_roles_are_appearance_only_not_focus_or_send_proof"
+      ],
+      "height" : 2781,
+      "image" : 2,
+      "matched" : true,
+      "query_observed" : false,
+      "sha256" : "4ee3ef9c9f9152caf96a4edaf5fe2155b4f18ac094a67b8a7b604d6942a0e41d",
+      "width" : 1280
+    },
+    {
+      "account_field_observed" : true,
+      "anchors" : [
+        {
+          "rect" : [
+            0.21451104640506341,
+            0.19186046508780474,
+            0.33438484668731688,
+            0.01453488375281875
+          ],
+          "role" : "accountField",
+          "source_ids" : [
+            "text-5"
+          ]
+        },
+        {
+          "rect" : [
+            0.034335394120127816,
+            0.37583178949016294,
+            0.10167621374130251,
+            0.032598442713127951
+          ],
+          "role" : "profileMoments",
+          "source_ids" : [
+            "text-10",
+            "text-11"
+          ]
+        },
+        {
+          "rect" : [
+            0.38122608080486931,
+            0.47020034250774767,
+            0.23761246204376218,
+            0.017948718314373058
+          ],
+          "role" : "messagesEntry",
+          "source_ids" : [
+            "text-12"
+          ]
+        },
+        {
+          "rect" : [
+            0.30599369027660944,
+            0.52761627917952703,
+            0.39116718769073483,
+            0.017441859954899774
+          ],
+          "role" : "callEntry",
+          "source_ids" : [
+            "text-13"
+          ]
+        }
+      ],
+      "candidate_count" : 0,
+      "detected" : "contactProfile",
+      "expected" : "contactProfile",
+      "file" : "a745b8922bec23f925db8ec0d2c05435.jpg",
+      "gaps" : [
+        "reference_profile_is_not_live_identity_or_navigation_proof"
+      ],
+      "height" : 2781,
+      "image" : 3,
+      "matched" : true,
+      "query_observed" : false,
+      "sha256" : "403498b72431f01315ed55e2da29cef6fe0d4b9066f9fdf2b9bd987f1fbdd864",
+      "width" : 1280
+    },
+    {
+      "account_field_observed" : false,
+      "anchors" : [
+
+      ],
+      "candidate_count" : 0,
+      "detected" : "unknown",
+      "expected" : "personalTimeline",
+      "file" : "d10de7f59a26b31e00b1e848acf53009.jpg",
+      "gaps" : [
+        "insufficient_ui_anchors"
+      ],
+      "height" : 2781,
+      "image" : 4,
+      "matched" : false,
+      "query_observed" : false,
+      "sha256" : "bc5c99dc663fc5b35332bb819ec5d405f731ed5d806f3cfeccff2a93a69024f0",
+      "width" : 1280
+    },
+    {
+      "account_field_observed" : false,
+      "anchors" : [
+
+      ],
+      "candidate_count" : 0,
+      "detected" : "unknown",
+      "expected" : "momentDetail",
+      "file" : "18a0829e405b1a2300a081486a78564a.jpg",
+      "gaps" : [
+        "insufficient_ui_anchors"
+      ],
+      "height" : 2781,
+      "image" : 5,
+      "matched" : false,
+      "query_observed" : false,
+      "sha256" : "5c5169dd588008af983e283f36c9c95ad5fdca82c992bb4fcfd3e20ec77fc992",
+      "width" : 1280
+    },
+    {
+      "account_field_observed" : false,
+      "anchors" : [
+        {
+          "rect" : [
+            0.3973900367764176,
+            0.073925073988328593,
+            0.2083745002746582,
+            0.019301014782969306
+          ],
+          "role" : "chatsHeading",
+          "source_ids" : [
+            "text-2"
+          ]
+        },
+        {
+          "rect" : [
+            0.094637224302787676,
+            0.94767441876598735,
+            0.063091480731964106,
+            0.010174418078490399
+          ],
+          "role" : "bottomTab",
+          "source_ids" : [
+            "text-26"
+          ]
+        },
+        {
+          "rect" : [
+            0.32488271007660108,
+            0.94759333448244776,
+            0.1010232210159302,
+            0.010336586590896535
+          ],
+          "role" : "bottomTab",
+          "source_ids" : [
+            "text-27"
+          ]
+        },
+        {
+          "rect" : [
+            0.57728706607598723,
+            0.94767441865953106,
+            0.097791796922683805,
+            0.0087209299774498872
+          ],
+          "role" : "bottomTab",
+          "source_ids" : [
+            "text-28"
+          ]
+        },
+        {
+          "rect" : [
+            0.8517350163393147,
+            0.94767441885790893,
+            0.041009461879730202,
+            0.011627906179530911
+          ],
+          "role" : "bottomTab",
+          "source_ids" : [
+            "text-29"
+          ]
+        }
+      ],
+      "candidate_count" : 0,
+      "detected" : "chats",
+      "expected" : "chats",
+      "file" : "2844b63dbe6f7ca7a0d91b91cdc029c0.jpg",
+      "gaps" : [
+
+      ],
+      "height" : 2781,
+      "image" : 6,
+      "matched" : true,
+      "query_observed" : false,
+      "sha256" : "5322b6e6563f8c2b89699233ac954273eef38cee71c89fc1a58c3c220da824f4",
+      "width" : 1280
+    },
+    {
+      "account_field_observed" : false,
+      "anchors" : [
+        {
+          "rect" : [
+            0.41916334268007471,
+            0.073187578526831776,
+            0.16465979814529419,
+            0.019281141883087716
+          ],
+          "role" : "discoverHeading",
+          "source_ids" : [
+            "text-2"
+          ]
+        },
+        {
+          "rect" : [
+            0.12554486875748974,
+            0.12900789458253015,
+            0.16536844968795775,
+            0.017119537232849424
+          ],
+          "role" : "momentsEntry",
+          "source_ids" : [
+            "text-3"
+          ]
+        },
+        {
+          "rect" : [
+            0.12598856146822673,
+            0.19436532062701128,
+            0.16758123636245731,
+            0.018246102898691774
+          ],
+          "role" : "otherDiscoverEntry",
+          "source_ids" : [
+            "text-4"
+          ]
+        },
+        {
+          "rect" : [
+            0.09148264976024631,
+            0.94767441828345467,
+            0.066246056556701655,
+            0.011627907550737726
+          ],
+          "role" : "bottomTab",
+          "source_ids" : [
+            "text-19"
+          ]
+        },
+        {
+          "rect" : [
+            0.32176656321984004,
+            0.94767441829689025,
+            0.10410094261169434,
+            0.011627907550737726
+          ],
+          "role" : "bottomTab",
+          "source_ids" : [
+            "text-20"
+          ]
+        },
+        {
+          "rect" : [
+            0.57094408176084455,
+            0.94761014087904194,
+            0.10416861772537234,
+            0.011756462300106629
+          ],
+          "role" : "bottomTab",
+          "source_ids" : [
+            "text-21"
+          ]
+        },
+        {
+          "rect" : [
+            0.8517350163393147,
+            0.94767441885790893,
+            0.041009461879730202,
+            0.011627906179530911
+          ],
+          "role" : "bottomTab",
+          "source_ids" : [
+            "text-22"
+          ]
+        }
+      ],
+      "candidate_count" : 0,
+      "detected" : "discover",
+      "expected" : "discover",
+      "file" : "de13cce94eeaa61ad00b09ee96b35a69.jpg",
+      "gaps" : [
+
+      ],
+      "height" : 2781,
+      "image" : 7,
+      "matched" : true,
+      "query_observed" : false,
+      "sha256" : "2232aef2cd9956a5007af25478f9c06cf4def6b971001cfe526913ff6b60af5c",
+      "width" : 1280
+    }
+  ],
+  "images_processed" : 7,
+  "live_device_acceptance" : false,
+  "matched_pages" : 5,
+  "origin" : "referenceImage",
+  "processing" : "local_apple_vision_no_language_correction",
+  "raw_private_content_persisted" : false,
+  "source" : "user_provided_original_jpegs"
+}

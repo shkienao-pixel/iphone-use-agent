@@ -1,0 +1,112 @@
+[
+  {
+    "case": "unchanged",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "planned_text": "hello",
+      "process_id": 77402,
+      "status": "intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "process_id": 77407,
+      "reason": "inputResultUncertain",
+      "status": "hold"
+    }
+  },
+  {
+    "case": "partial",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "planned_text": "hello",
+      "process_id": 77408,
+      "status": "intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "planned_text": "llo",
+      "process_id": 77409,
+      "status": "suffix_action_no_io"
+    }
+  },
+  {
+    "case": "completed",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "planned_text": "hello",
+      "process_id": 77410,
+      "status": "intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "process_id": 77411,
+      "status": "verified_readback",
+      "text": "hello"
+    }
+  },
+  {
+    "case": "result-missing",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "process_id": 77412,
+      "status": "effect_intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "operation_count": 1,
+      "origin": "fixture",
+      "process_id": 77413,
+      "reason": "recovered_unique_new_self_item_missing",
+      "review_count": 1,
+      "status": "effect_uncertain"
+    }
+  },
+  {
+    "case": "result-pending",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "process_id": 77414,
+      "status": "effect_intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "operation_count": 1,
+      "origin": "fixture",
+      "process_id": 77415,
+      "reason": "recovered_new_item_pending",
+      "review_count": 1,
+      "status": "effect_uncertain"
+    }
+  },
+  {
+    "case": "result-normal",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "process_id": 77416,
+      "status": "effect_intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "operation_count": 1,
+      "origin": "fixture",
+      "process_id": 77417,
+      "review_count": 1,
+      "status": "effect_verified"
+    }
+  }
+]

@@ -1,0 +1,104 @@
+{
+  "baseline_host_file_count": 581,
+  "host_changed_since_baseline": [
+    "PhoneAgent/PhoneAgentViewModel.swift",
+    "PhoneAgent/ContentView.swift",
+    "PhoneAgent/Stores/TaskHistoryStore.swift",
+    "PhoneAgent/Stores/AssistantConversationStore.swift",
+    "PhoneAgent/Views/AssistantViews.swift",
+    "PhoneAgent/Views/ConversationTaskCard.swift",
+    "PhoneAgent/Views/CtripFlightCards.swift",
+    "PhoneAgent/Views/TaskViews.swift",
+    "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+    "PhoneAgent/Services/AssistantConversation.swift",
+    "PhoneAgent/Services/SystemTools.swift",
+    "Shared/AssistantConversationContext.swift",
+    "Shared/NativeTaskResult.swift",
+    "Skills/ctrip-travel/SKILL.md",
+    "Skills/ctrip-travel/references/decision-contract.md",
+    "Skills/ios-calendar/SKILL.md",
+    "Skills/ios-reminders/SKILL.md",
+    "Skills/ios-health/references/acceptance.json",
+    "Tests/BuildRetention/main.py",
+    "Tests/AlarmClarification/run.sh",
+    "Tests/PaotuiConversation/run.sh",
+    "Tests/ConversationLifecycle/run.sh",
+    "Tests/NativeTaskResults/run.sh",
+    "Tests/NativeTaskResults/main.swift",
+    "Tests/Understanding/run.sh",
+    "Tests/ConversationReferences/run.sh",
+    "Tests/TaskRecovery/main.swift",
+    "Tests/ConversationControls/run.sh",
+    "Tests/FlightPresentation/run.sh",
+    "Tests/FlightPresentation/main.swift",
+    "Tests/ComposerAttachments/WireChecks.swift",
+    "Tests/ComposerAttachments/run.sh",
+    "Tests/ConversationTaskOwnership/run.sh",
+    "Tests/ScreenTaskQueue/main.swift",
+    "Tests/ConversationRouting/Environment.swift",
+    "Tests/ConversationRouting/run.sh",
+    "Tests/AssistantConversation/Environment.swift",
+    "Tests/AssistantConversation/run.sh",
+    "Tests/AssistantConversation/main.swift",
+    "scripts/cleanup-build-artifacts.py",
+    "scripts/check.sh"
+  ],
+  "host_missing_since_baseline": [],
+  "host_added_since_baseline": [
+    "PhoneAgent/ContentView.swift.orig",
+    "PhoneAgent/Views/AssistantViews.swift.orig",
+    "PhoneAgent/Views/TaskViews.swift.orig",
+    "PhoneAgent/Services/UnifiedConversationCoordinator.swift.orig",
+    "Shared/AssistantConversationContext.swift.orig",
+    "Tests/UnifiedNavigation/ExtractProduction.py",
+    "Tests/UnifiedNavigation/run.sh",
+    "Tests/UnifiedNavigation/main.swift",
+    "Tests/NativeTaskSnapshots/prepare_boundary.py",
+    "Tests/NativeTaskSnapshots/run.sh",
+    "Tests/NativeTaskSnapshots/main.swift",
+    "Tests/NativeTaskSnapshots/wiring.py",
+    "Tests/NativeTaskResults/event_write_wiring.py",
+    "Tests/FlightPresentation/Fixtures/build133-fresh-flight-price-response.json",
+    "Tests/ScreenTaskQueue/README.md",
+    "Tests/AssistantConversation/main.swift.orig"
+  ],
+  "host_baseline_unchanged": false,
+  "host_drift_note": "Shared-workspace changes are reported separately; this read-only check neither attributes nor reverts them.",
+  "package_dependencies": [],
+  "source_imports": {
+    "Sources/WeChatSkillCore/AtomicAction.swift": [
+      "Foundation"
+    ],
+    "Sources/WeChatSkillCore/Model.swift": [
+      "Foundation"
+    ],
+    "Sources/WeChatSkillCore/SubmissionCoordinator.swift": [
+      "Foundation"
+    ],
+    "Sources/WeChatSkillCore/Targets.swift": [
+      "Foundation"
+    ],
+    "Sources/WeChatSkillCore/EffectEvidence.swift": [
+      "Foundation"
+    ],
+    "Sources/WeChatSkillCore/Journal.swift": [
+      "Foundation",
+      "Darwin",
+      "Glibc"
+    ],
+    "Sources/WeChatSkillCore/Observation.swift": [
+      "Foundation"
+    ],
+    "Sources/WeChatSkillCore/DraftPreparation.swift": [
+      "Foundation"
+    ]
+  },
+  "unexpected_imports": {},
+  "external_target_paths": [],
+  "broken_skill_reference_links": [],
+  "host_integration_references": [],
+  "skill_entry_bytes": 12018,
+  "app_integration_performed": false,
+  "device_actions_performed": false,
+  "passed": true
+}

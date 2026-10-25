@@ -14,6 +14,20 @@ public struct DraftEvidence: Codable, Equatable, Sendable {
 }
 public enum ItemAuthor: String, Codable, Sendable { case myself, other, unknown }
 public enum ItemState: String, Codable, Sendable { case normal, pending, failed }
+public enum LandmarkKind: String, Codable, Sendable { case timestamp, conversationStart }
+public struct VisibleLandmark: Codable, Equatable, Sendable {
+    public var kind: LandmarkKind
+    public var text: String
+    public var frameID: UUID
+    public var source: ControlSource
+    public var precedingItemID: String?
+    public var followingItemID: String?
+    public init(kind: LandmarkKind, text: String, frameID: UUID, source: ControlSource,
+                precedingItemID: String? = nil, followingItemID: String? = nil) {
+        self.kind = kind; self.text = text; self.frameID = frameID; self.source = source
+        self.precedingItemID = precedingItemID; self.followingItemID = followingItemID
+    }
+}
 public struct VisibleItem: Codable, Equatable, Sendable {
     /// Local correspondence ID established from observed content/neighborhood.
     /// Not a hidden WeChat message ID; ambiguity must be reported by the adapter.
@@ -42,15 +56,19 @@ public struct SceneObservation: Codable, Equatable, Sendable {
     public var correspondenceUnambiguous: Bool
     public var like: LikeState
     public var blockingOverlay: Bool
+    /// Literal, sourced UI landmarks, not cross-process local anchor IDs.
+    public var landmarks: [VisibleLandmark]?
     public init(frame: FrameStamp, account: String, contactProofID: UUID, momentBindingID: UUID? = nil,
                 surface: Surface, controls: [ObservedControl] = [], draft: DraftEvidence? = nil,
                 items: [VisibleItem] = [], continuityAnchors: [String] = [], listVerifiedEmpty: Bool = false,
-                correspondenceUnambiguous: Bool = false, like: LikeState = .unknown, blockingOverlay: Bool = false) {
+                correspondenceUnambiguous: Bool = false, like: LikeState = .unknown, blockingOverlay: Bool = false,
+                landmarks: [VisibleLandmark]? = nil) {
         self.frame = frame; self.account = account; self.contactProofID = contactProofID
         self.momentBindingID = momentBindingID; self.surface = surface; self.controls = controls
         self.draft = draft; self.items = items; self.continuityAnchors = continuityAnchors
         self.listVerifiedEmpty = listVerifiedEmpty; self.correspondenceUnambiguous = correspondenceUnambiguous
         self.like = like; self.blockingOverlay = blockingOverlay
+        self.landmarks = landmarks
     }
     func validate(mode: EvaluationMode, now: Date, maxAge: TimeInterval) throws {
         try frame.validate(mode: mode, now: now, maxAge: maxAge)
@@ -62,5 +80,18 @@ public struct SceneObservation: Codable, Equatable, Sendable {
               Set(continuityAnchors).count == continuityAnchors.count,
               continuityAnchors.allSatisfy(nonblank), !(listVerifiedEmpty && !items.isEmpty)
         else { throw SkillError.invalidObservation }
+        for landmark in landmarks ?? [] {
+            guard landmark.frameID == frame.id, nonblank(landmark.text), landmark.source != .modelGuess,
+                  (mode == .offline ? landmark.source == .fixture : landmark.source != .fixture)
+            else { throw SkillError.invalidObservation }
+            let preceding = landmark.precedingItemID.flatMap { id in items.firstIndex { $0.id == id } }
+            let following = landmark.followingItemID.flatMap { id in items.firstIndex { $0.id == id } }
+            guard landmark.precedingItemID == nil || preceding != nil,
+                  landmark.followingItemID == nil || following != nil else { throw SkillError.invalidObservation }
+            if let preceding, let following, following != preceding + 1 { throw SkillError.invalidObservation }
+            if landmark.kind == .conversationStart {
+                guard preceding == nil, items.isEmpty ? listVerifiedEmpty : following == 0 else { throw SkillError.invalidObservation }
+            } else if preceding == nil && following == nil { throw SkillError.invalidObservation }
+        }
     }
 }

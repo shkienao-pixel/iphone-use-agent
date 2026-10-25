@@ -126,10 +126,26 @@ for task in ["search REDNOTE", "查看 https://xhslink.cn/o/example", "search xi
     let selected = try PhoneAppSkillCatalog.selection(for: task, visualMode: true, in: app)
     precondition(selected.names == xiaohongshu.names)
 }
-let visualDirectory = temporary.appendingPathComponent("Skills/xiaohongshu-assistant")
+// Bundle resource discovery caches directory contents. Build each damaged-resource
+// fixture completely before opening it so every case reaches its intended guard.
+func checkVisualResource(name: String, task: String, content: String?, expectedError: String) throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("VisualSkill-" + UUID().uuidString + ".bundle")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let skillDirectory = directory.appendingPathComponent("Skills/" + name)
+    try FileManager.default.createDirectory(at: skillDirectory, withIntermediateDirectories: true)
+    try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: directory.appendingPathComponent("Info.plist"))
+    if let content { try content.write(to: skillDirectory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8) }
+    guard let resourceFixture = Bundle(url: directory) else { fatalError("Cannot open visual resource fixture") }
+    do {
+        _ = try PhoneAppSkillCatalog.selection(for: task, visualMode: true, in: resourceFixture)
+        fatalError("Invalid visual guide accepted: " + name)
+    } catch AgentError.message(let message) {
+        precondition(message == expectedError + name, "Fixture did not reach its intended validation guard: " + message)
+    }
+}
 let noVisual = try PhoneAppSkillCatalog.selection(for: "小红书", visualMode: false, in: fixture)
 precondition(noVisual.names.isEmpty && noVisual.instructions.isEmpty, "Tools-only mode must not load a phone visual guide")
-let noApp = try PhoneAppSkillCatalog.selection(for: "打开微信 ../../arbitrary/SKILL.md", visualMode: true, in: fixture)
+let noApp = try PhoneAppSkillCatalog.selection(for: "打开计算器 ../../arbitrary/SKILL.md", visualMode: true, in: fixture)
 precondition(noApp.names.isEmpty && noApp.instructions.isEmpty, "Unrelated task text cannot choose arbitrary resources")
 for task in ["open my rednotebook", "read rednotes.txt", "inspect xiaohongshuBackup",
              "read my_xiaohongshu_helper", "read rednote_backup.txt"] {
@@ -143,13 +159,40 @@ let expectedVisual = visualLines.dropFirst(visualEnd + 1).joined(separator: "\n"
 precondition(xiaohongshu.instructions.contains(expectedVisual), "Actual packaged visual guide body must reach the model context")
 precondition(xiaohongshu.byteCounts == [expectedVisual.utf8.count])
 precondition(!xiaohongshu.instructions.contains("name: xiaohongshu-assistant"), "Visual guide frontmatter must stay outside model instructions")
-try FileManager.default.createDirectory(at: visualDirectory, withIntermediateDirectories: true)
-let visualEntry = visualDirectory.appendingPathComponent("SKILL.md")
-do { _ = try PhoneAppSkillCatalog.selection(for: "小红书", visualMode: true, in: fixture); fatalError("Missing visual guide accepted") }
-catch is AgentError { }
-for invalid in ["Broken", "---\nname: another-skill\n---\nwrong guide", "---\nname: xiaohongshu-assistant\n---\n", String(repeating: "x", count: 25_000)] {
-    try invalid.write(to: visualEntry, atomically: true, encoding: .utf8)
-    do { _ = try PhoneAppSkillCatalog.selection(for: "小红书", visualMode: true, in: fixture); fatalError("Invalid visual guide accepted") }
-    catch is AgentError { }
+for name in ["xiaohongshu-assistant", "wechat-assistant"] {
+    let task = name == "wechat-assistant" ? "微信" : "小红书"
+    let cases: [(String?, String)] = [
+        (nil, "手机 App skill 缺少有效资源："),
+        ("Broken", "手机 App skill 格式无效："),
+        ("---\nname: another-skill\n---\nwrong guide", "手机 App skill 格式无效："),
+        ("---\nname: " + name + "\n---\n", "手机 App skill 内容为空："),
+        (String(repeating: "x", count: 25_000), "手机 App skill 缺少有效资源：")
+    ]
+    for (content, error) in cases {
+        try checkVisualResource(name: name, task: task, content: content, expectedError: error)
+    }
 }
-print("Bundled Apple, native and visual app skill checks passed, including exact packaged bodies, mode/task selection and damaged-resource rejection. No network or device actions.")
+let wechat = try PhoneAppSkillCatalog.selection(for: "在微信搜索联系人并给指定朋友圈点赞评论", visualMode: true, in: app)
+precondition(wechat.names == ["wechat-assistant"])
+for task in ["给小前那条朋友圈点赞", "打开微信", "在微信里给小前发消息", "use WeChat", "open WEIXIN",
+             "使用 $wechat-assistant", "打开WeChat找Alice", "企业微信和微信各看一下"] {
+    let selection = try PhoneAppSkillCatalog.selection(for: task, visualMode: true, in: app)
+    precondition(selection.names == wechat.names)
+}
+for task in ["打开企业微信", "打開企業微信", "open WeCom", "read my_wechat_helper", "read weixinBackup", "open wechat_backup.txt"] {
+    let selection = try PhoneAppSkillCatalog.selection(for: task, visualMode: true, in: fixture)
+    precondition(selection.names.isEmpty)
+}
+let bothApps = try PhoneAppSkillCatalog.selection(for: "先看小红书，再到微信发给指定联系人", visualMode: true, in: app)
+precondition(bothApps.names == ["xiaohongshu-assistant", "wechat-assistant"])
+let wechatToolsOnly = try PhoneAppSkillCatalog.selection(for: "微信朋友圈", visualMode: false, in: fixture)
+precondition(wechatToolsOnly.names.isEmpty)
+let originalWechat = try String(contentsOf: appURL.appendingPathComponent("Skills/wechat-assistant/SKILL.md"), encoding: .utf8)
+let wechatLines = originalWechat.components(separatedBy: .newlines)
+let wechatEnd = wechatLines.dropFirst().firstIndex(of: "---")!
+let expectedWechat = wechatLines.dropFirst(wechatEnd + 1).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+precondition(wechat.instructions.contains(expectedWechat) && wechat.byteCounts == [expectedWechat.utf8.count])
+precondition(!wechat.instructions.contains("name: wechat-assistant"))
+let fixedWechatResource = try PhoneAppSkillCatalog.selection(for: "微信 ../../arbitrary/SKILL.md", visualMode: true, in: app)
+precondition(fixedWechatResource.names == wechat.names && fixedWechatResource.instructions.contains(expectedWechat))
+print("Bundled Apple, native, Xiaohongshu and WeChat guides passed: exact packaged bodies, mode/task selection, mixed apps, English boundaries, WeCom separation and damaged-resource rejection. No network or device actions.")

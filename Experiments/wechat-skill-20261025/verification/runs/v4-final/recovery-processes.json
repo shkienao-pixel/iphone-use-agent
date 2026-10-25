@@ -1,0 +1,56 @@
+[
+  {
+    "case": "unchanged",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "planned_text": "hello",
+      "process_id": 63768,
+      "status": "intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "process_id": 63769,
+      "reason": "inputResultUncertain",
+      "status": "hold"
+    }
+  },
+  {
+    "case": "partial",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "planned_text": "hello",
+      "process_id": 63770,
+      "status": "intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "planned_text": "llo",
+      "process_id": 63771,
+      "status": "suffix_action_no_io"
+    }
+  },
+  {
+    "case": "completed",
+    "passed": true,
+    "seed": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "planned_text": "hello",
+      "process_id": 63772,
+      "status": "intent_saved_no_io"
+    },
+    "resume": {
+      "device_input_performed": false,
+      "origin": "fixture",
+      "process_id": 63773,
+      "status": "verified_readback",
+      "text": "hello"
+    }
+  }
+]

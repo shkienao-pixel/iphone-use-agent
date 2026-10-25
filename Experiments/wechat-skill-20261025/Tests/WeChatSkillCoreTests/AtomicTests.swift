@@ -20,17 +20,17 @@ import XCTest
         try validate(.tap(control), f: f, frame: frame, controls: [control])
         expectError(.unavailableInput) { try validate(.inputASCII(control, text: "hello"), f: f, frame: frame, controls: [control]) }
         try validate(.inputASCII(control, text: "hello"), f: f, frame: frame, controls: [control],
-                     caps: .init(keyboard: true, fieldAccess: .empty, focused: true))
+                     caps: .init(keyboard: true, fieldAccess: .empty, focused: true, focusedFieldID: control.id))
     }
     func testUnicodeReturnAndTabCannotHideInsideTyping() async throws {
         let f = try Fixture(); let frame = f.stamp(); let control = f.control(.textField, stamp: frame)
         for text in ["你好", "hello\n", "hello\r", "hello\tworld", "hi👋"] {
-            expectError(.unavailableInput) { try validate(.inputASCII(control, text: text), f: f, frame: frame, controls: [control], caps: .init(keyboard: true, fieldAccess: .empty, focused: true)) }
+            expectError(.unavailableInput) { try validate(.inputASCII(control, text: text), f: f, frame: frame, controls: [control], caps: .init(keyboard: true, fieldAccess: .empty, focused: true, focusedFieldID: control.id)) }
         }
     }
     func testForeignDraftCannotBeTypedIntoOrDeleted() async throws {
         let f = try Fixture(); let frame = f.stamp(); let control = f.control(.textField, stamp: frame)
-        let caps = InputCapabilities(keyboard: true, fieldAccess: .foreignDraft, focused: true)
+        let caps = InputCapabilities(keyboard: true, fieldAccess: .foreignDraft, focused: true, focusedFieldID: control.id)
         expectError(.unavailableInput) { try validate(.inputASCII(control, text: "new"), f: f, frame: frame, controls: [control], caps: caps) }
         expectError(.unavailableInput) { try validate(.editingKey(control, key: .deleteBackward), f: f, frame: frame, controls: [control], caps: caps) }
     }
@@ -41,17 +41,18 @@ import XCTest
     }
     func testPureMousePasteUsesVisibleMenuAsSeparateAction() async throws {
         let f = try Fixture(); let frame = f.stamp(); let field = f.control(.textField, stamp: frame, id: "field")
-        let paste = f.control(.paste, stamp: frame, id: "paste")
+        var paste = f.control(.paste, stamp: frame, id: "paste"); paste.ownerFieldID = field.id
         try validate(.longPress(field), f: f, frame: frame, controls: [field])
         let lease = ClipboardLease(text: "你好", preparedAt: f.now.addingTimeInterval(-1), expiresAt: f.now.addingTimeInterval(10))
-        try validate(.tap(paste), f: f, frame: frame, controls: [paste], caps: .init(fieldAccess: .empty, focused: true, clipboard: lease))
-        expectError(.unavailableInput) { try validate(.editingKey(field, key: .paste), f: f, frame: frame, controls: [field], caps: .init(fieldAccess: .empty, focused: true, clipboard: lease)) }
+        try validate(.tap(paste), f: f, frame: frame, controls: [field,paste], caps: .init(fieldAccess: .empty, focused: true, clipboard: lease, focusedFieldID: field.id))
+        expectError(.unavailableInput) { try validate(.editingKey(field, key: .paste), f: f, frame: frame, controls: [field], caps: .init(fieldAccess: .empty, focused: true, clipboard: lease, focusedFieldID: field.id)) }
     }
     func testExpiredOrOverwrittenClipboardCannotBeUsed() async throws {
-        let f = try Fixture(); let frame = f.stamp(); let paste = f.control(.paste, stamp: frame)
+        let f = try Fixture(); let frame = f.stamp(); let field = f.control(.textField, stamp: frame, id: "field")
+        var paste = f.control(.paste, stamp: frame); paste.ownerFieldID = field.id
         for lease in [ClipboardLease(text: "你好", preparedAt: f.now.addingTimeInterval(-2), expiresAt: f.now),
                       ClipboardLease(text: "你好", preparedAt: f.now, expiresAt: f.now.addingTimeInterval(10), invalidated: true)] {
-            expectError(.unavailableInput) { try validate(.tap(paste), f: f, frame: frame, controls: [paste], caps: .init(fieldAccess: .empty, focused: true, clipboard: lease)) }
+            expectError(.unavailableInput) { try validate(.tap(paste), f: f, frame: frame, controls: [field,paste], caps: .init(fieldAccess: .empty, focused: true, clipboard: lease, focusedFieldID: field.id)) }
         }
     }
     func testScrollCannotUseLikeOrSendAsAnchor() async throws {

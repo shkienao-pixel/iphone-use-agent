@@ -26,12 +26,15 @@ private enum StorageFault: Error { case injected }
         return path
     }
     func testAtomicFileRoundTripKeepsExactTextAndPendingState() async throws {
-        let f = try Fixture(); _ = try f.dispatch(.message(f.message)); let snapshot = try f.store.load()
+        let f = try Fixture()
         let dir = try directory(); defer { try? FileManager.default.removeItem(at: dir) }
         let file = try FileJournal(directory: dir)
-        // Commit one valid snapshot revision at a time; no revision jump.
-        var first = snapshot; first.revision = 1
-        try file.save(first, expectedRevision: 0)
+        let coordinator = try SubmissionCoordinator(storage: file, mode: .offline)
+        try coordinator.bindContact(f.contact, task: f.task, now: f.now)
+        let before = f.scene()
+        guard case .dispatch(let ticket) = try coordinator.reserve(task: f.task, effect: .message(f.message),
+            observation: before, controlID: "submit", now: f.now) else { return XCTFail() }
+        _ = try coordinator.take(ticket, current: before, now: f.now.addingTimeInterval(0.01))
         let restored = try FileJournal(directory: dir).load()
         XCTAssertEqual(restored.records[0].status, .pending)
         XCTAssertTrue(exact(restored.records[0].effect.text!, f.message))

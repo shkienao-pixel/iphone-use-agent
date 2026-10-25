@@ -1,0 +1,56 @@
+{
+  "client_date": "2026-10-25",
+  "client_timezone": "Asia/Shanghai",
+  "status": "standalone_offline_implementation_verified",
+  "swift_toolchain": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "swift_tests": {
+    "passed": 75,
+    "failed": 0,
+    "evidence": "swift-test.log",
+    "input_source": "synthetic_semantic_fixtures_and_temporary_local_journals"
+  },
+  "skill_format": {
+    "passed": true,
+    "evidence": "skill-format.log",
+    "validator": "bundled skill-creator quick_validate.py",
+    "validation_dependency": "PyYAML installed only in this module .build; not a package dependency"
+  },
+  "atomic_actions": [
+    "tap",
+    "longPress",
+    "scroll",
+    "inputASCII",
+    "editingKey",
+    "prepareClipboard"
+  ],
+  "submission_semantics": "One single-use ticket releases one tap after persisting intent; pending or uncertain effects never auto-replay. No platform exactly-once claim.",
+  "behavior_evaluation": {
+    "scenario_count": 16,
+    "model_evaluated": false
+  },
+  "module_isolation": {
+    "passed": true,
+    "package_dependencies": [],
+    "host_integration_references": [],
+    "evidence": "isolation.json"
+  },
+  "shared_workspace_baseline_unchanged": false,
+  "shared_workspace_drift": "Observed and preserved. Baseline differences are not attributed to this task; all authored writes in this task were within the module.",
+  "source_file_count": 23,
+  "source_manifest": "source-manifest.json",
+  "validation_history": {
+    "first_run": "63 tests: one assertion expected a later rejection stage; actual rejection was earlier observation validation. Expectation corrected.",
+    "second_run": "73 tests passed",
+    "final_run": "75 tests passed after adding pause invalidation and pre-profile-pixel rejection."
+  },
+  "not_performed": [
+    "app integration",
+    "raw screenshot/OCR adapter implementation",
+    "iOS build or install",
+    "model API calls or model behavior evaluation",
+    "iPhone connection or input",
+    "WeChat message send",
+    "Moments like or comment"
+  ],
+  "next_stage": "User-directed real-device UI learning and acceptance, with a separately implemented host adapter when requested."
+}

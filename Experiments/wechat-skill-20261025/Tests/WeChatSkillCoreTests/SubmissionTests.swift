@@ -99,8 +99,9 @@ import XCTest
     func testUncertainResultCanBeVerifiedByLaterReadWithoutResend() async throws {
         let f = try Fixture(); let ticket = try f.dispatch(.message(f.message))
         _ = try f.coordinator.verify(operationID: ticket.operationID, after: f.after(.message(f.message), items: [], empty: true), now: f.now.addingTimeInterval(0.3))
-        let after = f.after(.message(f.message), items: [.init(id: "new", text: f.message, author: .myself)])
-        XCTAssertEqual(try f.coordinator.verify(operationID: ticket.operationID, after: after, now: f.now.addingTimeInterval(0.3)), .verified)
+        var after = f.after(.message(f.message), items: [.init(id: "new", text: f.message, author: .myself)])
+        after.frame = f.stamp(0.4); after.controls = []
+        XCTAssertEqual(try f.coordinator.verify(operationID: ticket.operationID, after: after, now: f.now.addingTimeInterval(0.5)), .verified)
         XCTAssertEqual(try f.store.load().records.count, 1)
     }
     func testPendingAndFailureIndicatorsDoNotBecomeSuccess() async throws {

@@ -22,8 +22,10 @@ public struct ObservedControl: Codable, Equatable, Sendable {
     public var role: ControlRole
     public var rect: UnitRect
     public var source: ControlSource
-    public init(id: String, frameID: UUID, role: ControlRole, rect: UnitRect, source: ControlSource) {
+    public var ownerFieldID: String?
+    public init(id: String, frameID: UUID, role: ControlRole, rect: UnitRect, source: ControlSource, ownerFieldID: String? = nil) {
         self.id = id; self.frameID = frameID; self.role = role; self.rect = rect; self.source = source
+        self.ownerFieldID = ownerFieldID
     }
 }
 public enum EditingKey: String, Codable, Sendable { case paste, selectAll, deleteBackward, switchInput }
@@ -39,7 +41,7 @@ public enum AtomicAction: Codable, Equatable, Sendable {
     case prepareClipboard(text: String)
 }
 
-public enum FieldAccess: Sendable { case unknown, empty, taskOwned, foreignDraft }
+public enum FieldAccess: String, Codable, Sendable { case unknown, empty, taskOwned, foreignDraft }
 public struct ClipboardLease: Sendable {
     public var text: String
     public var preparedAt: Date
@@ -49,7 +51,7 @@ public struct ClipboardLease: Sendable {
         self.text = text; self.preparedAt = preparedAt; self.expiresAt = expiresAt; self.invalidated = invalidated
     }
     func usable(at now: Date) -> Bool {
-        !invalidated && nonblank(text) && [preparedAt, expiresAt, now].allSatisfy { $0.timeIntervalSince1970.isFinite } &&
+        !invalidated && !text.isEmpty && [preparedAt, expiresAt, now].allSatisfy { $0.timeIntervalSince1970.isFinite } &&
         preparedAt <= now && now < expiresAt
     }
 }
@@ -60,15 +62,25 @@ public struct InputCapabilities: Sendable {
     public var fieldAccess: FieldAccess
     public var focused: Bool
     public var clipboard: ClipboardLease?
+    public var focusedFieldID: String?
     public init(keyboard: Bool = false, hostForeground: Bool = false, clipboardPreparation: Bool = false,
-                fieldAccess: FieldAccess = .unknown, focused: Bool = false, clipboard: ClipboardLease? = nil) {
+                fieldAccess: FieldAccess = .unknown, focused: Bool = false, clipboard: ClipboardLease? = nil,
+                focusedFieldID: String? = nil) {
         self.keyboard = keyboard; self.hostForeground = hostForeground; self.clipboardPreparation = clipboardPreparation
         self.fieldAccess = fieldAccess; self.focused = focused; self.clipboard = clipboard
+        self.focusedFieldID = focusedFieldID
     }
     var mayWrite: Bool { focused && (fieldAccess == .empty || fieldAccess == .taskOwned) }
 }
 
 public enum AtomicActionRules {
+    private static func validateFocus(fieldID: String?, frame: FrameStamp, controls: [ObservedControl],
+                                      capabilities: InputCapabilities, mode: EvaluationMode) throws {
+        guard capabilities.focused, let fieldID, capabilities.focusedFieldID == fieldID,
+              let field = controls.first(where: { $0.id == fieldID && $0.role == .textField })
+        else { throw SkillError.unavailableInput }
+        try validateControl(field, frame: frame, controls: controls, mode: mode)
+    }
     static func validateControl(_ control: ObservedControl, frame: FrameStamp, controls: [ObservedControl], mode: EvaluationMode) throws {
         guard control.rect.valid, nonblank(control.id), control.frameID == frame.id,
               controls.filter({ $0.id == control.id }).count == 1,
@@ -83,11 +95,12 @@ public enum AtomicActionRules {
         try frame.validate(mode: mode, now: now, maxAge: maxAge)
         switch action {
         case .prepareClipboard(let text):
-            guard nonblank(text), capabilities.hostForeground, capabilities.clipboardPreparation else { throw SkillError.unavailableInput }
+            guard !text.isEmpty, capabilities.hostForeground, capabilities.clipboardPreparation else { throw SkillError.unavailableInput }
         case .tap(let control):
             try validateControl(control, frame: frame, controls: controls, mode: mode)
             guard !control.role.isEffect else { throw SkillError.unapprovedEffect }
             if control.role == .paste {
+                try validateFocus(fieldID: control.ownerFieldID, frame: frame, controls: controls, capabilities: capabilities, mode: mode)
                 guard capabilities.mayWrite, capabilities.clipboard?.usable(at: now) == true else { throw SkillError.unavailableInput }
             }
         case .longPress(let control):
@@ -98,11 +111,13 @@ public enum AtomicActionRules {
             guard control.role == .scrollRegion, (-4...4).contains(ticks), ticks != 0 else { throw SkillError.invalidAction }
         case .inputASCII(let control, let text):
             try validateControl(control, frame: frame, controls: controls, mode: mode)
+            try validateFocus(fieldID: control.id, frame: frame, controls: controls, capabilities: capabilities, mode: mode)
             guard control.role == .textField, capabilities.keyboard, capabilities.mayWrite, !text.isEmpty,
                   text.utf8.count <= 500, text.utf8.allSatisfy({ (32...126).contains($0) })
             else { throw SkillError.unavailableInput }
         case .editingKey(let control, let key):
             try validateControl(control, frame: frame, controls: controls, mode: mode)
+            try validateFocus(fieldID: control.id, frame: frame, controls: controls, capabilities: capabilities, mode: mode)
             guard control.role == .textField, capabilities.keyboard, capabilities.focused else { throw SkillError.unavailableInput }
             if key != .switchInput {
                 guard capabilities.mayWrite else { throw SkillError.unavailableInput }

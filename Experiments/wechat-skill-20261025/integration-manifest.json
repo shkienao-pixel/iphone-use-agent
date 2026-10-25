@@ -1,0 +1,15 @@
+{
+  "mode": "skill-guide-only",
+  "authorized_by": "2026-10-25 user requested finish current version, merge existing code, then pause",
+  "host_files": {
+    "PhoneAgent/Services/PhoneAppSkillCatalog.swift": "fd6e02bbae1d4c5416a6a656155af829520fc9160ac725806bbb9456b6af084c",
+    "Skills/wechat-assistant/SKILL.md": "d9577a74a5c646d62f84ee7a80f26e0c993fde33bf0cf154ca3541718866ff77",
+    "Skills/wechat-assistant/agents/openai.yaml": "969753709c0008210a5cec05b03cf52b59d407b5ac01135c06b657bdf9d1f7b0",
+    "Skills/wechat-assistant/references/atomic-workflows.md": "bb6f863382dc2d8d6f3352af5c81aa6f0cee0bfb1982064a7aea8b7cff85e3b4",
+    "Skills/wechat-assistant/references/behavior-evaluation.json": "4e6c477ca7eed40960eeb96cc5bbc2c99796c2495e7492dbefcac882fe48525f",
+    "Skills/wechat-assistant/references/device-validation.md": "6b14d2d0f1a8aa96533e5796cd55ba9bad490acbe6e5b9b106f2103fbbce6ac4",
+    "Skills/wechat-assistant/references/runtime-contract.md": "6f267284f6fa153a3c0bf74ed60677afba50c4d385f5923aef4ac9077e1ae3df",
+    "Skills/wechat-assistant/references/ui-map.md": "75ab305495a8252c304393f3f8badabed8df30bc5f5eac38b34eaab659d6436b",
+    "Tests/Skills/main.swift": "46f56bab8a315877f9c3add8802c19282ae7124f84bce17ed90223ada1551f60"
+  }
+}
