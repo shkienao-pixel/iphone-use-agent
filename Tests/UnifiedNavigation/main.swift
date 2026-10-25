@@ -90,6 +90,37 @@ import Foundation
         pendingModel.pendingConversationTask = .init(goal: pendingModel.goal)
         pendingNav.pressNewConversation()
         expect(pendingModel.conversation.conversations.isEmpty, "Already handed-off pending request is not recopied as a legacy draft")
+        let archivedGoal = "已经提交的原生长任务"
+        var submittedUser = AssistantMessage(role: "user", text: archivedGoal)
+        submittedUser.attachments = materials
+        var submittedReply = AssistantMessage(role: "assistant", text: "已完成的真实任务")
+        submittedReply.taskID = UUID()
+        let submittedMessages = [submittedUser, submittedReply]
+        expect(ConversationTaskScope.containsSubmittedInput(archivedGoal, attachments: materials, in: submittedMessages),
+               "The original user input and linked task prove submission after bounded task-history eviction")
+        expect(!ConversationTaskScope.containsSubmittedInput(archivedGoal, attachments: [], in: submittedMessages),
+               "Different materials remain a distinct legacy input")
+        expect(!ConversationTaskScope.containsSubmittedInput(archivedGoal, attachments: materials,
+               in: [submittedUser, .init(role: "assistant", text: "尚未提交"), .init(role: "user", text: "另一项请求"), submittedReply]),
+               "A different later user request cannot lend its task link to an earlier input")
+        expect(!ConversationTaskScope.containsSubmittedInput(archivedGoal, attachments: materials,
+               in: [submittedUser, .init(role: "assistant", text: "只有文字，没有任务身份")]),
+               "An unlinked answer does not prove execution submission")
+        let submittedURL = folder.appendingPathComponent("evicted-submitted.json"), submittedID = UUID()
+        let submittedStore = AssistantConversationStore(url: submittedURL)
+        try submittedStore.upsert(.init(id: submittedID, title: "真实归档任务", messages: submittedMessages,
+            createdAt: Date(), updatedAt: Date(), recipient: "", draft: "", draftAttachments: []), currentConversationID: submittedID)
+        let archivedModel = NavigationModel(AssistantConversation(store: AssistantConversationStore(url: submittedURL)))
+        archivedModel.goal = archivedGoal
+        let archivedNav = NavigationHarness(archivedModel)
+        archivedNav.attachmentDraft.items = materials
+        expect(archivedModel.history.records.isEmpty && archivedModel.taskQueue.items.isEmpty && archivedModel.engine.currentRecord == nil,
+               "Eviction regression uses only the saved conversation; no live or queued task record supplies the match")
+        archivedNav.pressNewConversation()
+        expect(!archivedModel.conversation.conversations.contains { $0.messages.isEmpty && $0.draft == archivedGoal },
+               "Opening after archive reconstruction does not resurrect an evicted submitted task as a draft")
+        expect(archivedModel.goal == archivedGoal && archivedModel.conversation.conversations.first { $0.id == submittedID }?.messages == submittedMessages,
+               "Submission deduplication retains the original legacy field, messages and exact attachments")
         let (differentModel, differentNav, _) = fixture("new-materials")
         let finished = PhoneTaskRecord(title: "过去任务", goal: differentModel.goal, summary: "已完成", outcome: .completed)
         differentModel.history.records = [finished]

@@ -1934,6 +1934,20 @@ struct ConversationControlContext: Equatable, Sendable {
 /// A session's execution scope comes only from its own linked message sources.
 /// Global queues and memory references are not task-control authority.
 enum ConversationTaskScope {
+    /// Submission provenance only. An archived link can stop a copied legacy
+    /// input becoming a new draft; it never grants task-control authority.
+    static func containsSubmittedInput(_ text: String, attachments: [ComposerAttachment], in messages: [AssistantMessage]) -> Bool {
+        guard !text.isEmpty || !attachments.isEmpty else { return false }
+        for index in messages.indices where messages[index].role == "user" && messages[index].text == text &&
+            (messages[index].attachments ?? []) == attachments {
+            var next = index + 1
+            while next < messages.count, messages[next].role != "user" {
+                if messages[next].role == "assistant", messages[next].taskID != nil { return true }
+                next += 1
+            }
+        }
+        return false
+    }
     static func linkedTaskIDs(in history: [AssistantMessage], selectedTaskID: UUID? = nil, pendingTaskID: UUID? = nil) -> Set<UUID> {
         Set(history.compactMap(\.taskID) + [selectedTaskID, pendingTaskID].compactMap { $0 })
     }

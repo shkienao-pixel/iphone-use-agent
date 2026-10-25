@@ -1293,6 +1293,12 @@ struct ContentView: View {
         guard !records.contains(where: {
             ($0.goal == model.goal || $0.effectiveGoal == model.goal) && ($0.attachments ?? []) == materials
         }) else { return }
+        // Task history is bounded. The original linked conversation outlives
+        // it, so an evicted completed request must not reappear as a new draft.
+        let savedMessages = model.conversation.conversations.map(\.messages) + [model.conversation.messages]
+        guard !savedMessages.contains(where: {
+            ConversationTaskScope.containsSubmittedInput(model.goal, attachments: materials, in: $0)
+        }) else { return }
         if materials.isEmpty, model.pendingConversationTask?.goal == model.goal { return }
         _ = model.conversation.preserveLegacyInput(model.goal, attachments: materials)
     }
