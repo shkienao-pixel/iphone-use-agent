@@ -244,7 +244,7 @@ final class AgentPiPController: NSObject, ObservableObject, AVPictureInPictureCo
             (value as NSString).draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                 attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style], context: nil)
         }
-        text("✦ Phone Agent · 动作浮窗", rect: CGRect(x: 30, y: 24, width: 500, height: 34), font: .systemFont(ofSize: 25, weight: .semibold), color: accent)
+        text("✦ Sela · 动作浮窗", rect: CGRect(x: 30, y: 24, width: 500, height: 34), font: .systemFont(ofSize: 25, weight: .semibold), color: accent)
         (failed ? UIColor.systemRed : (running ? UIColor.systemGreen : muted)).setFill()
         UIBezierPath(ovalIn: CGRect(x: 597, y: 35, width: 12, height: 12)).fill()
         text(step > 0 ? "第 \(step) 步" : "准备就绪", rect: CGRect(x: 30, y: 79, width: 570, height: 32), font: .systemFont(ofSize: 24, weight: .medium), color: muted)
@@ -325,7 +325,7 @@ struct AgentPiPSource: UIViewRepresentable {
         view.backgroundColor = .systemBackground
         view.layer.addSublayer(controller.displayLayer)
         view.layer.cornerRadius = 12; view.clipsToBounds = true
-        view.isAccessibilityElement = true; view.accessibilityLabel = "Phone Agent 实时动作画中画预览"
+        view.isAccessibilityElement = true; view.accessibilityLabel = "Sela 实时动作画中画预览"
         return view
     }
     func updateUIView(_ uiView: UIView, context: Context) { controller.setAppearance(colorScheme) }

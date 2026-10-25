@@ -1,0 +1,3 @@
+interface:
+  display_name: "iOS 备忘录"
+  short_description: "Create Apple Notes using a configured iPhone shortcut."

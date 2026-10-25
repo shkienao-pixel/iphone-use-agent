@@ -76,6 +76,8 @@ struct WorkbenchView: View {
     @State private var recordedText: RecordingTextSeed?
     @State private var confirmRecordedText = false
     @State private var spreadsheet: SpreadsheetSeed?
+    @State private var savedContentReference: String?
+    @State private var showWorkflows = false
     private enum Workspace: String, CaseIterable { case materials = "材料", document = "文件" }
     @State private var workspace: Workspace = .materials
     private enum Field: Hashable { case title, source, requirements, content }
@@ -87,6 +89,9 @@ struct WorkbenchView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                Button { showWorkflows = true } label: {
+                    Label("小红书、聊天与文件发送", systemImage: "tray.full")
+                }.frame(minHeight: 44).disabled(busy || model.speech.usingAudio)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("标题").font(.subheadline).foregroundStyle(.secondary)
                     TextField("为这份记录命名", text: $title).focused($focusedField, equals: .title).agentField().disabled(busy).accessibilityLabel("记录标题")
@@ -123,7 +128,10 @@ struct WorkbenchView: View {
                 document = nil
             }
             .sheet(item: $spreadsheet) { SpreadsheetView(seed: $0).agentSheetStyle() }
-            .sheet(item: $editor) { MemoryEditor(seed: $0).agentSheetStyle() }
+            .sheet(isPresented: $showWorkflows) {
+                WorkflowWorkspaceView(workflows: model.workflowServices).environmentObject(model).agentSheetStyle()
+            }
+            .sheet(item: $editor) { MemoryEditor(seed: $0).environmentObject(model).agentSheetStyle() }
             .sheet(isPresented: $showRecordings, onDismiss: {
                 if recordedText != nil { if source.isEmpty { applyRecordedText() } else { confirmRecordedText = true } }
             }) { RecordingsView(store: model.recordings) { seed in recordedText = seed; showRecordings = false } }
@@ -223,10 +231,46 @@ struct WorkbenchView: View {
                         do { document = ArtifactDocument(data: try ArtifactFiles.make(title: title, text: content, format: format)); exportType = format.type; exportName = ArtifactFiles.filename(title) + "." + format.ext; exporting = true; error = "" }
                         catch { self.error = error.localizedDescription }
                     }.buttonStyle(AgentButtonStyle()).disabled(busy || content.isEmpty)
-                    Button("保存成记忆") { editor = MemoryEditorSeed(value: AssistantMemory(title: title, text: content, kind: .document, source: "AI 整理 · " + sourceName)) }
+                    // This draft may be typed or edited without any model call.
+                    Button("保存成记忆") { editor = MemoryEditorSeed(value: AssistantMemory(title: title, text: content, kind: .document, source: "记录与文件 · 文件草稿")) }
                         .buttonStyle(AgentButtonStyle(primary: false)).disabled(busy || content.isEmpty || content.count > 12000)
                 }
+                phoneContentPanel
         }
+    }
+    private var phoneContentPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("供手机输入的正文").font(.headline)
+            Text("先将原文保存在手机，再在此准备粘贴。中文、换行、表情和链接按原样保留。")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("保存当前正文") {
+                do {
+                    let value = try model.contentStore.create(title: title, body: content)
+                    savedContentReference = value.reference
+                    message = "正文已保存在本机，共 \(value.characterCount) 字、\(value.lineBreakCount) 个换行。"; error = ""
+                } catch { self.error = error.localizedDescription }
+            }.buttonStyle(AgentButtonStyle(primary: false)).disabled(busy || content.isEmpty || phase != .active)
+            if !model.contentStore.artifacts.isEmpty {
+                Menu("选择已保存的正文") {
+                    ForEach(model.contentStore.artifacts.reversed()) { value in
+                        Button(value.title + " · \(value.characterCount) 字 · " + String(value.id.uuidString.prefix(8))) { savedContentReference = value.reference }
+                    }
+                }.frame(minHeight: 44)
+            }
+            if let value = model.contentStore.artifacts.first(where: { $0.reference == savedContentReference }) ?? model.contentStore.artifacts.last {
+                Text(value.title + " · \(value.characterCount) 字 · \(value.lineBreakCount) 个换行").font(.subheadline)
+                Text(value.reference).font(.caption2).textSelection(.enabled)
+                Button("准备粘贴这段正文") {
+                    do {
+                        _ = try model.contentStore.prepareClipboard(reference: value.reference)
+                        message = "已在本机准备正文，并核对剪贴板全文。请在目标输入框粘贴；目标里的实际文字、保存状态仍需核验。"; error = ""
+                    } catch { self.error = error.localizedDescription }
+                }.buttonStyle(AgentButtonStyle(primary: false)).disabled(busy || phase != .active || model.interactionBusy)
+                Text("准备有效期 2 分钟。中断后先看目标已有内容，避免重复粘贴。只核对可见片段时，仍不能确认全文正确。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if !model.contentStore.error.isEmpty { Text(model.contentStore.error).font(.caption).foregroundStyle(.red) }
+        }.agentPanel()
     }
     private func appendTranscript() {
         let text = model.speech.transcript

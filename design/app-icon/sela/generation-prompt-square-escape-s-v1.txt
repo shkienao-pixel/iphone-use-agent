@@ -1,0 +1,24 @@
+Sela app icon — square escape S v1
+Created: 2026-10-24 (Asia/Shanghai)
+Mode: built-in image_gen, reference-based edit
+User direction: keep the app as a square frame, with an S going out of it.
+Concept: a custom S gesture travels from inside an open square app boundary through its upper-right opening.
+Reference: sela-app-icon-autonomy-v2-1024.png
+Deliverable: sela-app-icon-square-escape-s-v1-1024.png
+Original: sela-app-icon-square-escape-s-v1-original.png
+Status: design proposal; existing app icon asset has not been replaced.
+
+Use case: precise-object-edit / logo-brand.
+Asset type: the next refined Sela AI Agent app icon, based on the supplied approved square-boundary design.
+Input image 1 is the EDIT TARGET. The user explicitly corrects the direction: "The app should still be a square frame; let an S go out of the square." Follow this exact visual idea.
+Primary request: KEEP the thick open rounded-square app boundary from the reference, and REPLACE the detached diamond with ONE bold custom S-shaped gesture that travels from inside the square through its upper-right opening and beyond the app boundary. The outer boundary must remain recognizably SQUARE, never a circle.
+Geometry and composition:
+- A compact rounded-square outline occupies the lower-left / central part of the overall emblem. Its upper-right corner is opened by two clean coordinated diagonal cuts, as in the reference.
+- One strong beautiful S-shaped stroke is the protagonist. Its lower curve begins well INSIDE the square, its middle waist passes diagonally through the upper-right opening, and its upper curve extends clearly OUTSIDE the top-right app boundary. This must visibly read as an S escaping from an app, not an S placed next to a box.
+- The S is a custom drawn broad fluid band with two clear bends and confident softly finished terminals, no font serifs, no outline. Let its overall axis lean toward the upper right while retaining a readable S silhouette. The S upper bow should break past the imaginary corner line of the frame, and its lower bow should remain inside. Use only these two black forms: the frame and the S.
+- Coordinate the width of the S and the frame, keeping the frame a little lighter so the emerging S is clear. Maintain enough ivory negative space around the S and both frame cut ends to prevent tangling at 32px. The S must not touch or weld to the frame.
+- Optically center the combined frame-and-S emblem, approximately 68 percent of the square canvas width and height, with safe app-icon margins around the escaping upper-right curve.
+Style: highly refined original contemporary brand identity. Flat solid near-black on a solid warm ivory background. Crisp vector-like shapes, no texture, no paper grain, no gradients, no shadows, no lighting, no 3D. One-color viable.
+Text: the S is the single custom graphic mark; NO other letters, no brand-name text, no labels.
+Strict invariants: SQUARE open app boundary, ONE S emerging through the upper-right opening, lower S curve inside and upper S curve outside. No detached dot or diamond remains.
+Avoid: circular ring, extra symbols, arrows or arrowheads, standard external-link/export UI icon, speed lines, motion trails, badges, sparkles, knots, stars, robot, mascot, eyes, phone hardware, mockups, multiple versions, presentation boards, borders or pre-rounded outer canvas corners. Produce ONE finished square full-bleed icon artwork.

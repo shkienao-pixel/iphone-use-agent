@@ -1,0 +1,20 @@
+Sela app icon — round touch v1
+Created: 2026-10-24 (Asia/Shanghai)
+Mode: built-in image_gen, reference-based edit
+User direction: a round version with the feeling of clicking and swiping.
+Concept: an open circular swipe and a round touch point, retaining the idea of acting beyond the app boundary.
+Reference: sela-app-icon-autonomy-v2-1024.png
+Deliverable: sela-app-icon-round-touch-v1-1024.png
+Original: sela-app-icon-round-touch-v1-original.png
+Status: design proposal; existing app icon asset has not been replaced.
+
+Use case: logo-brand / precise-object-edit.
+Asset type: a circular touch-and-swipe refinement of the supplied Sela app icon.
+Input image 1 is the existing icon and conceptual reference. The user likes its idea of an autonomous core breaking out of an app boundary. Now the user explicitly requests a ROUND version with the feeling of CLICKING and SWIPING. Preserve the minimalist authored identity and the escaping-core relationship, but change the geometry decisively.
+Primary request: design ONE exceptional original symbol from exactly TWO integrated visual forms: a bold OPEN CIRCULAR SWEEP and a detached solid ROUND TOUCH POINT. No square or diamond geometry remains.
+The outer form should suggest the trace of one purposeful curved finger swipe: an almost circular open crescent, substantial and clean, with a broad stable lower-left body and a subtle increase of flow toward the upper-right opening. Give the arc a very restrained change in thickness so it feels like a gesture in motion, not a mechanical ring. Its two ends are deliberately different: one quietly rounded cut, the advancing end smoothly tapering without becoming a sharp arrowhead.
+The detached round point is the touch / action core. Place it at the upper-right opening, slightly outside the imaginary circle boundary as if one tap has just moved outward along the curved gesture. Its position and the arc's tangent must feel beautifully coordinated. Make the dot substantial, approximately 20 percent of the total symbol width, with a visible calm gap between it and the sweep. The viewer should read "tap, swipe, act" through just the shape and spacing.
+Composition: one compact optically centered emblem, about 66–68 percent of square width and height, generous app-icon safe margins around the top-right touch point.
+Style/medium: sophisticated contemporary brand identity, bold flat solid near-black shapes on a solid warm ivory background, clean vector-like geometry, highly memorable one-color silhouette, no outlines, no texture, no paper grain, no shading, no gradients, no 3D, no lighting or shadows. All four outer canvas corners are filled with the background.
+Constraints: keep exactly one circular sweep and one solid circular dot; no other elements. Must work at 32px. No letters, wordmark, typography, frame, pre-rounded outer tile, contact sheet, presentation, mockup, watermark, fake depth.
+Avoid: literal hand or finger, cursor arrow, smartphone drawing, click ripple rings, multiple dots, speed lines, separate motion trails, sparkles, eye or face, mascot, orbit or planet, power button, clock, arrowhead, standard circular refresh icon, generic loading spinner, yin-yang or camera shutter. Make this feel like one quiet intelligent touch moving beyond a boundary.

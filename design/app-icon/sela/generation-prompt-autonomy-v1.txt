@@ -1,0 +1,20 @@
+Sela app icon — autonomy v1
+Created: 2026-10-24 (Asia/Shanghai)
+Mode: built-in image_gen
+User direction: designed abstract brand symbol with an Agent feeling, no cartoon mascot, no decorative S.
+Concept: self-directed action; an autonomous core crossing an open system boundary.
+Deliverable: sela-app-icon-autonomy-v1-1024.png
+Original: sela-app-icon-autonomy-v1-original.png
+Status: design proposal; existing app icon asset has not been replaced.
+
+Use case: logo-brand.
+Asset type: ONE new minimalist brand symbol / app icon for an autonomous AI Agent called Sela.
+Creative concept: "self-directed action". A geometric core is actively crossing the boundary of its own system. The viewer should feel an intelligent entity emerging to act.
+Design a highly authored, beautiful, compact symbol from exactly TWO bold solid shapes:
+1) a thick open rounded-square loop, almost an architectural continuous bent band, with a decisive diagonal opening toward the upper right; it must feel purposeful and slightly asymmetric, not a circular orbit.
+2) a small solid diamond / directional lozenge moving through that upper-right opening, separated from the loop by a crisp generous negative-space gap. Place the diamond so it bridges the inside and outside of the boundary without touching the band. The diamond is the autonomous core, not a decorative dot.
+The two parts must read together as a single iconic silhouette. Integrate their proportions, shared diagonal angle and rounded geometry into an original identity. The core is substantial, approximately 20 percent of overall symbol width; the loop is thick enough for legibility at 32px. The open square may have a subtle continuous twist in its two-dimensional silhouette, but keep it flat. Strong diagonal propulsion, clean cuts, intentional asymmetry. Avoid making a generic letter Q, letter C, magnifying glass, on/off button, share icon, upload arrow, navigation arrow or recycling icon. No arrow shaft, no arrowheads: the directional diamond alone implies motion.
+Visual language: elite contemporary tech identity, highly restrained, precise, sculptural through silhouette only. Flat solid near-black emblem on a solid warm off-white background. No shadows, no lighting, no texture, no gradients, no 3D, no outlines, no metallic or glass effects. One color must be sufficient.
+Composition: the square canvas is the actual app icon, full-bleed warm off-white to all four corners. Symbol optically centered, occupies 68 percent of width and 68 percent of height, ample calm margins. No rounded outer tile or surrounding border. No mockup, contact sheet or presentation.
+Text: none.
+Strict exclusions: no mascot, face, creature, robot, eye, pupil, phone, hand, cursor, bird or paperplane. No letter S ribbon. No AI sparkles, stars, radial sun, OpenAI-style interlaced knot, petals or infinity loop. Do not copy another company's logo. Deliver ONE compelling symbol with a clear original geometric logic.

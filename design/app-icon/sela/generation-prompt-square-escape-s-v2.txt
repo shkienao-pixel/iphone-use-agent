@@ -1,0 +1,13 @@
+Sela app icon — square escape S v2
+Created: 2026-10-24 (Asia/Shanghai)
+Mode: built-in image_gen
+User direction: a silky smooth S escaping an open square app frame.
+Selected output: fresh generation with a readable flowing S; two earlier edit drafts were not selected.
+Deliverable: sela-app-icon-square-escape-s-v2-1024.png
+Original: sela-app-icon-square-escape-s-v2-original.png
+Status: design proposal; existing app icon asset has not been replaced.
+
+Design one premium minimalist Sela app icon: a BEAUTIFUL SILKY LETTER S escaping from the upper-right corner of an open rounded-square frame.
+The S must be a clearly recognizable normal capital S, like a superbly drawn modern italic sans-serif S, with flowing continuous curves and balanced proportions. Smooth, clean, effortless. Its top terminal is at upper right and bottom terminal is at lower left, as in a normal letter S. Use substantial, gently modulated strokes and softly tapered terminals, not razor-thin crescents. Do not replace the S with smoke, an integral sign, stacked C shapes or an abstract squiggle.
+The rounded-square outline sits slightly lower left. A gap at its upper-right corner allows the S to emerge: lower half of the S is inside the square, upper half of the S extends above and right of it. Keep the S beautifully proportioned and readable, with clear space between the letter and the frame.
+Exactly two solid black forms, the square frame and the S, on a pure warm-white square background. Flat precise vector-style identity, confident restrained contemporary design. Centered composition with 15 percent margins. No texture, grain, gradient, shadow, 3D, extra symbols, dots, arrows, words, mockup or presentation. One finished app icon.

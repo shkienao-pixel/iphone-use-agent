@@ -1,0 +1,4 @@
+interface:
+  display_name: "iOS 联系人"
+  short_description: "查询已授权联系人，核对姓名号码并处理有限授权"
+  default_prompt: "使用 $ios-contacts 查询我指定的 iPhone 联系人，按真实回执报告授权范围内的姓名和联系方式。"

@@ -2,10 +2,11 @@ import SwiftUI
 import AppIntents
 import UniformTypeIdentifiers
 
-private enum SettingsPage: String, Hashable {
+enum SettingsPage: String, Hashable {
     case model = "模型连接", behavior = "执行偏好", floating = "动作浮窗"
     case siri = "Siri 与快捷指令", privacy = "隐私与数据", about = "使用说明"
-    case search = "联网检索"
+    case search = "联网检索", ctrip = "携程连接", performance = "运行与基准记录"
+    case notifications = "任务通知"
 }
 
 struct SettingsView: View {
@@ -13,6 +14,7 @@ struct SettingsView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @AppStorage(AgentTheme.storageKey) private var appearance = AgentTheme.system.rawValue
     var reviewPage: String? = nil
+    var focusedPage: SettingsPage? = nil
     @State private var path: [SettingsPage] = []
     let onBack: () -> Void
     @State private var apiKey = ""
@@ -34,20 +36,28 @@ struct SettingsView: View {
     }
     var body: some View {
         NavigationStack(path: $path) {
+            Group {
+            if let focusedPage {
+                detail(focusedPage)
+                    .navigationTitle(focusedPage.rawValue).navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("完成", action: onBack).accessibilityIdentifier("connection.done") }
+                    }
+            } else {
             ScrollView {
                 GlassEffectContainer(spacing: 8) {
                     VStack(alignment: .leading, spacing: 26) {
-                        settingsGroup("连接") {
-                            route(.model, subtitle: modelSummary, icon: "sparkles")
-                            groupDivider
-                            route(.search, subtitle: "服务、Key 与来源", icon: "globe")
-                        }
                         settingsGroup("助手") {
                             route(.behavior, subtitle: "行动节奏与确认方式", icon: "slider.horizontal.3")
                             groupDivider
                             route(.floating, subtitle: model.settings.autoPiPOnExit == true ? "离开时自动开启" : "在其他 App 中查看执行状态", icon: "pip")
                             groupDivider
+                            route(.notifications, subtitle: model.taskNotifications.status, icon: "bell.badge")
+                                .accessibilityIdentifier("settings.notifications")
+                            groupDivider
                             route(.siri, subtitle: "语音与快捷指令", icon: "waveform")
+                            groupDivider
+                            route(.performance, subtitle: "固定起点、查看与导出记录", icon: "chart.bar.xaxis")
                         }
                         settingsGroup("显示") {
                             HStack(spacing: 8) {
@@ -68,29 +78,33 @@ struct SettingsView: View {
                         Label("API Key 保存在这台设备的钥匙串", systemImage: "lock.shield")
                             .font(.caption).foregroundStyle(AgentPalette.secondaryText)
                             .padding(.horizontal, 16)
-                        GitHubSettingsFooter()
                     }.padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 28)
                 }
             }.background(AgentPalette.background)
                 .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
                 .navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(action: onBack) { Image(systemName: "xmark").frame(width: 32, height: 32) }.tint(.primary).accessibilityLabel("关闭设置")
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: onBack) { Image(systemName: "chevron.left").frame(width: 32, height: 32) }
+                            .tint(.primary).accessibilityLabel("返回上一页")
+                            .accessibilityIdentifier("settings.back")
                     }
                 }
+            }
+            }
             .navigationDestination(for: SettingsPage.self) { page in
                 detail(page)
                     .navigationTitle(page.rawValue).navigationBarTitleDisplayMode(.inline)
             }
         }
         .tint(AgentPalette.accent)
-        .fileExporter(isPresented: $exportingReceipts, document: receiptDocument, contentType: .json, defaultFilename: "Phone Agent 工具回执.json") { result in
+        .accessibilityIdentifier("settings.page")
+        .fileExporter(isPresented: $exportingReceipts, document: receiptDocument, contentType: .json, defaultFilename: "Sela 工具回执.json") { result in
             if case .failure(let failure) = result { receiptError = failure.localizedDescription }; receiptDocument = nil
         }
         .confirmationDialog("清除本机工具回执？", isPresented: $clearReceipts, titleVisibility: .visible) {
             Button("清除", role: .destructive) {
-                guard !model.engine.hasCurrentTask, !model.engine.releasing, model.taskQueue.pendingCount == 0 else { receiptError = "请先结束当前及队列中的可恢复任务"; return }
+                guard !model.engine.hasCurrentTask, !model.engine.releasing else { receiptError = "请先结束当前的可恢复任务"; return }
                 do { try model.tools.clearReceipts(); receiptError = "" } catch { receiptError = error.localizedDescription }
             }
         } message: { Text("不会删除系统里已创建的日程、提醒或闹钟。重复提交防护记录将删除；请先核对所有未确认结果。当前有可恢复任务时不能清理。") }
@@ -104,7 +118,7 @@ struct SettingsView: View {
             loadConnectionDraft()
             #if DEBUG
             if let reviewPage, path.isEmpty {
-                let pages: [String: SettingsPage] = ["model": .model, "behavior": .behavior, "floating": .floating, "siri": .siri, "privacy": .privacy, "about": .about, "search": .search]
+                let pages: [String: SettingsPage] = ["model": .model, "behavior": .behavior, "floating": .floating, "siri": .siri, "privacy": .privacy, "about": .about, "search": .search, "ctrip": .ctrip, "performance": .performance, "notifications": .notifications]
                 if let page = pages[reviewPage] { path = [page] }
             }
             #endif
@@ -128,7 +142,7 @@ struct SettingsView: View {
     private func route(_ page: SettingsPage, subtitle: String, icon: String) -> some View {
         NavigationLink(value: page) {
             HStack(spacing: 8) {
-                AgentSettingsRow(title: page.rawValue, subtitle: page == .model || page == .floating ? subtitle : "", icon: icon)
+                AgentSettingsRow(title: page.rawValue, subtitle: [.model, .floating, .notifications].contains(page) ? subtitle : "", icon: icon)
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary).accessibilityHidden(true)
             }.frame(minHeight: 72).contentShape(Rectangle())
@@ -142,6 +156,9 @@ struct SettingsView: View {
                     connection.disabled(locked || checking)
                         .onAppear { loadConnectionDraft() }
                 case .search: WebSearchSettingsView(embedded: true)
+                case .ctrip: CtripSettingsView()
+                case .performance: PerformanceReviewView()
+                case .notifications: TaskNotificationsView(notifications: model.taskNotifications)
                 case .behavior: preferences.disabled(locked)
                 case .floating: floatingWindow
                 case .siri: siri
@@ -166,11 +183,16 @@ struct SettingsView: View {
                         Text("服务商").font(.subheadline.weight(.medium))
                         Spacer()
                         Picker("服务商", selection: Binding(get: { providerSelection }, set: { chooseService($0) })) {
+                            Text("ChatGPT 计划").tag("chatgpt_plan")
                             Text("OpenAI").tag("openai")
                             Text("火山方舟").tag("ark")
                             Text("自定义接口").tag("custom")
-                        }.labelsHidden().pickerStyle(.menu)
+                        }.labelsHidden().pickerStyle(.menu).lineLimit(1)
+                            .accessibilityIdentifier("model.provider")
                     }
+                    if providerSelection == "chatgpt_plan" {
+                        ChatGPTPlanSettingsView()
+                    } else {
                     if providerSelection == "custom" {
                         field("服务商名称") {
                             TextField("例如：基元律动", text: Binding(get: { model.settings.providerName ?? "" }, set: { model.settings.providerName = $0 }), prompt: Text("例如：基元律动").foregroundStyle(AgentPalette.placeholder))
@@ -200,8 +222,10 @@ struct SettingsView: View {
                     }
                     Text("模型接口必须使用有效 HTTPS 地址。请填写完整的 Chat Completions URL。")
                         .font(.caption).foregroundStyle(AgentPalette.secondaryText)
+                    }
                 }.font(.subheadline)
             }
+            if providerSelection != "chatgpt_plan" {
             GlassEffectContainer(spacing: 12) {
                 let actionLayout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
                 actionLayout {
@@ -230,6 +254,7 @@ struct SettingsView: View {
                     }.font(.subheadline).padding(.top, 20)
                 }.font(.subheadline.weight(.medium))
             }
+            }
         }
     }
     private var preferences: some View {
@@ -238,19 +263,24 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("任务执行").font(.headline)
                     Toggle(isOn: $model.settings.confirmEachStep) {
-                        preferenceLabel("每一步先确认", value: "查看动作后，再决定是否执行")
+                        preferenceLabel("执行前逐项确认", value: "默认关闭：收到任务直接执行，可随时暂停或停止")
                     }.tint(AgentPalette.accent)
                     Divider()
                     Toggle(isOn: $model.settings.previewOnly) {
                         preferenceLabel("只生成计划", value: "观察一次，展示下一步建议")
                     }.tint(AgentPalette.accent)
+                    Divider()
+                    Toggle(isOn: Binding(get: { model.settings.runsContinuously }, set: { model.settings.continuousExecution = $0 })) {
+                        preferenceLabel("长任务模式", value: "不限行动步数，自动压缩上下文；可随时暂停或停止")
+                    }.tint(AgentPalette.accent)
+                    if !model.settings.runsContinuously {
+                        Stepper(value: $model.settings.maxSteps, in: 1...100) { preferenceLabel("最多行动", value: "\(model.settings.maxSteps) 步") }
+                    }
                 }
             }
             AgentCard {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("行动节奏").font(.headline)
-                    Stepper(value: $model.settings.maxSteps, in: 1...100) { preferenceLabel("最多行动", value: "\(model.settings.maxSteps) 步") }
-                    Divider()
                     Stepper(value: $model.settings.startDelay, in: 0...10, step: 1) { preferenceLabel("开始前等待", value: "\(Int(model.settings.startDelay)) 秒 · 留出切换 App 的时间") }
                     Divider()
                     Stepper(value: $model.settings.stepInterval, in: 0.5...5, step: 0.5) { preferenceLabel("动作间隔", value: String(format: "%.1f 秒", model.settings.stepInterval)) }
@@ -268,7 +298,7 @@ struct SettingsView: View {
             }
             DisclosureGroup("工具与状态显示") {
                 VStack(alignment: .leading, spacing: 18) {
-                    Toggle("实时活动展示任务状态", isOn: Binding(get: { model.settings.liveTaskStatus == true }, set: { model.settings.liveTaskStatus = $0 })).tint(AgentPalette.accent)
+                    Toggle("实时活动展示任务状态", isOn: Binding(get: { model.settings.liveTaskStatus != false }, set: { model.settings.liveTaskStatus = $0 })).tint(AgentPalette.accent)
                     Text("在锁屏与支持的灵动岛中显示步骤和状态，可暂停或停止当前任务；系统可能要求先认证设备。继续、补充和工具确认请回到 App。状态 60 秒未刷新时会提示核对；不增加后台执行时间。") .font(.caption).foregroundStyle(AgentPalette.secondaryText)
                     if !model.taskActivity.error.isEmpty { AgentNotice(text: model.taskActivity.error) }
                     Divider()
@@ -299,17 +329,16 @@ struct SettingsView: View {
     }
     private var siri: some View {
         VStack(alignment: .leading, spacing: 18) {
-            AgentPageIntro(title: "一句话，开始干活", subtitle: "嘿 Siri，让 Phone Agent 开始干活。", icon: "waveform")
+            AgentPageIntro(title: "一句话，开始干活", subtitle: "嘿 Siri，让 Sela 开始干活。", icon: "waveform")
             ShortcutsLink().shortcutsLinkStyle(.automaticOutline)
                 .frame(minHeight: AgentInputMetrics.height)
-            AgentHelp(title: "给常用任务设置口令", text: "添加“执行手机任务”，填入固定要求，再用你习惯的口令命名。也可以让 Siri 执行当前保存的任务，或说“停止 Phone Agent 的任务”。")
+            AgentHelp(title: "给常用任务设置口令", text: "添加“执行手机任务”，填入固定要求，再用你习惯的口令命名。也可以让 Siri 执行当前保存的任务，或说“停止 Sela 的任务”。")
             AgentHelp(title: "用语音输入任意任务", text: "先添加“听写文本”，再添加“执行手机任务”；把“任务”参数设为听写结果，并用你习惯的口令命名。说“嘿 Siri”加口令后，就能口述任务。画面、配件和校准就绪后才会开始，否则先完成系统整屏共享；语音请求最多等待 90 秒。")
-            AgentHelp(title: "任务中途暂停、接管与补充", text: "可以说：暂停 Phone Agent 的任务、接管 Phone Agent 的任务、给 Phone Agent 补充要求、继续 Phone Agent 的任务。补充先暂停再听写，加入要求后等待继续；恢复会重新观察当前画面。Phone Agent 无法在其他 App 中常驻监听“豆包豆包”，请用 Siri 口令唤起；App 前台听写时可直接说控制词。")
-            AgentHelp(title: "用语音安排任务队列", text: "快捷指令动作包括“将手机任务加入队列”“优先执行手机任务”“运行手机任务队列”。优先任务收到参数后才暂停原任务；需要先暂停再听写时，先添加“暂停手机任务”。")
+            AgentHelp(title: "任务中途暂停、接管与补充", text: "可以说：暂停 Sela 的任务、接管 Sela 的任务、给 Sela 补充要求、继续 Sela 的任务。补充先暂停再听写，加入要求后等待继续；恢复会重新观察当前画面。Sela 无法在其他 App 中常驻监听“豆包豆包”，请用 Siri 口令唤起；App 前台听写时可直接说控制词。")
             DisclosureGroup("设置你习惯的唤醒名字") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("系统设置 → 辅助功能 → 人声快捷指令，选择“语音告诉助手”或对应 Siri 请求，输入“助手助手”并按系统提示训练。")
-                    Text("也可分别为暂停、接管、补充和继续设置短语。先等唤醒回应再说内容；这些入口需要解锁，并可能打开 Phone Agent。")
+                    Text("也可分别为暂停、接管、补充和继续设置短语。先等唤醒回应再说内容；这些入口需要解锁，并可能打开 Sela。")
                     Link("查看苹果设置说明", destination: URL(string: "https://support.apple.com/zh-hans/guide/iphone/iph7f242ea2c/ios")!).frame(minHeight: 44)
                 }.font(.footnote).foregroundStyle(AgentPalette.secondaryText).padding(.top, 12)
             }.font(.subheadline).agentPanel()
@@ -325,7 +354,7 @@ struct SettingsView: View {
                     Label(model.consentReady ? "已授权当前服务" : "尚未授权", systemImage: "hand.raised")
                         .font(.headline)
                     Text(PrivacyConsent.recipient(model.settings)).font(.title3.weight(.medium))
-                    Text("AI 会接收你同意发送的画面、任务、问题、转写或文件文字及相关记录。使用记忆和系统工具时，依其开关与逐项确认发送。")
+                    Text("AI 会接收你同意发送的画面、任务、问题、转写或文件文字及相关记录。记忆和系统工具依其开关及当前执行模式使用；自动模式直接处理明确任务，只有主动开启逐项审核时才逐次确认。")
                         .font(.subheadline).foregroundStyle(AgentPalette.secondaryText)
                     Button("查看数据使用说明") { model.showPrivacyPolicy = true }.frame(minHeight: 44)
                     if model.consentReady {
@@ -345,13 +374,13 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("本机保存提交记录用于防止同一任务重复创建；它独立于任务历史。清理前请核对系统中的实际结果。") .font(.caption).foregroundStyle(AgentPalette.secondaryText)
                             Button("导出工具回执") { do { receiptDocument = ArtifactDocument(data: try model.tools.exportReceipts()); exportingReceipts = true } catch { receiptError = error.localizedDescription } }.frame(minHeight: 44)
-                            Button("清除工具回执", role: .destructive) { clearReceipts = true }.frame(minHeight: 44).disabled(model.engine.hasCurrentTask || model.engine.releasing || model.taskQueue.pendingCount > 0)
+                            Button("清除工具回执", role: .destructive) { clearReceipts = true }.frame(minHeight: 44).disabled(model.engine.hasCurrentTask || model.engine.releasing)
                             if !receiptError.isEmpty { AgentNotice(text: receiptError, error: true) }
                             if !model.tools.error.isEmpty { AgentNotice(text: model.tools.error, error: true) }
                         }.padding(.top, 12)
                     }
                     Button("清除任务历史", role: .destructive) { clearHistory = true }
-                        .foregroundStyle(.red).frame(minHeight: 44).disabled(model.history.records.isEmpty || model.engine.running || model.engine.releasing || !model.taskQueue.items.isEmpty)
+                        .foregroundStyle(.red).frame(minHeight: 44).disabled(model.history.records.isEmpty || model.engine.running || model.engine.releasing)
                     Text("删除本机记录不会删除服务商已接收的数据。")
                         .font(.caption).foregroundStyle(AgentPalette.secondaryText)
                 }
@@ -388,6 +417,7 @@ struct SettingsView: View {
         }
     }
     private var inferredService: String {
+        if model.settings.usesChatGPTPlan { return "chatgpt_plan" }
         let host = URLComponents(string: model.settings.endpoint)?.host ?? ""
         if host == "api.openai.com" { return "openai" }
         if host == "ark.cn-beijing.volces.com" { return "ark" }
@@ -396,16 +426,25 @@ struct SettingsView: View {
     private func loadConnectionDraft() {
         // The destination may appear independently of the settings root (for
         // example a Debug review route). Populate its local draft when visible.
-        apiKey = SettingsStore.apiKey(for: model.settings.endpoint)
+        apiKey = model.settings.usesChatGPTPlan ? "" : SettingsStore.apiKey(for: model.settings.endpoint)
         providerSelection = inferredService
     }
     private func chooseService(_ value: String) {
         guard value != providerSelection else { return }
         providerSelection = value; advancedConnection = false; connectionMessage = ""
+        let wasPlan = model.settings.usesChatGPTPlan
+        if value == "chatgpt_plan" {
+            model.settings.modelAuthentication = "chatgpt_plan"
+            model.settings.endpoint = ChatGPTPlanProtocol.endpoint
+            model.settings.providerName = "ChatGPT 计划"
+            model.settings.jsonMode = true; model.settings.legacyTokenLimit = false
+            apiKey = ""; return
+        }
+        model.settings.modelAuthentication = nil
         switch value {
         case "openai":
             model.settings.endpoint = "https://api.openai.com/v1/chat/completions"
-            model.settings.model = "gpt-4.1-mini"; model.settings.providerName = nil
+            if !wasPlan { model.settings.model = "gpt-4.1-mini" }; model.settings.providerName = nil
             model.settings.jsonMode = true; model.settings.legacyTokenLimit = false
         case "ark":
             model.settings.endpoint = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
@@ -414,7 +453,8 @@ struct SettingsView: View {
         default:
             model.settings.endpoint = ""; model.settings.model = ""; model.settings.providerName = nil
         }
-        apiKey = ""; model.saveKey("")
+        if wasPlan { apiKey = SettingsStore.apiKey(for: model.settings.endpoint) }
+        else { apiKey = ""; model.saveKey("") }
     }
     private func checkConnection() {
         checking = true; connectionMessage = ""

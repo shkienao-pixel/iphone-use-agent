@@ -11,7 +11,11 @@ import Foundation
     init(capture: CaptureService, stream: UUID, result: Result) {
         self.capture = capture; self.stream = stream; self.result = result
     }
-    func context(for frame: ScreenFrame) async throws -> String { "offline harness" }
+    var contextFailure: WorkflowLeaseFailure.Predicate?
+    func context(for frame: ScreenFrame) async throws -> String {
+        if let contextFailure { throw WorkflowLeaseFailure(predicates: [contextFailure]) }
+        return "offline harness"
+    }
     func didExecute(_ action: AgentAction, frame: ScreenFrame) async {}
     func execute(_ request: PhoneHarnessRequest, frame: ScreenFrame, mappedHome: Bool,
                  nextFrame: @escaping @MainActor (Date) async throws -> ScreenFrame) async throws -> PhoneHarnessReceipt {
@@ -52,7 +56,7 @@ import Foundation
                 capture.frozenFrame = ScreenFrame(captureID: stream)
             }
             var config = AgentSettings()
-            config.startDelay = 0; config.stepInterval = 1; config.maxSteps = 2
+            config.startDelay = 0; config.stepInterval = 1; config.maxSteps = 2; config.continuousExecution = false
             PrivacyConsent.grant(config)
             engine.start(task: "Reuse the locally verified screen", settings: config)
             let deadline = Date().addingTimeInterval(5)
@@ -71,6 +75,28 @@ import Foundation
                 expect(harness.wakeupsBeforeNextObservation > 0,
                        "Expired, wrong-stream or partially executed receipts must reacquire a frame")
             }
+        }
+        for predicate in [WorkflowLeaseFailure.Predicate.currentPixelsMatch, .connectionGenerationMatches] {
+            let capture = CaptureService(), executor = MouseExecutor(), stream = UUID()
+            capture.frameProvider = { ScreenFrame(captureID: stream) }
+            let harness = ReceiptHarness(capture: capture, stream: stream, result: .verified)
+            harness.contextFailure = predicate
+            let engine = AgentEngine(capture: capture, executor: executor); engine.phoneHarness = harness
+            ModelProbe.calls = 0; ModelProbe.delay = 0
+            ModelProbe.action = AgentAction(kind: .finish, reason: "Inspect only")
+            var config = AgentSettings(); config.startDelay = 0; config.maxSteps = 1
+            PrivacyConsent.grant(config); engine.start(task: "Inspect current screenshot", settings: config)
+            let deadline = Date().addingTimeInterval(5)
+            while !engine.executionSettled && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+            PrivacyConsent.revoke()
+            expect(engine.executionSettled, "Context failure must settle within a bounded attempt")
+            if predicate == .currentPixelsMatch {
+                expect(ModelProbe.calls == 1 && engine.phase == .completed, "Pixel-only OCR drift may fall back to the actual screenshot")
+                expect(engine.logs.contains { $0.title == "改用当前截图" }, "Discarded OCR fallback must be explicit")
+            } else {
+                expect(ModelProbe.calls == 0 && engine.phase == .failed, "Connection identity changes must never use screenshot fallback")
+            }
+            expect(executor.actions.isEmpty, "Read-only fallback must not create input")
         }
         print("\(checks) production engine receipt-reuse checks passed; offline frames/model/input only.")
     }

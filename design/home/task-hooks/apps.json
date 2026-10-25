@@ -1,0 +1,65 @@
+{
+  "source": "Apple App Store published app artwork",
+  "apps": {
+    "meituan": {
+      "name": "美团外卖",
+      "appStoreId": 737310995,
+      "publisher": "美团",
+      "storeTitle": "美团外卖-外卖订餐,送啥都快",
+      "storeUrl": "https://apps.apple.com/cn/app/%E7%BE%8E%E5%9B%A2%E5%A4%96%E5%8D%96-%E5%A4%96%E5%8D%96%E8%AE%A2%E9%A4%90-%E9%80%81%E5%95%A5%E9%83%BD%E5%BF%AB/id737310995?uo=4",
+      "lookupUrl": "https://itunes.apple.com/lookup?id=737310995&country=cn",
+      "artworkUrl": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/54/89/be/5489beb2-972f-d1bd-a72a-eac846764bce/AppIcon-0-0-1x_U007epad-0-1-0-sRGB-85-220.png/100x100bb.jpg",
+      "icon": "icons/meituan.jpg",
+      "sha256": "f82ca80b4742905dec8780698b51c62d711b12e985276794b48edea2130699b0",
+      "retrievedOn": "2026-10-24"
+    },
+    "ctrip": {
+      "name": "携程旅行",
+      "appStoreId": 379395415,
+      "publisher": "Shanghai Ctrip Commerce Co.,Ltd",
+      "storeTitle": "携程旅行-订酒店机票火车票",
+      "storeUrl": "https://apps.apple.com/cn/app/%E6%90%BA%E7%A8%8B%E6%97%85%E8%A1%8C-%E8%AE%A2%E9%85%92%E5%BA%97%E6%9C%BA%E7%A5%A8%E7%81%AB%E8%BD%A6%E7%A5%A8/id379395415?uo=4",
+      "lookupUrl": "https://itunes.apple.com/lookup?id=379395415&country=cn",
+      "artworkUrl": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/84/db/76/84db76ef-21d7-d29b-c79c-cb8d0f294946/AppIcon-0-0-1x_U007emarketing-0-5-0-85-220.png/100x100bb.jpg",
+      "icon": "icons/ctrip.jpg",
+      "sha256": "70191d2b1f1af042b6d30edede48b62b3fb8661ae9cb6edfdf456c1b080dbff1",
+      "retrievedOn": "2026-10-24"
+    },
+    "wechat": {
+      "name": "微信",
+      "appStoreId": 414478124,
+      "publisher": "WeChat",
+      "storeTitle": "微信",
+      "storeUrl": "https://apps.apple.com/cn/app/%E5%BE%AE%E4%BF%A1/id414478124?uo=4",
+      "lookupUrl": "https://itunes.apple.com/lookup?id=414478124&country=cn",
+      "artworkUrl": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/84/6b/3a/846b3ab8-9dea-e3e5-861e-f6ecaa0b3387/AppIcon-0-0-1x_U007epad-0-1-0-sRGB-0-0-85-220.png/100x100bb.jpg",
+      "icon": "icons/wechat.jpg",
+      "sha256": "b085b6624681cce25e70aa16d19a50565938094fa1a339662b4311d7156e2e45",
+      "retrievedOn": "2026-10-24"
+    },
+    "xiaohongshu": {
+      "name": "小红书",
+      "appStoreId": 741292507,
+      "publisher": "Xingin",
+      "storeTitle": "小红书 - 你的生活兴趣社区",
+      "storeUrl": "https://apps.apple.com/cn/app/%E5%B0%8F%E7%BA%A2%E4%B9%A6-%E4%BD%A0%E7%9A%84%E7%94%9F%E6%B4%BB%E5%85%B4%E8%B6%A3%E7%A4%BE%E5%8C%BA/id741292507?uo=4",
+      "lookupUrl": "https://itunes.apple.com/lookup?id=741292507&country=cn",
+      "artworkUrl": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/4f/54/88/4f54884e-c820-aa94-5797-c6b69c27ed3a/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/100x100bb.jpg",
+      "icon": "icons/xiaohongshu.jpg",
+      "sha256": "3851bf3c30cac3eba45ea59a03b527e1c1aa2b95a2c5ac1a19cd237cc8246a5a",
+      "retrievedOn": "2026-10-24"
+    },
+    "clock": {
+      "name": "时钟",
+      "appStoreId": 1584215688,
+      "publisher": "Apple",
+      "storeTitle": "Clock",
+      "storeUrl": "https://apps.apple.com/cn/app/clock/id1584215688?uo=4",
+      "lookupUrl": "https://itunes.apple.com/lookup?id=1584215688&country=cn",
+      "artworkUrl": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/c0/8e/d2/c08ed244-21b1-9bce-7199-2417712ae123/clockCalistoga-0-0-1x_U007epad-0-1-0-85-220.png/100x100bb.jpg",
+      "icon": "icons/clock.jpg",
+      "sha256": "bb9f4d1defc4a0d78befeba2dee1673ae20d95172560b77b2bf4628256061b76",
+      "retrievedOn": "2026-10-24"
+    }
+  }
+}

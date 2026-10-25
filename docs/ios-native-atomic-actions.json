@@ -1,0 +1,462 @@
+{
+  "schemaVersion": 1,
+  "scope": "Authoring and review index; not additional tools or execution authorization",
+  "skills": [
+    {
+      "skill": "ios-alarm",
+      "path": "Skills/ios-alarm/SKILL.md",
+      "bodySHA256": "0b52d3bd709c65346f490c0bdbc09c70567c63c6e61abd6bdcbc81a118b35a39",
+      "utf8Bytes": 4535,
+      "atomicSteps": [
+        {
+          "id": "A01",
+          "responsibility": "明确一次响铃时间",
+          "inputAndCompletionEvidence": "标题、设备日期和时区；时间在未来且少于366天",
+          "failureOrUnknownHandling": "真正缺少时间才澄清，不改为循环"
+        },
+        {
+          "id": "A02",
+          "responsibility": "确认能力与授权",
+          "inputAndCompletionEvidence": "仅Sela自己的闹钟，依据实际系统授权状态",
+          "failureOrUnknownHandling": "权限错误不记为闹钟数量0"
+        },
+        {
+          "id": "A03",
+          "responsibility": "查询实际列表",
+          "inputAndCompletionEvidence": "`alarm_list`；保留实际ID、计划与系统状态",
+          "failureOrUnknownHandling": "总数与前20项分开，截断不能当作全部"
+        },
+        {
+          "id": "A04",
+          "responsibility": "创建一个闹钟",
+          "inputAndCompletionEvidence": "`alarm_create` 一次，取得实际ID和计划瞬时",
+          "failureOrUnknownHandling": "未知提交不换标题、时间或任务重建"
+        },
+        {
+          "id": "A05",
+          "responsibility": "按需核对计划",
+          "inputAndCompletionEvidence": "用实际ID与时间核对；数字日期先辨明2001参考纪元",
+          "failureOrUnknownHandling": "scheduled只证明已安排，不能证明已响铃"
+        },
+        {
+          "id": "A06",
+          "responsibility": "呈现结果卡片",
+          "inputAndCompletionEvidence": "宿主从同次真实回执展示大号时间、日期、标题与创建结果",
+          "failureOrUnknownHandling": "不添加没有执行能力的开关，不把历史卡片当作仍启用"
+        },
+        {
+          "id": "A07",
+          "responsibility": "区分到点证据",
+          "inputAndCompletionEvidence": "系统告警界面、SDK状态和实际声音分别核验",
+          "failureOrUnknownHandling": "操作员停止测试闹钟不算Agent具有停止工具"
+        }
+      ]
+    },
+    {
+      "skill": "ios-calendar",
+      "path": "Skills/ios-calendar/SKILL.md",
+      "bodySHA256": "9fb67c363735aa2fcb25355c05f278b90adeb9c3f89c34fa1e6ecee704c8ee41",
+      "utf8Bytes": 4610,
+      "atomicSteps": [
+        {
+          "id": "C01",
+          "responsibility": "明确时间",
+          "inputAndCompletionEvidence": "用户安排、设备日期与时区；得到起止瞬时，结束晚于开始",
+          "failureOrUnknownHandling": "只补齐真正缺少的时间，不猜时长"
+        },
+        {
+          "id": "C02",
+          "responsibility": "确定目标",
+          "inputAndCompletionEvidence": "明确的日历名称或允许使用默认日历；目标须存在且可写",
+          "failureOrUnknownHandling": "不存在、只读或同名歧义就停止，不换目标"
+        },
+        {
+          "id": "C03",
+          "responsibility": "查询与查重",
+          "inputAndCompletionEvidence": "`calendar_search`；核对范围、完整标题、起止时间和所属日历",
+          "failureOrUnknownHandling": "截断时不能据此断言目标不存在"
+        },
+        {
+          "id": "C04",
+          "responsibility": "创建一个事件",
+          "inputAndCompletionEvidence": "`calendar_create` 一次；实际完成回执含标题、起止时间、日历和回执身份",
+          "failureOrUnknownHandling": "未知提交保留回执，不能自动再建"
+        },
+        {
+          "id": "C05",
+          "responsibility": "核对实际对象",
+          "inputAndCompletionEvidence": "任务要求核对或处理旧提交时，再查询准确范围与标题",
+          "failureOrUnknownHandling": "同名但时间或日历不同不能算同一对象"
+        },
+        {
+          "id": "C06",
+          "responsibility": "呈现并保存",
+          "inputAndCompletionEvidence": "宿主从同次真实回执生成日历卡片，`finish.text` 说明结果",
+          "failureOrUnknownHandling": "计划、失败和未知不能呈现为创建成功"
+        }
+      ]
+    },
+    {
+      "skill": "ios-contacts",
+      "path": "Skills/ios-contacts/SKILL.md",
+      "bodySHA256": "7ee977817a312181ff8fe024204e0528dea014f473aa1d3bf18492508906181f",
+      "utf8Bytes": 3331,
+      "atomicSteps": [
+        {
+          "id": "C01",
+          "responsibility": "明确查找对象",
+          "inputAndCompletionEvidence": "用户提供的姓名；仅查询需要的对象",
+          "failureOrUnknownHandling": "真正有同名歧义才补充身份线索"
+        },
+        {
+          "id": "C02",
+          "responsibility": "确认授权范围",
+          "inputAndCompletionEvidence": "实际完整、有限或拒绝权限",
+          "failureOrUnknownHandling": "拒绝不是查无此人，有限授权不是整个通讯录"
+        },
+        {
+          "id": "C03",
+          "responsibility": "查询一次",
+          "inputAndCompletionEvidence": "`contact_search`，取得真实匹配数、返回项与截断状态",
+          "failureOrUnknownHandling": "不发明反查或读取全部联系人能力"
+        },
+        {
+          "id": "C04",
+          "responsibility": "核对并消歧",
+          "inputAndCompletionEvidence": "各人的姓名、组织、电话、邮箱保持对应",
+          "failureOrUnknownHandling": "不合并不同人的号码，不凭尾号认定同一人"
+        },
+        {
+          "id": "C05",
+          "responsibility": "呈现结果",
+          "inputAndCompletionEvidence": "使用真实结果卡片与报告，只展示需要的信息",
+          "failureOrUnknownHandling": "返回联系方式不等于已拨号、已发消息或已联系"
+        }
+      ]
+    },
+    {
+      "skill": "ios-content",
+      "path": "Skills/ios-content/SKILL.md",
+      "bodySHA256": "3e286e3588f3913ab3cd05f7bfeae58e85c90aee3ff08b1697d29bc044d76b6d",
+      "utf8Bytes": 4677,
+      "atomicSteps": [
+        {
+          "id": "F01",
+          "responsibility": "固定精确原文",
+          "inputAndCompletionEvidence": "标题、完整文本及边界；校验长度、Unicode与末尾换行",
+          "failureOrUnknownHandling": "不润色、补写或静默裁切"
+        },
+        {
+          "id": "F02",
+          "responsibility": "保存一份本机内容",
+          "inputAndCompletionEvidence": "`content_create`一次，取得完整artifact_ref与统计",
+          "failureOrUnknownHandling": "容量不足保留旧内容，未知结果不换标题重建"
+        },
+        {
+          "id": "F03",
+          "responsibility": "关联真实引用",
+          "inputAndCompletionEvidence": "原回执的content:UUID:SHA256全部内容",
+          "failureOrUnknownHandling": "不缩写、猜编号或借用其他内容的引用"
+        },
+        {
+          "id": "F04",
+          "responsibility": "准备一次剪贴板",
+          "inputAndCompletionEvidence": "用户需要时调用`content_prepare_clipboard`，实际全文回读",
+          "failureOrUnknownHandling": "不声称目标输入框已聚焦、已粘贴或已发送"
+        },
+        {
+          "id": "F05",
+          "responsibility": "查询当前准备状态",
+          "inputAndCompletionEvidence": "`content_status`；分清last_preparation与current_session_lease",
+          "failureOrUnknownHandling": "历史prepared不等于当前有效，重启不恢复旧租约"
+        },
+        {
+          "id": "F06",
+          "responsibility": "呈现并保存",
+          "inputAndCompletionEvidence": "宿主从真实回执生成本机内容卡片，报告实际完成阶段",
+          "failureOrUnknownHandling": "不冒充系统备忘录或已导出的系统文件"
+        },
+        {
+          "id": "F07",
+          "responsibility": "恢复与核对",
+          "inputAndCompletionEvidence": "沿用本任务已核验的完整引用和保存账本",
+          "failureOrUnknownHandling": "缺失或未知项保留未知，不自动再粘贴或重复创建"
+        }
+      ]
+    },
+    {
+      "skill": "ios-health",
+      "path": "Skills/ios-health/SKILL.md",
+      "bodySHA256": "6b99566d0d7071dc6dcb9ab9ba6eb20e5042809bbf63d6ce8c5ee226ff780c85",
+      "utf8Bytes": 5894,
+      "atomicSteps": [
+        {
+          "id": "H01",
+          "responsibility": "固定范围与类型",
+          "inputAndCompletionEvidence": "明确时区、起止范围及steps/sleep/workouts",
+          "failureOrUnknownHandling": "不猜日期；汇总时先核对区间是否重叠"
+        },
+        {
+          "id": "H02",
+          "responsibility": "确认读取条件",
+          "inputAndCompletionEvidence": "Sela前台、宿主工具和实际授权流程",
+          "failureOrUnknownHandling": "权限错误与空结果分开，不循环请求"
+        },
+        {
+          "id": "H03",
+          "responsibility": "读取一个范围的一类数据",
+          "inputAndCompletionEvidence": "`health_query`一次，取得真实HealthKit回执",
+          "failureOrUnknownHandling": "保留失败或未知，不重复读取来补计数"
+        },
+        {
+          "id": "H04",
+          "responsibility": "解释可见结果",
+          "inputAndCompletionEvidence": "核对来源、范围、覆盖与截断；区分null和数值0",
+          "failureOrUnknownHandling": "空结果不能证明没有记录或没有授权"
+        },
+        {
+          "id": "H05",
+          "responsibility": "记录完成身份",
+          "inputAndCompletionEvidence": "使用本任务已保存的真实完成元数据核对数量和完整区间",
+          "failureOrUnknownHandling": "缺失或旧元数据不按计划补齐，不跨任务借用"
+        },
+        {
+          "id": "H06",
+          "responsibility": "按实际源值汇总",
+          "inputAndCompletionEvidence": "只计算已取得且类型、单位、范围明确的数值",
+          "failureOrUnknownHandling": "元数据摘要不能还原健康值；卧床不能当已睡时长"
+        },
+        {
+          "id": "H07",
+          "responsibility": "呈现并保存",
+          "inputAndCompletionEvidence": "宿主显示真实结果卡片，报告覆盖与空结果限制",
+          "failureOrUnknownHandling": "未知时长不能显示0，不生成医学结论"
+        }
+      ]
+    },
+    {
+      "skill": "ios-location",
+      "path": "Skills/ios-location/SKILL.md",
+      "bodySHA256": "e9859abcea6df30673f45d2a6e0608ea3b308a524b89bd1fe37aabbc1cb9452f",
+      "utf8Bytes": 2811,
+      "atomicSteps": [
+        {
+          "id": "L01",
+          "responsibility": "确认需求",
+          "inputAndCompletionEvidence": "单次前台大致位置，明确本次用途",
+          "failureOrUnknownHandling": "不扩展成持续追踪、反查地址或导航"
+        },
+        {
+          "id": "L02",
+          "responsibility": "确认读取条件",
+          "inputAndCompletionEvidence": "Sela前台与实际系统授权流程",
+          "failureOrUnknownHandling": "通用权限错误不能断言某个具体开关状态"
+        },
+        {
+          "id": "L03",
+          "responsibility": "获取一次样本",
+          "inputAndCompletionEvidence": "`location_current`，取得真实CoreLocation回执",
+          "failureOrUnknownHandling": "取消或超时后结束等待，迟到回调不能恢复任务"
+        },
+        {
+          "id": "L04",
+          "responsibility": "核对新鲜度与精度",
+          "inputAndCompletionEvidence": "实际timestamp、accuracy_metres和approximate",
+          "failureOrUnknownHandling": "旧样本不算本次结果，精度值不是门牌准确率保证"
+        },
+        {
+          "id": "L05",
+          "responsibility": "呈现结果",
+          "inputAndCompletionEvidence": "宿主显示本次位置卡片，只报告所需粒度",
+          "failureOrUnknownHandling": "不编造地址、零坐标或更高精度，不暴露到通用skill"
+        }
+      ]
+    },
+    {
+      "skill": "ios-music",
+      "path": "Skills/ios-music/SKILL.md",
+      "bodySHA256": "491eac3a6ca8d8c9841fcf7e2f60b56cb0a9230dc18d86caeab9e231b5bf2f2d",
+      "utf8Bytes": 3112,
+      "atomicSteps": [
+        {
+          "id": "M01",
+          "responsibility": "确认授权与目标",
+          "inputAndCompletionEvidence": "已授权本机音乐资料库、歌曲或艺术家条件",
+          "failureOrUnknownHandling": "不自行购买、订阅、下载或扩大范围"
+        },
+        {
+          "id": "M02",
+          "responsibility": "搜索一次",
+          "inputAndCompletionEvidence": "`music_search`，保留实际持久ID、标题、数量及截断",
+          "failureOrUnknownHandling": "空结果不代表在线曲库没有该歌"
+        },
+        {
+          "id": "M03",
+          "responsibility": "播放一首",
+          "inputAndCompletionEvidence": "`music_play`使用同一搜索结果的ID和标题",
+          "failureOrUnknownHandling": "不猜ID；不匹配或移除先核对，不能盲目重播"
+        },
+        {
+          "id": "M04",
+          "responsibility": "控制一个状态",
+          "inputAndCompletionEvidence": "`music_pause`或`music_resume`各一次",
+          "failureOrUnknownHandling": "无队列不能称恢复成功，不能控制其他App"
+        },
+        {
+          "id": "M05",
+          "responsibility": "查询并判断实际状态",
+          "inputAndCompletionEvidence": "`music_status`及真实state/confirmed/queue_owner/track",
+          "failureOrUnknownHandling": "未确认、停止、中断或未知不能说已经播放"
+        },
+        {
+          "id": "M06",
+          "responsibility": "呈现结果",
+          "inputAndCompletionEvidence": "宿主按实际回执展示音乐卡片，报告真实状态",
+          "failureOrUnknownHandling": "原生命令或播放状态不证明扬声器实际发声"
+        }
+      ]
+    },
+    {
+      "skill": "ios-notes",
+      "path": "Skills/ios-notes/SKILL.md",
+      "bodySHA256": "e2b8c4fd8480e909bb2fcffda3a231ddcea376fe9bf418fef01d49f28dab905f",
+      "utf8Bytes": 5673,
+      "atomicSteps": [
+        {
+          "id": "N01",
+          "responsibility": "固定标题与原文",
+          "inputAndCompletionEvidence": "保留完整Unicode、换行和文本边界，校验长度",
+          "failureOrUnknownHandling": "不润色、补写或静默裁切"
+        },
+        {
+          "id": "N02",
+          "responsibility": "确定本机helper与目标",
+          "inputAndCompletionEvidence": "已配置快捷指令和默认或明确目标文件夹",
+          "failureOrUnknownHandling": "缺少配置或目标不符就停止，不换文件夹"
+        },
+        {
+          "id": "N03",
+          "responsibility": "提交一条创建",
+          "inputAndCompletionEvidence": "宿主先保存待核对回执，再发出一次`notes_create`",
+          "failureOrUnknownHandling": "已交给系统的提交不能因取消而承诺撤回"
+        },
+        {
+          "id": "N04",
+          "responsibility": "等待系统交接与回传",
+          "inputAndCompletionEvidence": "关联同一次快捷指令回传，不重复提交",
+          "failureOrUnknownHandling": "首次系统授权等待单列；停止后不恢复旧任务"
+        },
+        {
+          "id": "N05",
+          "responsibility": "核对回传原文",
+          "inputAndCompletionEvidence": "真实callbackID、completed和原文一致标记",
+          "failureOrUnknownHandling": "缺回传、超时或原文不符保留未知，不自动重建"
+        },
+        {
+          "id": "N06",
+          "responsibility": "呈现并保存",
+          "inputAndCompletionEvidence": "宿主绑定同一次callbackID生成卡片，显示标题与配置目标",
+          "failureOrUnknownHandling": "配置目标不能冒充系统文件夹或云同步已核对"
+        },
+        {
+          "id": "N07",
+          "responsibility": "长任务恢复与索引",
+          "inputAndCompletionEvidence": "仅使用本任务已识别的实际完成回传及输入摘要",
+          "failureOrUnknownHandling": "无身份或无效项保留未知，不能按计划标题补齐"
+        }
+      ]
+    },
+    {
+      "skill": "ios-photos",
+      "path": "Skills/ios-photos/SKILL.md",
+      "bodySHA256": "67bfbaf15a38da038d3e712bf3f22aea20ab67de74d36a3a3da1995973821070",
+      "utf8Bytes": 3353,
+      "atomicSteps": [
+        {
+          "id": "P01",
+          "responsibility": "固定查询条件",
+          "inputAndCompletionEvidence": "带时区的日期范围和可选文件名",
+          "failureOrUnknownHandling": "不把文件名当作人物或画面识别条件"
+        },
+        {
+          "id": "P02",
+          "responsibility": "确认可见授权",
+          "inputAndCompletionEvidence": "实际完整、有限或拒绝照片权限",
+          "failureOrUnknownHandling": "不自动扩大授权，不把有限零结果当全库不存在"
+        },
+        {
+          "id": "P03",
+          "responsibility": "查询一次元数据",
+          "inputAndCompletionEvidence": "`photo_search`，核对file/date/size/type与数量",
+          "failureOrUnknownHandling": "只扫描至多1000项，返回至多20项；限制必须保留"
+        },
+        {
+          "id": "P04",
+          "responsibility": "判断覆盖与分段",
+          "inputAndCompletionEvidence": "结合可见范围、扫描上限和truncated解释结果",
+          "failureOrUnknownHandling": "truncated=false也不单独证明超大图库查全"
+        },
+        {
+          "id": "P05",
+          "responsibility": "呈现结果",
+          "inputAndCompletionEvidence": "宿主展示照片资料卡片，报告实际元数据和覆盖",
+          "failureOrUnknownHandling": "不声称已读像素、OCR、人物或视频内容"
+        }
+      ]
+    },
+    {
+      "skill": "ios-reminders",
+      "path": "Skills/ios-reminders/SKILL.md",
+      "bodySHA256": "e0b90c7790025177d69a991f0e5a7bda9f9405d610321f44f291b4084c18d77f",
+      "utf8Bytes": 5049,
+      "atomicSteps": [
+        {
+          "id": "R01",
+          "responsibility": "明确事项和可选时间",
+          "inputAndCompletionEvidence": "保留完整标题；指定时间转为带时区瞬时，没有时间就省略",
+          "failureOrUnknownHandling": "不自行增加到期时间"
+        },
+        {
+          "id": "R02",
+          "responsibility": "确定列表",
+          "inputAndCompletionEvidence": "用户指定名称或允许默认列表；目标存在且可写",
+          "failureOrUnknownHandling": "目标不存在、只读或歧义就停止"
+        },
+        {
+          "id": "R03",
+          "responsibility": "查询与查重",
+          "inputAndCompletionEvidence": "`reminder_search`，分别核对标题、列表、到期与完成状态",
+          "failureOrUnknownHandling": "返回截断或同名不同列表不能证明已完成或不存在"
+        },
+        {
+          "id": "R04",
+          "responsibility": "创建一条提醒",
+          "inputAndCompletionEvidence": "`reminder_create` 一次；取得真实保存回执",
+          "failureOrUnknownHandling": "结果未知不换标题或列表重建"
+        },
+        {
+          "id": "R05",
+          "responsibility": "回读实际状态",
+          "inputAndCompletionEvidence": "任务要求核对或恢复旧提交时查询；使用实际到期字段",
+          "failureOrUnknownHandling": "未返回时间不能编造时间，返回号码不冒充系统对象ID"
+        },
+        {
+          "id": "R06",
+          "responsibility": "呈现并保存",
+          "inputAndCompletionEvidence": "宿主从真实回执生成提醒事项卡片，报告实际结果",
+          "failureOrUnknownHandling": "无成功回执不显示已添加；历史卡片不是当前状态"
+        }
+      ]
+    }
+  ],
+  "skillCount": 10,
+  "atomicStepCount": 61,
+  "currentPhoneGuideVersion": 135,
+  "newAtomicGuidesInstalled": true,
+  "generatedAt": "2026-10-25T13:49:39.294541+00:00",
+  "actualRuntimeGuideLoadStillPending": true,
+  "actualFullyVisibleRuntimeReceipts": 6,
+  "allTenPackagedGuidesExactSourceMatched": true,
+  "scopeProbeBusinessAcceptance": true,
+  "scopeProbeEvidence": "output/ios-native-longrun-20261025/ATOMIC-GUIDES-A12/verification.json"
+}

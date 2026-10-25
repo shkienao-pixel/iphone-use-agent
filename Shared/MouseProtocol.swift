@@ -52,5 +52,10 @@ enum MouseProtocol {
         var suspended: Bool { flags & 16 != 0 }
         var bootMode: Bool { flags & 32 != 0 }
         var ready: Bool { flags & 7 == 7 && !suspended }
+        /// An old idle notification is not completion of the current command.
+        /// This acknowledges HID release, not a successful UI action or landing.
+        func released(after expectedSequence: UInt16) -> Bool {
+            sequence == expectedSequence && ready && error == 0 && !busy && buttons == 0
+        }
     }
 }

@@ -1,0 +1,22 @@
+Sela app icon — square touch swipe v1
+Created: 2026-10-24 (Asia/Shanghai)
+Mode: built-in image_gen, reference-based edit
+User clarification: abstract touch point plus swipe trace, without drawing a hand.
+Concept: a touchscreen contact point moves along a curved gesture from inside an open square app boundary to the outside.
+Reference: sela-app-icon-autonomy-v2-1024.png
+Deliverable: sela-app-icon-square-touch-swipe-v1-1024.png
+Original: sela-app-icon-square-touch-swipe-v1-original.png
+Status: design proposal; existing app icon asset has not been replaced.
+
+Use case: logo-brand.
+Asset type: a minimalist abstract app icon for a phone-operating AI Agent.
+USER-CLARIFIED DIRECTION: show a human TAP-AND-SWIPE gesture using ONLY an abstract round TOUCH POINT plus its curved MOVEMENT TRACE, with an open SQUARE APP FRAME. Do not draw a hand. Do not design a letter S or typographic logo. The earlier font-like S ideas were rejected. This is a touch gesture symbol.
+Composition: exactly THREE integrated solid near-black graphic components on a solid warm off-white square canvas:
+1. A confident rounded-SQUARE outline, with its upper-right corner open. The frame reads as an app boundary, similar to the supplied reference. Keep it simple and slightly lighter than the touch point.
+2. ONE substantial perfectly round filled disk at the upper-right opening, just outside the square. This is the active fingertip contact point, like the circle used to visualize a real finger touching a touchscreen, approximately 16–18 percent of the overall emblem width.
+3. ONE silky CURVED SWIPE TRACE that begins in the lower-middle INSIDE the frame, follows an effortless gentle reverse curve through the open corner, and leads toward that outside touch point. The trace is a path of movement, not a broad alphabetic glyph: no letter bowls, no complete S, no loops, no curl. A single calm flowing bend with a subtle reversal is enough. It has a softly rounded starting end and gradually becomes slightly more substantial toward the touch point, suggesting pressure and motion. End it just short of the circle, leaving a small clean gap so the touch point stays a clearly readable circle.
+Make the circle and trace feel like successive positions of ONE finger dragging across a phone screen and beyond its app boundary. This must visually read as "touch here, slide outward" through shape and spacing. The touch point is the destination, and the curve is its trail. Avoid a generic square export icon.
+Geometry: clear whitespace between trace and square boundary, matching soft geometry, graceful proportions, powerful simple silhouette. The gesture should flow toward the UPPER RIGHT. No part is a sharp arrow. The square frame is never a circle.
+Style: refined, restrained, original contemporary brand identity. Beautiful fluid gesture geometry, optical precision. Entirely FLAT solid black graphics; no texture, no shading, no grain, no gradient, no shadow, no 3D. One-color viable.
+Composition: optically centered combined emblem, maximum extent about 68–72 percent of square canvas width and height, with safe margins around the touch point. Full-bleed uniform warm off-white background to all four corners.
+No real finger, no hand, no mascot, no eye, no cursor arrow, no diamond, no typography, no letters S/A/G, no click ripple rings, no additional dots or motion streaks, no orbit, no loading spinner, no refresh arrow, no decorative ribbons, no mockup, no presentation sheet, no border around the image or pre-rounded external icon tile. ONE finished app icon only.

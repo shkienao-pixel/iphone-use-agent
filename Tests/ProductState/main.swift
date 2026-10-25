@@ -39,13 +39,15 @@ import Foundation
 
         let path = directory.appendingPathComponent("tasks.json")
         let store = TaskHistoryStore(url: path)
-        let original = PhoneTaskRecord(title: "Original", goal: "Original goal")
+        let original = PhoneTaskRecord(title: "Original", goal: "Original goal", conversationReference: "VERBATIM-CURRENT-CHAT-REFERENCE")
         store.upsert(original); store.rename(original.id, title: "Renamed")
         expect(store.records[0].title == "Renamed", "Rename preserves identity")
         expect(store.records[0].goal == "Original goal", "Rename does not change task instructions")
         let reloaded = TaskHistoryStore(url: path)
         expect(reloaded.records[0].outcome == .interrupted, "Restart never restores an active task")
         expect(reloaded.records[0].id == original.id, "Stored task identity survives restart")
+        expect(reloaded.records[0].conversationReference == original.conversationReference && reloaded.records[0].effectiveGoal == original.goal,
+               "Restart retains selected conversation data separately from task instructions")
         for i in 0..<55 { store.upsert(PhoneTaskRecord(title: "Task \(i)", goal: "Offline")) }
         expect(store.records.count == 50, "History retention is bounded")
         let newest = store.records[0].id; store.remove(newest)
@@ -75,8 +77,13 @@ import Foundation
         PrivacyConsent.grant(settings)
         executor.actionDelay = 1_000_000_000
         ModelProbe.action = AgentAction(kind: .tap, x: 0.5, y: 0.5, reason: "Offline tap")
-        engine.start(task: "Offline task", settings: settings)
+        let submissionID = UUID()
+        engine.start(task: "Offline task", settings: settings, taskID: submissionID, conversationReference: "VERBATIM-CLARIFICATION-SOURCE")
         try await waitUntil { engine.phase == .acting }
+        expect(engine.currentRecord?.id == submissionID, "A reserved submission identity reaches the actual engine record")
+        expect(engine.runMetrics?.snapshot.taskID == submissionID, "Execution metrics use the same reserved submission identity")
+        expect(ModelProbe.taskContexts.last?.contains("VERBATIM-CLARIFICATION-SOURCE") == true && ModelProbe.skillReferences.last == "VERBATIM-CLARIFICATION-SOURCE",
+               "The real engine passes source grounding to the action context and skill selector without rewriting the task")
         engine.pause()
         expect(engine.phase == .paused && !engine.running, "Pause cancels execution")
         expect(engine.releasing, "Pause closes input before allowing resume")
@@ -84,12 +91,17 @@ import Foundation
         expect(ModelProbe.calls == 1, "Resume cannot race old release")
         try await waitUntil { !engine.releasing }
         expect(executor.ble.releases > 0 && engine.canResume, "Paused task becomes resumable after cleanup")
-        ModelProbe.action = AgentAction(kind: .finish, reason: "Verified offline result")
+        let finalReport = "Verified item A and item B. Empty results cover visible data only.\nActual report retained in history."
+        ModelProbe.action = AgentAction(kind: .finish, text: finalReport, reason: "Verified offline result")
         engine.resume()
         try await waitUntil { engine.phase == .completed && !engine.releasing }
         expect(executor.actions == [.tap], "Resume does not replay the interrupted action")
         expect(ModelProbe.calls == 2, "Resume obtains a new observation")
         expect(engine.currentRecord?.outcome == .completed, "Completion reaches the history record")
+        expect(engine.state == finalReport && engine.currentRecord?.summary == finalReport,
+               "The final report reaches visible state and durable task history instead of only a short caption")
+        let reportRoundTrip = try JSONDecoder().decode(PhoneTaskRecord.self, from: JSONEncoder().encode(engine.currentRecord!))
+        expect(reportRoundTrip.summary == finalReport, "The complete result survives history encoding")
         expect(!engine.canResume, "Completed task cannot resume")
         let completedSummary = engine.currentRecord?.summary, completedState = engine.state
         let completedReleases = executor.ble.releases
@@ -102,6 +114,7 @@ import Foundation
         ModelProbe.action = AgentAction(kind: .ask_user, reason: "Offline human handoff")
         engine.start(task: "Needs human", settings: settings)
         try await waitUntil { engine.phase == .needsUser && !engine.releasing }
+        expect(engine.currentRecord?.id != submissionID, "Ordinary new tasks retain fresh default identities")
         expect(engine.canResume && engine.pendingAction?.kind == .ask_user, "Human handoff retains task context")
         ModelProbe.action = AgentAction(kind: .finish, reason: "Human issue resolved")
         engine.resume()
@@ -133,21 +146,26 @@ import Foundation
         expect(VoiceCommand.parse("打开微信然后暂停") == nil, "A task sentence is not a control command")
         expect(VoiceCommand.parse("补充") == .supplement, "Supplement starts the pause-first input flow")
         expect(voiceRoute() == .start, "An idle voice task starts directly")
-        expect(voiceRoute(current: true, engineRunning: true) == .queue, "A spoken task during active execution is queued")
-        expect(voiceRoute(current: true) == .queue, "A spoken task during a paused task is queued")
-        expect(voiceRoute(pending: 1) == .queue, "A spoken task joins an existing queue")
-        expect(voiceRoute(current: true, pending: 1, queueRunning: true, engineRunning: true) == .queue,
-               "A spoken task joins a queue while it is running")
-        expect(voiceRoute(current: true, switching: true) == .busy, "Task switching blocks voice queue changes")
-        expect(voiceRoute(current: true, releasing: true) == .busy, "Input release blocks voice queue changes")
+        expect(voiceRoute(current: true, engineRunning: true) == .busy, "An active task blocks a second spoken task")
+        expect(voiceRoute(current: true) == .busy, "A paused current task requires explicit resolution before a new spoken task")
+        expect(voiceRoute(pending: 1) == .start, "Legacy pending records do not block or enqueue a new spoken task")
+        expect(voiceRoute(pending: 20) == .start, "A full legacy queue remains data rather than routing state")
+        expect(voiceRoute(current: true, pending: 1, queueRunning: true, engineRunning: true) == .busy,
+               "Current execution cannot be replaced by a spoken task")
+        expect(voiceRoute(pending: 1, queueRunning: true) == .busy, "An active legacy queue still blocks concurrent execution")
+        expect(voiceRoute(current: true, switching: true) == .busy, "Task switching blocks a new spoken task")
+        expect(voiceRoute(current: true, releasing: true) == .busy, "Input release blocks a new spoken task")
         expect(voiceRoute(voicePending: true) == .busy, "Voice preparation blocks duplicate requests")
-        expect(voiceRoute(manualBusy: true) == .busy, "Manual input blocks voice queue changes")
-        expect(voiceRoute(current: true, calibrating: true) == .busy, "Calibration blocks voice queue changes")
+        expect(voiceRoute(manualBusy: true) == .busy, "Manual input blocks a new spoken task")
+        expect(voiceRoute(current: true, calibrating: true) == .busy, "Calibration blocks a new spoken task")
+        expect(voiceRoute(engineRunning: true) == .busy, "Active execution blocks a task even before its record becomes visible")
         expect(voiceRoute(queueRunning: true) == .busy, "An inconsistent active queue cannot start a second task")
         var oldTask = try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as! [String: Any]
         oldTask.removeValue(forKey: "amendments")
+        oldTask.removeValue(forKey: "contextMemory")
         let oldRecord = try JSONDecoder().decode(PhoneTaskRecord.self, from: JSONSerialization.data(withJSONObject: oldTask))
         expect(oldRecord.effectiveGoal == oldRecord.goal, "Older history has no implicit supplemental instructions")
+        expect(oldRecord.contextMemory == nil, "Older task records decode without a compacted context checkpoint")
 
         let actionCount = executor.actions.count
         engine.start(task: "Open a page", settings: settings)
@@ -183,42 +201,15 @@ import Foundation
         engine.stop(); try await waitUntil { !engine.releasing }
         expect(!engine.hasCurrentTask, "Stop removes resume eligibility even after handoff")
 
-        // Slow inference on a static display may wake the pointer, but only
-        // an actual capture callback can supply evidence before the tap.
-        var singleStep = settings; singleStep.maxSteps = 1
-        ModelProbe.delay = 2_000_000_000
-        ModelProbe.action = AgentAction(kind: .tap, x: 0.5, y: 0.5, reason: "Fresh-screen tap")
-        let selection = UUID()
-        for scenario in ["unchanged", "selectionChanged", "pixelsChanged", "stopped", "silent"] {
-            let staticCapture = CaptureService(), guardedExecutor = MouseExecutor()
-            staticCapture.frozenFrame = ScreenFrame(captureID: selection)
-            guardedExecutor.onMove = {
-                if guardedExecutor.pointerMoves.count <= 2 || scenario == "unchanged" {
-                    staticCapture.frozenFrame = ScreenFrame(captureID: selection)
-                } else if scenario == "selectionChanged" {
-                    staticCapture.frozenFrame = ScreenFrame(captureID: UUID())
-                } else if scenario == "pixelsChanged" {
-                    staticCapture.frozenFrame = ScreenFrame(captureID: selection, shade: 0)
-                } else if scenario == "stopped" {
-                    staticCapture.running = false
-                }
-                // In the silent case movement cannot renew the timestamp
-                // without a real new frame arriving from the source.
-            }
-            let guardedEngine = AgentEngine(capture: staticCapture, executor: guardedExecutor)
-            guardedEngine.start(task: "Open Settings on a static screen", settings: singleStep)
-            try await waitUntil(timeout: 11) { !guardedEngine.running && !guardedEngine.releasing }
-            expect(staticCapture.refreshes == 0, "Pointer wake never also restarts capture: \(scenario)")
-            expect((3...4).contains(guardedExecutor.pointerMoves.count), "Each frame wait sends at most one short wake pair: \(scenario)")
-            expect(guardedExecutor.pointerMoves.allSatisfy { abs($0.x) == 3 && $0.y == 0 && $0.buttons == 0 },
-                   "Wake reports contain only small movement and no buttons: \(scenario)")
-            expect(guardedExecutor.actions.count == (scenario == "unchanged" ? 1 : 0),
-                   "Only new evidence from the unchanged selection permits input: \(scenario)")
-            if scenario == "silent" {
-                expect(guardedEngine.error.contains("6 秒"), "A silent wake still fails at the capture deadline")
-            }
-            guardedExecutor.onMove = nil
-        }
+        // Each production capture-wait span is checked independently. Fixture
+        // capture callbacks, model delivery and faults are explicitly staged;
+        // cumulative pointer counts never decide which fault to inject.
+        var singleStep = settings; singleStep.maxSteps = 1; singleStep.continuousExecution = false
+        let reportDirectory=ProcessInfo.processInfo.environment["PHONE_AGENT_TIMING_REPORT_DIR"].map {URL(fileURLWithPath:$0,isDirectory:true)}
+        checks += try await WakeTimingChecks.run(settings:settings,reportDirectory:reportDirectory)
+        ModelProbe.delay=0;ModelProbe.actionProvider=nil;ModelProbe.onRequest=nil
+        ModelProbe.action=AgentAction(kind:.tap,x:0.5,y:0.5,reason:"Fresh-screen tap")
+        let selection=UUID()
 
         // Preview retains capture refresh and works without a connected mouse.
         let previewCapture = CaptureService(), previewExecutor = MouseExecutor()
@@ -229,7 +220,8 @@ import Foundation
         let previewEngine = AgentEngine(capture: previewCapture, executor: previewExecutor)
         previewEngine.start(task: "Preview a static screen", settings: previewSettings)
         try await waitUntil(timeout: 6) { !previewEngine.running }
-        expect(previewEngine.phase == .preview && previewEngine.pendingAction?.kind == .tap, "Preview still generates a plan")
+        expect(previewEngine.phase == .preview && previewEngine.pendingAction?.kind == .tap,
+               "Preview still generates a plan; phase=\(previewEngine.phase.rawValue), error=\(previewEngine.error), action=\(previewEngine.pendingAction?.kind.rawValue ?? "none")")
         expect(previewCapture.refreshes == 2 && previewExecutor.pointerMoves.isEmpty && previewExecutor.actions.isEmpty,
                "Preview refreshes capture without moving or clicking")
         previewCapture.onRefresh = nil
@@ -262,7 +254,7 @@ import Foundation
 
         // The same Back coordinate across different pages must keep working;
         // unchanged pixels and tiny display changes must still stop a loop.
-        var repeatedSettings = settings; repeatedSettings.maxSteps = 4
+        var repeatedSettings = settings; repeatedSettings.maxSteps = 4; repeatedSettings.continuousExecution = false
         ModelProbe.action = AgentAction(kind: .tap, x: 0.05, y: 0.08, reason: "Back one page")
         for scenario in ["differentPages", "staticPage", "tinyChanges"] {
             let pageCapture = CaptureService(), pageExecutor = MouseExecutor()
@@ -282,13 +274,157 @@ import Foundation
             } else {
                 expect(pageExecutor.actions == [.tap, .tap, .tap], "The fourth repeated tap is blocked without substantial progress: \(scenario)")
                 expect(pageEngine.error.contains("连续重复同一动作"), "The loop guard reports no substantial screen change: \(scenario)")
-                var freshSettings = settings; freshSettings.maxSteps = 1
+                var freshSettings = settings; freshSettings.maxSteps = 1; freshSettings.continuousExecution = false
                 pageEngine.start(task: "A new task on the same page", settings: freshSettings)
                 try await waitUntil { !pageEngine.running && !pageEngine.releasing }
                 expect(pageExecutor.actions.count == 4, "A new session clears the previous repetition baseline: \(scenario)")
             }
             pageCapture.frameProvider = nil
         }
+
+        // Continuous execution crosses both the old 100-step ceiling and the
+        // saved finite budget. Each action changes page evidence and target.
+        ModelProbe.delay = 0; ModelProbe.calls = 0; ModelProbe.taskContexts = []
+        ModelProbe.actionProvider = { call in
+            if call > 112 { return AgentAction(kind: .finish, reason: "All 112 pages independently observed") }
+            return AgentAction(kind: .tap, x: Double(call % 8 + 1) / 10, y: 0.4,
+                               reason: "Inspected page \(call); recorded account user_\(call)")
+        }
+        var continuous = settings; continuous.continuousExecution = true; continuous.maxSteps = 1
+        let longCapture = CaptureService(), longExecutor = MouseExecutor()
+        longCapture.frameProvider = {
+            ScreenFrame(captureID: selection, shade: longExecutor.actions.count.isMultiple(of: 2) ? 0.2 : 0.8)
+        }
+        let longEngine = AgentEngine(capture: longCapture, executor: longExecutor)
+        longEngine.start(task: "Inspect 112 pages and keep confirmed account references", settings: continuous)
+        try await waitUntil(timeout: 12) { longEngine.executionSettled }
+        expect(longEngine.phase == .completed && longEngine.currentStep == 113,
+               "Continuous execution finishes after more than 110 observations despite maxSteps=1")
+        expect(longExecutor.actions.count == 112 && ModelProbe.calls == 113,
+               "Every long-task action obtains a new observation without resetting the task")
+        expect(longEngine.error.isEmpty && !longEngine.state.contains("最大步数"),
+               "Continuous execution does not stop at a hidden automatic step ceiling")
+        expect(longEngine.logs.count <= 150 && longEngine.currentRecord?.contextMemory?.prompt.isEmpty == false,
+               "Long-task logs stay bounded while older progress enters compact context")
+        expect(ModelProbe.taskContexts.dropFirst(20).contains { !$0.isEmpty },
+               "The production engine sends compacted progress to later observations")
+        let compactedRecord = longEngine.currentRecord!
+        let compactedPrompt = compactedRecord.contextMemory!.prompt
+        longCapture.frameProvider = nil; ModelProbe.actionProvider = nil
+
+        // Queue files preserve high checkpoints and compact context without
+        // restoring execution authority, including an exhausted finite budget.
+        let queueURL = directory.appendingPathComponent("long-task-queue.json")
+        let queue = TaskQueueStore(url: queueURL)
+        var resumableRecord = compactedRecord
+        resumableRecord.outcome = .paused; resumableRecord.summary = "Paused for offline recovery check"
+        let checkpoint = QueuedPhoneTask(record: resumableRecord, settings: continuous, step: 1000,
+                                         started: true, state: .suspended)
+        try queue.append(checkpoint)
+        var exhaustedRecord = PhoneTaskRecord(title: "Finite task", goal: "Resume after enabling long mode")
+        exhaustedRecord.outcome = .paused
+        let exhaustedCheckpoint = QueuedPhoneTask(record: exhaustedRecord, settings: singleStep, step: 1,
+                                                  started: true, state: .suspended)
+        try queue.append(exhaustedCheckpoint)
+        let queueReloaded = TaskQueueStore(url: queueURL)
+        expect(queueReloaded.error.isEmpty && queueReloaded.items.count == 2,
+               "Queue accepts high continuous checkpoints and exhausted finite checkpoints")
+        let restoredCheckpoint = queueReloaded.items.first!
+        expect(restoredCheckpoint.step == 1000 && restoredCheckpoint.id == compactedRecord.id &&
+               restoredCheckpoint.record.contextMemory?.prompt == compactedPrompt,
+               "Queue roundtrip preserves task identity, step 1000 and compacted context")
+        expect(queueReloaded.items.allSatisfy { $0.state == .suspended },
+               "Queue reload always requires manual continuation")
+        expect(queueReloaded.items[1].step == 1 && !queueReloaded.items[1].settings.runsContinuously,
+               "An exhausted finite checkpoint is retained so its mode can be changed")
+        for invalidStep in [-1, Int.max] {
+            do {
+                try queueReloaded.update(restoredCheckpoint.id) { $0.step = invalidStep }
+                preconditionFailure("Queue accepted an invalid step counter")
+            } catch {}
+            expect(queueReloaded.items.first?.step == 1000,
+                   "An invalid checkpoint cannot mutate the last saved queue state")
+        }
+
+        ModelProbe.calls = 0; ModelProbe.taskContexts = []
+        ModelProbe.action = AgentAction(kind: .finish, reason: "Fresh observation verified after restore")
+        let restoredCapture = CaptureService(), restoredExecutor = MouseExecutor()
+        let restoredEngine = AgentEngine(capture: restoredCapture, executor: restoredExecutor)
+        try restoredEngine.restoreQueued(record: restoredCheckpoint.record, settings: restoredCheckpoint.settings,
+                                         step: restoredCheckpoint.step, previouslyStarted: true)
+        let restoredPrompt = restoredEngine.currentRecord?.contextMemory?.prompt
+        expect(restoredEngine.currentRecord?.id == compactedRecord.id && restoredEngine.currentStep == 1000,
+               "Restoring a long checkpoint retains the task ID and completed step count")
+        try await waitUntil(timeout: 6) { restoredEngine.executionSettled }
+        expect(restoredEngine.phase == .completed && restoredEngine.currentStep == 1001 && ModelProbe.calls == 1,
+               "A high-step restore obtains a fresh observation at step 1001")
+        expect(restoredExecutor.actions.isEmpty && ModelProbe.taskContexts.first == restoredPrompt &&
+               restoredPrompt?.contains("recorded account user_100") == true,
+               "Restore reuses compacted progress and never replays the old pending action")
+
+        // The tools-only runner shares the same continuous step policy.
+        ModelProbe.calls = 0
+        var toolsContinuous = continuous; toolsContinuous.toolsOnly = true; toolsContinuous.systemToolsEnabled = true
+        let toolCapture = CaptureService(), toolExecutor = MouseExecutor()
+        toolCapture.running = false; toolExecutor.ble.ready = false
+        let toolEngine = AgentEngine(capture: toolCapture, executor: toolExecutor)
+        toolEngine.systemTool = { _, _ in "Offline receipt" }
+        ModelProbe.action = AgentAction(kind: .finish, text: finalReport, reason: "简短完成说明")
+        try toolEngine.restoreQueued(record: restoredCheckpoint.record, settings: toolsContinuous,
+                                    step: 1000, previouslyStarted: true)
+        try await waitUntil { toolEngine.executionSettled }
+        expect(toolEngine.phase == .completed && toolEngine.currentStep == 1001 && ModelProbe.calls == 1,
+               "Tools-only continuous mode also resumes beyond step 100 without capture or BLE")
+        expect(toolEngine.currentRecord?.summary == finalReport && toolEngine.state == finalReport,
+               "Tools-only completion also persists the full report")
+
+        // Finite mode pauses at its chosen budget, then the same task can
+        // continue after explicitly changing to long-task mode.
+        ModelProbe.calls = 0
+        ModelProbe.action = AgentAction(kind: .tap, x: 0.3, y: 0.6, reason: "One finite action")
+        let finiteCapture = CaptureService(), finiteExecutor = MouseExecutor()
+        let finiteEngine = AgentEngine(capture: finiteCapture, executor: finiteExecutor)
+        finiteEngine.start(task: "Continue the same finite task in long mode", settings: singleStep)
+        try await waitUntil { finiteEngine.executionSettled }
+        let finiteID = finiteEngine.currentRecord?.id
+        expect(finiteEngine.phase == .paused && finiteEngine.canResume && finiteEngine.currentStep == 1,
+               "Finite mode pauses with a resumable checkpoint at the exact configured limit")
+        finiteEngine.resume()
+        expect(!finiteEngine.running && ModelProbe.calls == 1,
+               "An exhausted finite budget cannot dispatch another observation")
+        ModelProbe.action = AgentAction(kind: .finish, reason: "Long mode continuation verified")
+        finiteEngine.resume(settings: continuous)
+        try await waitUntil(timeout: 6) { finiteEngine.executionSettled }
+        expect(finiteEngine.phase == .completed && finiteEngine.currentStep == 2 &&
+               finiteEngine.currentRecord?.id == finiteID && finiteExecutor.actions.count == 1,
+               "Enabling long mode resumes the original task past its former finite limit")
+
+        // Long mode retains local controls and completes release before a
+        // resumed task can dispatch another action.
+        ModelProbe.action = AgentAction(kind: .tap, x: 0.7, y: 0.2, reason: "Cancellable long-task action")
+        let controlledCapture = CaptureService(), controlledExecutor = MouseExecutor()
+        controlledExecutor.actionDelay = 1_000_000_000
+        let controlledEngine = AgentEngine(capture: controlledCapture, executor: controlledExecutor)
+        controlledEngine.start(task: "Pause and stop a continuous task", settings: continuous)
+        try await waitUntil { controlledEngine.phase == .acting }
+        controlledEngine.pause()
+        expect(controlledEngine.phase == .paused && controlledEngine.releasing,
+               "A continuous task pauses immediately and blocks resume during release")
+        try await waitUntil { controlledEngine.executionSettled }
+        expect(controlledExecutor.ble.releases > 0 && controlledEngine.canResume,
+               "Pause releases continuous-task input and preserves continuation")
+        let beforeStopReleases = controlledExecutor.ble.releases
+        controlledEngine.resume()
+        try await waitUntil(timeout: 6) { controlledEngine.phase == .acting }
+        controlledEngine.stop()
+        try await waitUntil { controlledEngine.executionSettled }
+        expect(controlledEngine.phase == .stopped && !controlledEngine.canResume &&
+               controlledExecutor.ble.releases > beforeStopReleases,
+               "Stop cancels a resumed continuous task and releases its input")
+        expect(controlledExecutor.actions.count == 2,
+               "Cancelled long-task actions are never retried automatically")
+        ModelProbe.actionProvider = nil
+        checks += try await TaskRecoveryChecks.run(directory: directory, settings: settings)
         print("\(checks) product-state checks passed. No network, phone or BLE actions.")
     }
 }

@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "status": "exact_original_phone_store_clipboard_cold_session_and_actual_packaged_skill_runtime_verified",
+  "supportedOperations": [
+    "content_create",
+    "content_prepare_clipboard",
+    "content_status"
+  ],
+  "physicalCases": [
+    {
+      "case": "F01 delimiter boundary ambiguity added a trailing LF; not counted as full original-text acceptance",
+      "build": 106,
+      "taskID": "50A72283-979D-4CBD-A4B0-3187B300E3F4",
+      "status": "partial",
+      "evidence": "output/ios-native-longrun-20261025/CONTENT-F01/verification.json"
+    },
+    {
+      "case": "F02 explicit boundaries, exact 217-byte source including combining characters, emoji, tab and newlines; host clipboard byte readback",
+      "build": 106,
+      "taskID": "D4A1062B-1205-47C3-AB1A-624FFDDA7B63",
+      "status": "passed",
+      "evidence": "output/ios-native-longrun-20261025/CONTENT-F02/verification.json"
+    },
+    {
+      "case": "F03 cold launch retains exact data, previous prepared receipt is not valid in new session",
+      "taskID": "54EF3CC8-8547-4249-AE91-F42878A76B11",
+      "build": 106,
+      "status": "passed",
+      "evidence": "output/ios-native-longrun-20261025/CONTENT-COLD-F03/verification.json"
+    },
+    {
+      "case": "F04 actual packaged body2121 bytes loaded, single metadata query preserves all data and write receipts",
+      "build": 107,
+      "taskID": "85A4311C-F405-4328-B4CF-C0289197E9D9",
+      "status": "passed",
+      "evidence": "output/ios-native-longrun-20261025/CONTENT-SKILL-F04/verification.json"
+    },
+    {
+      "case": "L3 crosses100 native steps,21 daily objects and7 directories exact; final index blocked by compressed historical save receipts",
+      "build": 107,
+      "taskID": "6BEF0B6F-7B84-42DF-835A-DC1AFC51654D",
+      "status": "initial partial; separate same-ID recovery completed in Build108",
+      "evidence": "output/ios-native-longrun-20261025/L3-NATIVE-H21/verification.json"
+    },
+    {
+      "case": "Build108 verified task inventory resumes same ID after restart, creates only final index; previous28 artifacts/receipts unchanged",
+      "build": 108,
+      "taskID": "6BEF0B6F-7B84-42DF-835A-DC1AFC51654D",
+      "status": "passed recovery; fresh one-send long-run retest pending",
+      "evidence": "output/ios-native-longrun-20261025/L3-RESUME-H21/verification.json"
+    },
+    {
+      "case": "Fresh R2 stopped by external API credit balance exhaustion after3 reads and before first write",
+      "build": 108,
+      "taskID": "480210AB-4123-4279-9917-86FAAD66A181",
+      "status": "interrupted; no full long-run acceptance",
+      "evidence": "output/ios-native-longrun-20261025/L3-NATIVE-H21-R2/verification.json"
+    },
+    {
+      "case": "R2 same-task recovery with official ChatGPT plan; complete receipt-to-artifact audit after history compaction",
+      "build": 119,
+      "taskID": "480210AB-4123-4279-9917-86FAAD66A181",
+      "status": "passed controlled recovery; uninterrupted fresh one-send case pending",
+      "nativeReadCalls": 63,
+      "phoneLocalArtifacts": 29,
+      "nativeToolCalls": 121,
+      "sourceFieldAndJSONTypeFidelity": true,
+      "priorArtifactsAndWriteReceiptsUnchanged": true,
+      "extraExecutionApprovals": 0,
+      "currentAttemptElapsedSeconds": 1066.6858277916617,
+      "evidence": "output/ios-native-longrun-20261025/L3-NATIVE-H21-R2/continuation-verification.json",
+      "limits": [
+        "Interrupted API attempt and explicit recovery are preserved; this is not uninterrupted one-send acceptance.",
+        "Private health values and query dates are omitted from this reusable skill."
+      ]
+    },
+    {
+      "case": "R3 fresh one-send uninterrupted native archive, actual context compaction and final index",
+      "build": 120,
+      "taskID": "9A80FD52-22BE-4A9A-BD72-75D5EA8419DB",
+      "status": "passed full independent source/artifact/order/report audit",
+      "nativeHealthReadCalls": 63,
+      "newLocalArtifacts": 29,
+      "nativeToolCalls": 121,
+      "finishStep": 122,
+      "activeSeconds": 1093.2333612500006,
+      "oneSend": true,
+      "extraExecutionApprovals": 0,
+      "sourceFieldAndJSONTypeFidelity": true,
+      "oldArtifactsAndWriteReceiptsUnchanged": true,
+      "privateHealthValuesAndDatesOmitted": true,
+      "evidence": "output/ios-native-longrun-20261025/L3-NATIVE-H21-R3/verification.json"
+    },
+    {
+      "case": "F06 actual122 content_status over independently read-back index; updated bundled guide2914 bytes loaded by the real model client",
+      "build": 122,
+      "taskID": "70172EF9-19A0-45CE-969D-EAB628CAAF59",
+      "status": "passed one send, one real metadata query, two model requests; unchanged files and receipts",
+      "evidence": "output/ios-native-longrun-20261025/CONTENT-SKILL-F06/verification.json"
+    }
+  ],
+  "runtimeSkillLoadVerified": true,
+  "esp32Used": false,
+  "limitations": [
+    "Only Sela phone-local content and clipboard preparation; no export to Files or Apple Notes creation.",
+    "No independently verified paste, save or send to another application.",
+    "content_status is metadata and cannot establish equality to original user text; F02 alone includes an independent exact original-source byte comparison."
+  ],
+  "oneSendUninterruptedOver100RetestPassed": true,
+  "freshRetestExternalBlock": "Original API credit failure retained; controlled R2 recovery passed separately. Fresh R3 on officially authorized ChatGPT plan completed uninterrupted with full independent audit.",
+  "auxiliaryProductUICases": [
+    {
+      "case": "E01 manual product receipt export to local Files, original-file reimport and independent exact-byte comparison",
+      "build": 110,
+      "status": "passed",
+      "bytes": 32503,
+      "evidence": "output/ios-native-longrun-20261025/LOCAL-RECEIPT-EXPORT-E01/verification.json",
+      "businessAgentTest": false,
+      "contentToolExportVerified": false,
+      "externalDeliveryVerified": false
+    },
+    {
+      "case": "E02 manual product RunMetrics share to local Files and original-file reimport",
+      "build": 111,
+      "status": "passed",
+      "bytes": 7918,
+      "evidence": "output/ios-native-longrun-20261025/LOCAL-METRICS-EXPORT-E02/verification.json",
+      "businessAgentTest": false,
+      "contentToolExportVerified": false,
+      "externalDeliveryVerified": false
+    },
+    {
+      "case": "E03 read-only completed long-task snapshot export preserving original record and explicit compressed-history coverage",
+      "build": 112,
+      "status": "passed",
+      "evidence": "output/ios-native-longrun-20261025/LOCAL-TASK-EXPORT-E03/verification.json",
+      "businessAgentTest": false,
+      "contentToolExportVerified": false
+    },
+    {
+      "case": "E04 read-only failed-task snapshot export preserving original error/outcome and exact record",
+      "build": 112,
+      "status": "passed",
+      "evidence": "output/ios-native-longrun-20261025/LOCAL-TASK-EXPORT-E04/verification.json",
+      "businessAgentTest": false,
+      "contentToolExportVerified": false
+    },
+    {
+      "case": "F05 corresponding Sela App card, true91/100 count, title search and readonly verbatim body viewer",
+      "build": 122,
+      "status": "passed",
+      "exactIndexUIReadbackBytes": 1448,
+      "exactUnicodeUIReadbackBytes": 217,
+      "lineFeeds": 6,
+      "criticalStoresUnchanged": true,
+      "businessAgentTest": false,
+      "agentBodyReadToolAdded": false,
+      "evidence": "output/ios-native-longrun-20261025/CONTENT-LIBRARY-UI-F05/verification.json"
+    }
+  ]
+}

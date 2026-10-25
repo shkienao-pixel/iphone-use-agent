@@ -1,0 +1,30 @@
+Sela app icon — square touch swipe v2
+Created: 2026-10-24 (Asia/Shanghai)
+Mode: built-in image_gen, two reference-based edits
+User direction: redo the abstract touch-and-swipe gesture with more fluid curves. Keep the square app boundary; no literal hand.
+Initial reference: sela-app-icon-square-touch-swipe-v1-1024.png
+Deliverable: sela-app-icon-square-touch-swipe-v2-1024.png
+Original: sela-app-icon-square-touch-swipe-v2-original.png
+Status: design proposal; existing app icon asset has not been replaced.
+
+INITIAL REBUILD PROMPT
+Use case: logo-brand / precise-object-edit.
+Asset type: a rebuilt refined app icon for a phone-operating AI Agent, using the supplied icon as a concept reference.
+USER DIRECTION: abstract touch point plus a SWIPE gesture, NO hand. Keep a SQUARE APP boundary. The user rejects the current stiff chunky arc as "not silky enough" and asks for a redo. Prioritize the beauty and fluidity of the gesture.
+Rebuild the gesture as ONE seamless flowing silhouette: a round fingertip contact head at the upper right, and a long elegant smoothly tapering swipe trail that flows continuously into it. Remove the current gap between the circle and trail. The leading touch head remains clearly ROUND, but the curve should join it with a flawless tangent, no seam, no kink, no awkward bulge or pinched neck.
+The movement trace begins delicately in the lower-left interior of the app square, glides through one broad VERY SHALLOW reverse curve, and exits through the upper-right gap into the round touch head. Think of a finger smoothly gliding across glass in one uninterrupted motion. Let the path breathe: wide sweeping curvature, continuous acceleration, no tight turn or hook. The thickness grows gradually from a delicate softly finished trailing end to the substantial round contact head. The silhouette should have the effortless economy of a single beautiful brush gesture, but remain precise modern geometry. Do not draw an alphabetic S. Do not create a J-shaped banana, rubber hose, comma or a broad crescent.
+Keep the rounded-square open app frame, with clean diagonal cut ends at upper right, positioned behind / lower left of the gesture. Make it a little lighter and quieter than the reference so it frames the movement rather than dominating it. Ensure generous clear negative space between frame and gesture, no collisions. The gesture is inside the app at its tail, outside at its round head: visibly breaking beyond the app boundary.
+Exactly TWO filled black forms: the open square boundary and the integrated touch-head-and-trail shape. No secondary dot, extra motion line or decorative element. One-color viability, clean recognizable silhouette at 32px.
+Style: exceptionally refined flat vector-like brand identity. Pure solid near-black fill and uniform warm off-white background. Silky is the SHAPE, not a material: absolutely no fabric, satin, texture, grain, gradients, shading, lighting, bevel, reflection, metallic surface, glass rendering or 3D.
+Composition: a single balanced centered app-icon emblem with approximately 15 percent safe margins around the combined symbol, square full-bleed background to all outer corners. No mockup, sheet, multiple alternatives, border or pre-rounded outer tile.
+Avoid: finger or hand drawing, mascot, face, robot, eye, cursor arrow or arrowhead, phone hardware, diamond, typographic S, stars, orbit or loading spinner, standard export UI icon, logos of other companies, text, wordmark, watermark. Deliver one finished clean icon.
+
+FINAL REFINEMENT PROMPT
+Refine this exact app icon. Preserve the rounded-square frame, black-on-warm-white palette, the long graceful tapering swipe curve, and its overall direction.
+Change only the leading touch point relationship:
+- Separate the round touch point from the swipe trail with one small deliberate negative-space gap. The point must read as a perfectly circular fingertip contact disk, not a ball attached to a tail.
+- Make that circle about 15 percent smaller and keep its center aligned with the natural tangent of the sweeping trail.
+- End the trail smoothly just before the circle, with a quietly rounded narrow terminal. Keep the trail beautifully long and gradually tapered, with continuous gentle curvature and no hooked tip, abrupt bend, swelling or pinched neck.
+- The small gap should be about one quarter of the contact circle's diameter, enough to distinguish touch point and trace while preserving one effortless motion.
+The intended feeling is an abstract touch moving fluidly across a phone screen and beyond the open square app boundary. The motion should be smooth and poised. Do not draw a hand, letter, arrowhead, comet or creature. No additional marks.
+Flat pure solid near-black shapes on a uniform warm ivory full-bleed square background. No texture, grain, gradients, shading, 3D, shadow, mockup, border or text. One final app icon only.

@@ -26,6 +26,11 @@ enum SettingsStore {
         }
     }
     static func apiKey(for endpoint: String? = nil) -> String {
+        let settings = load()
+        if settings.usesChatGPTPlan {
+            guard (endpoint ?? settings.endpoint) == ChatGPTPlanProtocol.endpoint else { return "" }
+            return ChatGPTPlanStore.readinessToken()
+        }
         guard credentialMatches(endpoint ?? load().endpoint) else { return "" }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "PhoneAgent.model", kSecAttrAccount as String: "api-key",

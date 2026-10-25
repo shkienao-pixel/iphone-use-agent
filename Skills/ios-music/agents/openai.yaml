@@ -1,0 +1,3 @@
+interface:
+  display_name: "iOS 音乐"
+  short_description: "Query library songs and inspect Sela playback state."

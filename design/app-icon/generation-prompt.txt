@@ -1,0 +1,16 @@
+Tool: built-in imagegen
+Concept: Action cursor / 行动指针
+Project: Phone Agent
+Asset: action-cursor-1024.png (1024 x 1024)
+Original: action-cursor-original.png
+
+Use case: logo-brand.
+Asset type: finished square iPhone app icon for Phone Agent, an assistant that understands a shared phone screen and acts by clicking and typing.
+Primary request: design one refined, memorable app icon called "action cursor". It should feel like a thoughtfully designed native productivity app: confident, calm, friendly, immediate.
+Scene/backdrop: edge-to-edge rich cobalt blue square background, very subtle tonal depth from brighter royal blue at the upper left to deeper blue at the lower right. The square canvas is the icon itself, no external presentation background, no mockup.
+Subject: a single large sculptural ivory-white cursor glyph, optically centered. Its silhouette is a custom rounded pointer aimed diagonally upper-left with a short gently curving folded ribbon tail sweeping toward the lower-right. The broad rounded triangular pointing head and the curved tail form one continuous bold, compact shape. A tiny cyan inner fold can reveal the turn of the ribbon, but preserve the overwhelmingly clean white silhouette. Make the shape distinctive and elegantly drawn, with generous negative space and no thin details.
+Style/medium: premium minimal graphic design, mostly flat with just a restrained satin edge and very soft contact shadow for depth. Crisp clean edges. No glass bubble effect, no cartoon treatment.
+Composition/framing: square, front-facing, one glyph spanning about 58–64 percent of the canvas with balanced roomy margins. Strong recognizability at 48px. No pre-rounded outer corners; the blue background must fill all four canvas corners.
+Color palette: cobalt blue, warm white, minimal cool cyan accent, matching an existing system-blue native app.
+Text: none.
+Constraints: one finished icon only. No lettering, no phone outline, no robot face, no sparkle or four-point star, no eye, no orbit or circular refresh arrow, no paper-airplane silhouette, no badges, no borders, no extra symbols, no watermark. Avoid a conventional operating-system mouse cursor; redraw the glyph with a broad organic head and an elegant rounded folded tail.

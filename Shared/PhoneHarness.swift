@@ -4,12 +4,20 @@ import Foundation
 /// belong to the observed UI and never come from a model-supplied tool argument.
 struct PhoneHarnessRequest: Codable, Equatable {
     enum Operation: String, Codable {
-        case tap, open_search, open_app, back, home, type_text, press_key
+        case tap, open_search, open_app, back, home, type_text, press_key, wechat_send
+        case xhs_collect, chat_read, chat_read_newer, chat_summarize, file_status, file_send
+        var isSavedWorkflow: Bool { [.xhs_collect, .chat_read, .chat_read_newer, .chat_summarize, .file_status, .file_send].contains(self) }
     }
 
     var operation: Operation
     var target: String? = nil
     var text: String? = nil
+    var operationID: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case operation, target, text
+        case operationID = "operation_id"
+    }
 
     static func decode(_ raw: String?) throws -> Self {
         guard let data = raw?.data(using: .utf8), !data.isEmpty, data.count <= 4000 else {
@@ -17,8 +25,8 @@ struct PhoneHarnessRequest: Codable, Equatable {
         }
         do {
             guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  Set(object.keys).isSubset(of: ["operation", "target", "text"]) else {
-                throw AgentError.message("手机工具只接受 operation、target、text，不接受坐标")
+                  Set(object.keys).isSubset(of: ["operation", "target", "text", "operation_id"]) else {
+                throw AgentError.message("手机工具只接受 operation、target、text、operation_id，不接受坐标")
             }
             let request = try JSONDecoder().decode(Self.self, from: data)
             try request.validate()
@@ -31,6 +39,9 @@ struct PhoneHarnessRequest: Codable, Equatable {
     }
 
     func validate() throws {
+        if operation != .wechat_send, !operation.isSavedWorkflow, operationID != nil {
+            throw AgentError.message("operation_id 仅用于需要持久化防重放的本地业务流程")
+        }
         if let target {
             guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   target.count <= 120,
@@ -44,6 +55,20 @@ struct PhoneHarnessRequest: Codable, Equatable {
             }
         }
         switch operation {
+        case .xhs_collect, .chat_read, .chat_read_newer, .chat_summarize, .file_status, .file_send:
+            guard let target, UUID(uuidString: target) != nil, text == nil,
+                  let operationID, (8...96).contains(operationID.count),
+                  operationID.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.").contains($0) }) else {
+                throw AgentError.message("已保存流程需要工作台中真实的任务 UUID 和稳定 operation_id，不接受临时编造范围")
+            }
+        case .wechat_send:
+            guard let target, ["文件传输助手", "file transfer", "file transfer assistant"].contains(target.lowercased()),
+                  let text, !text.isEmpty, text.count <= 80,
+                  text.unicodeScalars.allSatisfy({ (32...126).contains($0.value) }),
+                  let operationID, (8...96).contains(operationID.count),
+                  operationID.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.").contains($0) }) else {
+                throw AgentError.message("wechat_send 仅支持内置文件传输助手、1～80 个单行 ASCII 字符与 8～96 字的稳定 operation_id")
+            }
         case .tap:
             guard target != nil, text == nil else {
                 throw AgentError.message("点击需要 target 元素标识，不接受 text 或坐标")
@@ -74,6 +99,13 @@ struct PhoneHarnessRequest: Codable, Equatable {
 
     var label: String {
         switch operation {
+        case .xhs_collect: return "采集已配置的小红书任务"
+        case .chat_read: return "读取已配置的聊天范围"
+        case .chat_read_newer: return "读取已配置聊天中的新增消息"
+        case .chat_summarize: return "总结已保存的聊天证据"
+        case .file_status: return "核对文件发送状态"
+        case .file_send: return "执行已授权的准确文件发送范围"
+        case .wechat_send: return "本地微信流程：" + (target ?? "未指定会话")
         case .tap: return "点击：" + (target ?? "未指定元素")
         case .open_search: return "打开手机搜索"
         case .open_app: return "打开 App：" + (target ?? "未指定 App")
@@ -126,6 +158,15 @@ struct PhoneUISnapshot: Codable, Equatable {
         let matches = elements.filter { Self.normalizedLabel($0.label) == key }
         guard matches.count == 1, matches[0].rect.valid else { return nil }
         return matches[0]
+    }
+
+    func reidentifiedElement(_ id: String, from previous: PhoneUISnapshot) -> PhoneUIElement? {
+        guard !blockingOverlay, !previous.blockingOverlay, scene == previous.scene, deviceKey == previous.deviceKey,
+              let old = previous.element(id: id), ["ocr", "local_visual"].contains(old.source),
+              let current = matchingLabel(old.label), current.source == old.source,
+              abs(current.rect.x - old.rect.x) <= 0.015, abs(current.rect.y - old.rect.y) <= 0.015,
+              abs(current.rect.width - old.rect.width) <= 0.015, abs(current.rect.height - old.rect.height) <= 0.015 else { return nil }
+        return current
     }
 
     private static func normalizedLabel(_ value: String) -> String {
@@ -220,8 +261,10 @@ struct PhoneLayoutMemory: Codable {
 
 enum PhoneHarnessManifest {
     static let instructions = """
-    The local phone harness supports kind=phone_tool. Put one encoded JSON object in text, using only operation, target, text; omit unused fields. Coordinates are not accepted.
+    The local phone harness supports kind=phone_tool. Put one encoded JSON object in text, using only operation, target, text, operation_id; omit unused fields. Coordinates are not accepted.
     Operations: tap(target=current element ID); open_search; open_app(target=exact app name); back; home; type_text(text=ASCII input, max 500); press_key(target=key name). Example: {"operation":"tap","target":"ocr.3"}. Use IDs actually advertised in the current phone snapshot. A label may be used only when it uniquely matches an advertised element. Never invent IDs or assume unknown layouts.
+    wechat_send(target=exact built-in self conversation title, text=1..80 printable single-line ASCII characters, operation_id=stable unique ID of 8..96 ASCII letters/digits/._-). This bounded local macro only supports 文件传输助手 / File Transfer / File Transfer Assistant, starting from a currently identified WeChat list/search/chat. It requires the exact current title plus the separate centered phone/computer transfer explanation (a title alone can imitate a contact nickname), focuses an explicitly observed composer, reads back the entire draft, dispatches Send once, then checks one new matching outgoing bubble plus cleared composer. It never guesses an empty input rectangle or sends to display-name-only contacts. Reuse the SAME operation_id after interruption; pending or already dispatched receipts prohibit input replay; pending results hard-stop the outer controller for explicit user review and block other GUI actions. Never generate another ID to retry uncertain sending. A local bubble proves only observed UI submission, never delivery/read status. Missing OCR/focus evidence returns partial/pending and requires independent inspection.
+    Saved workflows: xhs_collect(target=saved xhs task UUID), chat_read(target=saved chat scope UUID; currentPage reads only the first independently verified visible page once; time uses its fixed dates), chat_read_newer(target=same saved time-range scope UUID only; currentPage cannot widen or resume), chat_summarize(target=saved chat scope UUID; currentPage uses only its immutable selected message IDs; strict latest scopes have no observable latest-end authority and forbid new reading/model upload, including saved-summary reuse), file_status(target=existing file operation UUID). Each requires operation_id=stable unique 8..96 ASCII letters/digits/._- and forbids text. Use only IDs actually listed in saved_workflows. Users create these bounded scopes in 记录与文件; do not invent, expand or silently change their keyword, sample, conversation or range. These pipelines persist actual observed evidence and incremental analysis. Missing source identities remain partial. Statistics cover the observed sample only. Chat summaries cite only saved message text and cannot describe unread media. file_status is read-only. file_send(target=saved automatic_file_tasks UUID) executes only the exact native-user-authorized account, artifacts and original order. The plan UUID is its durable operation ID regardless of the outer operation_id. It must start with Sela foreground; use ask_user to return if needed. No new scope or recipient may be invented. Only an independent stable-account and complete original-file confirmation screen permits the single Send action; display-name-only pages stop. Native share completion does not prove target, delivery or read status; any uncertain submission blocks further GUI input pending independent review.
     The harness observes text locally, resolves element bounds, and remembers verified search/back controls for this exact phone and scene. Reusable layouts are device/scene scoped, expire after 30 days, and are suspended under blocking overlays. Changing a scene requires a fresh local observation; success requires a verified resulting screen. A dispatched action alone is not proof of success.
     Prefer open_search/open_app/back/home over repeated coordinate actions. Use type_text for printable ASCII in one focused field, without locating each screen key. Use explicit press_key for Enter/Tab; type_text never submits or moves between fields. Unicode app names can be requested, but if hardware input cannot enter the name, follow the returned fallback and inspect the screen; do not transliterate or pretend text was entered.
     Check keyboard_focus_confirmed in the current snapshot before phone_tool type_text or press_key. If false, these semantic keyboard operations are unavailable, even when keyboard_ready is true. A hardware keyboard can hide the screen keyboard in Notes and other editors; inspect and focus the field, then use the ordinary single-action keyboard route when appropriate instead of repeatedly requesting an unavailable phone_tool. The harness does not establish generic editor focus from a Bluetooth connection alone.

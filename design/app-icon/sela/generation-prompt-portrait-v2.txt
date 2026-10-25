@@ -1,0 +1,16 @@
+Sela app icon — portrait v2
+Created: 2026-10-24 (Asia/Shanghai)
+Generation mode: built-in image_gen
+Reference: design/app-icon/sela/sela-app-icon-3d-1024.png
+Deliverable: sela-app-icon-portrait-v2-1024.png
+Original generated image: sela-app-icon-portrait-v2-original.png
+Status: design asset only; the existing AppIcon asset catalog has not been replaced.
+
+Use case: logo-brand.
+Asset type: one finished premium iPhone app icon for Sela, a friendly personal assistant that operates a phone.
+Input image 1: character identity reference, the existing Sela 3D mascot. Preserve this recognizably same character, its ivory body, dark indigo oval eyes and gentle smile, asymmetrical tall curled S-shaped ear with apricot inner surface, small round ear on the other side, and friendly rounded proportions.
+Primary request: design a NEW refined icon composition specifically optimized for small phone home-screen sizes. A close-up mascot portrait with the head and upper body, large expressive face, the entire signature S-shaped curled ear contained safely in the canvas, and one simple rounded paw raised in a quiet hello beside the cheek. Make the curl a little more compact to give the face more visual importance. The bottom edge can naturally crop the lower torso. The face itself should occupy approximately 40 percent of the canvas width. The mascot silhouette occupies 72–78 percent of the square canvas width and 80 percent height, with generous padding above the curl and around both sides. The face and ear must read clearly at 48px.
+Style/medium: immaculate tactile 3D soft matte vinyl collectible, simple chunky volumes, warm ivory ceramic-like surface, subtle peach inset inside the curled ear, dark indigo eyes and smile. Calm, charming, clever, understated; confident gentle smile and relaxed brows. Large clean silhouette, very little surface detail. Camera straight on, no dramatic perspective.
+Scene/backdrop: edge-to-edge soft periwinkle lavender square backdrop, an extremely subtle lighter central illumination. Background fills all four corners. Soft studio lighting from upper left with restrained ambient occlusion.
+Text: none.
+Constraints: one standalone square icon artwork only, no contact sheet, no mockup, no phone frame, no pre-rounded outer corners, no icon inset tile, no border, no writing or letter labels, no separate S letter, no watermark, no badges, no sparkles, no gadgets, no mouse cursor, no platform logos. No extra characters. Do not turn Sela into a rabbit, elephant, robot, bird, ghost, or familiar branded mascot. Retain the original cream/apricot/indigo/periwinkle identity. Prioritize a memorable friendly face over a full-body toy portrait.

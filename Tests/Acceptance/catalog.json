@@ -1,0 +1,519 @@
+{
+  "version": 1,
+  "target": "Sela 专用模拟器测试与修复",
+  "reviewDate": "2026-10-25",
+  "defaultEvidenceMeaning": "历史分项观察；没有指定构建和满足证据范围不能作当前版本通过。",
+  "cases": [
+    {
+      "id": "BILLING-01",
+      "title": "官方计划授权与成功推理",
+      "priority": "P1",
+      "required_scope": "official_plan_inference",
+      "required_rounds": 1,
+      "source_binding": "app",
+      "oracle": "Sela 获得官方计划用量权限，以同一账户模型目录完成实际 Responses 推理。",
+      "gaps": [
+        "用户暂缓登录；截图余额、已选服务商、模型目录都不代表实际推理成功。"
+      ],
+      "observations": [
+        {
+          "scope": "official_plan_inference",
+          "verdict": "blocked",
+          "rounds": 0,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:5d4bce8ef3607814b18cbdbc81344438de6c1e37e6d4e8306b67f01ed865fac6",
+          "proofs": [
+            {
+              "artifact": "output/simulator-plan-20261025/plan-auth-deferred.json",
+              "at": [
+                "authorizationSuccessNotClaimed"
+              ],
+              "equals": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CHAT-01",
+      "title": "中文多轮与新会话隔离",
+      "priority": "P1",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "真实模型保持本会话上下文；新会话不串入未经授权的原文；回答与原始回包对应。",
+      "gaps": [
+        "真实模型三轮未完成。"
+      ],
+      "observations": [
+        {
+          "scope": "real_model_native",
+          "verdict": "blocked",
+          "rounds": 0,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:5d4bce8ef3607814b18cbdbc81344438de6c1e37e6d4e8306b67f01ed865fac6",
+          "proofs": [
+            {
+              "artifact": "output/simulator-native-content-20261025/final-model-recheck.json",
+              "at": [
+                "positiveModelAcceptance"
+              ],
+              "equals": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CHAT-02",
+      "title": "取消与迟到回复",
+      "priority": "P1",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "取消后加载结算、输入保留，旧回复不能写入替代会话或新任务。",
+      "gaps": [
+        "已有离线回归；实际模型在途取消与新会话切换待测。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "TOOL-01",
+      "title": "工具选择、执行和结果一致",
+      "priority": "P0",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "同一任务的模型参数、审核、实际系统写入、工具回执、结果卡和独立回读一致。",
+      "gaps": [
+        "工作台存储成功不能替代工具协调器真实链路。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "TOOL-02",
+      "title": "未知提交与重复操作",
+      "priority": "P0",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "未知结果保留未知；中断、重复点击和重开不能自动重发已提交写入。",
+      "gaps": [
+        "核心逻辑有离线检查，真实工具和重开链仍待验收。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "CONTENT-01",
+      "title": "本机正文和剪贴板保真",
+      "priority": "P1",
+      "required_scope": "simulator_native_ui",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "复制真实完整引用；输入、存储、SHA256、剪贴板 UTF-8 独立一致；不宣称目标已粘贴。",
+      "gaps": [
+        "历史三轮是通知修复源码；新构建须核对相同代码或重新验证。"
+      ],
+      "observations": [
+        {
+          "scope": "simulator_native_ui",
+          "verdict": "pass",
+          "rounds": 3,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:cd0a0959b1d94d4155ddaa8f9c4e2c35718551f5b97065fc4aff50aca772677c",
+          "proofs": [
+            {
+              "artifact": "output/simulator-native-content-20261025/content-rounds-verification.json",
+              "at": [
+                "passed"
+              ],
+              "equals": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MEMORY-01",
+      "title": "手动记忆保存、取消与停用重开",
+      "priority": "P1",
+      "required_scope": "simulator_native_ui",
+      "required_rounds": 1,
+      "source_binding": "app",
+      "oracle": "来源正确；取消不写入，继续保留草稿，停用状态在实际重开后保留。",
+      "gaps": [],
+      "observations": [
+        {
+          "scope": "simulator_native_ui",
+          "verdict": "pass",
+          "rounds": 1,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:5d4bce8ef3607814b18cbdbc81344438de6c1e37e6d4e8306b67f01ed865fac6",
+          "proofs": [
+            {
+              "artifact": "output/simulator-native-content-20261025/memory-source-save-verification.json",
+              "at": [
+                "correctSourceVisibleAndPersisted"
+              ],
+              "equals": true
+            },
+            {
+              "artifact": "output/simulator-native-content-20261025/memory-source-save-verification.json",
+              "at": [
+                "discardDidNotWrite"
+              ],
+              "equals": true
+            },
+            {
+              "artifact": "output/simulator-native-content-20261025/memory-edit-relaunch-verification.json",
+              "at": [
+                "savedRecordPersistedAcrossActualAppRestart"
+              ],
+              "equals": true
+            },
+            {
+              "artifact": "output/simulator-native-content-20261025/memory-edit-relaunch-verification.json",
+              "at": [
+                "notReferencedIndicatorVisible"
+              ],
+              "equals": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MEMORY-02",
+      "title": "自动学习与独立跨会话召回",
+      "priority": "P1",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "关闭旧版跨聊天原文检索，按真实来源学习后在新会话准确召回；无来源不得自造事实。",
+      "gaps": [
+        "专用模拟器的真实学习/召回待官方计划授权；其他设备结果不能自动搬作此实例通过。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "MEMORY-03",
+      "title": "纠正、遗忘与迟到学习",
+      "priority": "P0",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "新明确值替代旧值；遗忘排除来源，迟到任务和重开不能使旧事实复活。",
+      "gaps": [
+        "41 项核心与离线服务检查保留；模拟器真实模型和 UI 遗忘链未通过。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "TASK-01",
+      "title": "任务控制归属和释放竞争",
+      "priority": "P0",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "A→B→A、等待确认、暂停/停止和资源释放后继续均只控制本次执行。",
+      "gaps": [
+        "离线状态/控制检查通过；真实模型任务控制与释放链待测。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "TASK-02",
+      "title": "长任务原要求与账本保留",
+      "priority": "P1",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "压缩和重开保留目标、补充、子任务与回执；连续执行不被总步数上限截断。",
+      "gaps": [
+        "20k 步主机压力检查不证明真实长任务；真实完成与资源趋势待测。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "UI-01",
+      "title": "错误、权限与草稿恢复",
+      "priority": "P1",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "错误可见且可恢复；加载结束、原问题保留，重试不会跳过原生审核或重复写入。",
+      "gaps": [
+        "额度不足等具体异常已验证；真实成功/取消/异常的整条流程仍待测。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "ISLAND-01",
+      "title": "实际锁屏与最小态跳转",
+      "priority": "P1",
+      "required_scope": "simulator_presentation",
+      "required_rounds": 1,
+      "source_binding": "app",
+      "oracle": "由实际 Lock 控制进入锁屏；系统最小态可见，展开和打开对应保存任务且不自动执行。",
+      "gaps": [],
+      "observations": [
+        {
+          "scope": "simulator_presentation",
+          "verdict": "pass",
+          "rounds": 1,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:5d4bce8ef3607814b18cbdbc81344438de6c1e37e6d4e8306b67f01ed865fac6",
+          "proofs": [
+            {
+              "artifact": "output/simulator-native-content-20261025/island/lock-screen-verification.json",
+              "at": [
+                "actualSimulatorLockControlInvoked"
+              ],
+              "equals": true
+            },
+            {
+              "artifact": "output/simulator-native-content-20261025/island/lock-screen-verification.json",
+              "at": [
+                "lockCardOpenAppTapped"
+              ],
+              "equals": true
+            },
+            {
+              "artifact": "output/simulator-native-content-20261025/island/minimal-verification.json",
+              "at": [
+                "systemRenderedTwoSeparateAppActivitiesInMinimalPresentation"
+              ],
+              "equals": true
+            },
+            {
+              "artifact": "output/simulator-native-content-20261025/island/minimal-verification.json",
+              "at": [
+                "singleTapMinimalOpenedMainSavedTaskA"
+              ],
+              "equals": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ISLAND-02",
+      "title": "真实任务状态与卡片控制",
+      "priority": "P0",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "真实引擎阶段、旧卡片归属、暂停/停止和结束一致；过期不可伪装新进度。",
+      "gaps": [
+        "展示夹具不给控制权；真实控制仍待测；60 秒系统刷新截止未验收。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "NOTIFY-01",
+      "title": "授权、前后台及去重",
+      "priority": "P1",
+      "required_scope": "simulator_os_notification",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "拒绝不提交、前台不重复横幅、同一事件不重复；不同事件可提醒并准确打开。",
+      "gaps": [
+        "历史系统投递使用固定合成任务，真实引擎触发另测。"
+      ],
+      "observations": [
+        {
+          "scope": "simulator_os_notification",
+          "verdict": "pass",
+          "rounds": 3,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:cd0a0959b1d94d4155ddaa8f9c4e2c35718551f5b97065fc4aff50aca772677c",
+          "proofs": [
+            {
+              "artifact": "output/simulator-notifications-20261025/callback-fixed/notification-rounds-verification.json",
+              "at": [
+                "passed"
+              ],
+              "equals": 3
+            },
+            {
+              "artifact": "output/simulator-notifications-20261025/callback-fixed/foreground-delegate-verification.json",
+              "at": [
+                "foregroundSuppressions"
+              ],
+              "equals": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NOTIFY-02",
+      "title": "通知冷启动归属与稳定",
+      "priority": "P0",
+      "required_scope": "simulator_os_notification",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "先确认旧进程结束，再由真实通知启动新进程；A/B/A 目标准确且不崩溃。",
+      "gaps": [
+        "历史冷启动回归覆盖模拟器合成通知，真实引擎事件另测。"
+      ],
+      "observations": [
+        {
+          "scope": "simulator_os_notification",
+          "verdict": "pass",
+          "rounds": 3,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:cd0a0959b1d94d4155ddaa8f9c4e2c35718551f5b97065fc4aff50aca772677c",
+          "proofs": [
+            {
+              "artifact": "output/simulator-notifications-20261025/callback-fixed/cold-start-verification.json",
+              "at": [
+                "passed"
+              ],
+              "equals": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PERF-01",
+      "title": "同进程稳定重复与内存趋势",
+      "priority": "P1",
+      "required_scope": "real_model_native",
+      "required_rounds": 3,
+      "source_binding": "app",
+      "oracle": "固定场景、可比较的数据量，记录缓存预热后同进程资源趋势；不能每轮重启掩盖增长。",
+      "gaps": [
+        "仅有分阶段短采样和重开用例；没有真实模型持续运行的无增长证明。"
+      ],
+      "observations": []
+    },
+    {
+      "id": "DATA-01",
+      "title": "原有数据、密钥和长任务设置",
+      "priority": "P0",
+      "required_scope": "preservation",
+      "required_rounds": 1,
+      "source_binding": "app",
+      "oracle": "选定测试配置变更有授权；原有内容/草稿不被覆盖，凭据不进入日志，长任务不被关闭。",
+      "gaps": [
+        "之前实例保存核对通过；切换计划授权后须建立新的配置基线和收尾核对。"
+      ],
+      "observations": [
+        {
+          "scope": "preservation",
+          "verdict": "partial",
+          "rounds": 1,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:5d4bce8ef3607814b18cbdbc81344438de6c1e37e6d4e8306b67f01ed865fac6",
+          "proofs": [
+            {
+              "artifact": "output/simulator-native-content-20261025/final-primary-preservation.json",
+              "at": [
+                "previousRecordHashesUnchanged"
+              ],
+              "equals": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HARNESS-01",
+      "title": "测试进程、会话与派发前保护",
+      "priority": "P0",
+      "required_scope": "offline_transport",
+      "required_rounds": 1,
+      "source_binding": "components",
+      "oracle": "只接受本实例实际 runner；引用路径的 shell、其他设备和相似执行名在访问 UI 文件前拒绝。",
+      "gaps": [],
+      "observations": [
+        {
+          "scope": "offline_transport",
+          "verdict": "pass",
+          "rounds": 1,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:5d4bce8ef3607814b18cbdbc81344438de6c1e37e6d4e8306b67f01ed865fac6",
+          "proofs": [
+            {
+              "artifact": "output/simulator-plan-20261025/operator-liveness-regression.json",
+              "at": [
+                "regressionTests"
+              ],
+              "equals": 10
+            },
+            {
+              "artifact": "output/simulator-plan-20261025/operator-liveness-regression.json",
+              "at": [
+                "regressionExitCodeAfter"
+              ],
+              "equals": 0
+            },
+            {
+              "artifact": "output/simulator-plan-20261025/operator-liveness-real-verification.json",
+              "at": [
+                "correctActualOperatorAccepted"
+              ],
+              "equals": true
+            }
+          ],
+          "component_hashes": {
+            "Tools/SimulatorLab/live.py": "979d0d1ea7c3eac75545b55b8b8ee6a4f35a221fc4bcdc390257553a89006428",
+            "Tests/SimulatorTransport/main.py": "fa08e70c4d44fa713676d13010152d4a82d93f593198363f7f4d40d2090b3969",
+            "Tests/SimulatorTransport/run.sh": "40108ebdc0a4aeb0e7f5c24ecb066749b85982e130f2d4bcbd7f3cd3bb6781dd"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MEMORY-04",
+      "title": "计划令牌轮换时的学习归属",
+      "priority": "P1",
+      "required_scope": "offline_logic",
+      "required_rounds": 1,
+      "source_binding": "app",
+      "oracle": "同账户续期保留学习和召回；换账户、撤销权限、同账户重新授权均拒绝旧结果；迟到刷新不能覆盖新授权，合法刷新仍可保存。",
+      "gaps": [
+        "四种离线场景和两项持久化控制不是三轮真实模型；实际账号续期、推理与学习链待用户授权。"
+      ],
+      "observations": [
+        {
+          "scope": "offline_logic",
+          "verdict": "pass",
+          "rounds": 1,
+          "source_revision": "b04a98f69c9584ceb4357bb132d278eeb17ac13d+sha256:7192dcd23b24f4f0f0d3d00f1ff0423072aa9eae903c95f120756241da02709f",
+          "proofs": [
+            {
+              "artifact": "output/simulator-plan-20261025/offline-regression-verification.json",
+              "at": [
+                "suites",
+                "planMemory",
+                "casesPassed"
+              ],
+              "equals": 4
+            },
+            {
+              "artifact": "output/simulator-plan-20261025/offline-regression-verification.json",
+              "at": [
+                "suites",
+                "planMemory",
+                "accountChangeRejected"
+              ],
+              "equals": true
+            },
+            {
+              "artifact": "output/simulator-plan-20261025/offline-regression-verification.json",
+              "at": [
+                "suites",
+                "planMemory",
+                "revocationRejected"
+              ],
+              "equals": true
+            },
+            {
+              "artifact": "output/simulator-plan-20261025/offline-regression-verification.json",
+              "at": [
+                "suites",
+                "planMemory",
+                "actualBearerOnTransport"
+              ],
+              "equals": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

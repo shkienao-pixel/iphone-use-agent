@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "status": "actual_permission_denial_recovery_query_single_schedule_system_visual_alert_and_stop_cleanup_passed",
+  "supportedOperations": [
+    "alarm_list",
+    "alarm_create"
+  ],
+  "physicalCases": [
+    {
+      "case": "A02",
+      "build": 125,
+      "status": "passed actual denied query with visible permission error, no write",
+      "evidence": "output/ios-native-longrun-20261025/ALARM-DENY-A02/verification.json"
+    },
+    {
+      "case": "A03",
+      "build": 125,
+      "status": "passed system permission recovery and actual own-alarm zero baseline",
+      "evidence": "output/ios-native-longrun-20261025/ALARM-GRANT-A03/verification.json"
+    },
+    {
+      "case": "A04",
+      "build": 125,
+      "status": "passed actual single schedule, matching ID/time, system visual alert while background and operator Stop",
+      "evidence": "output/ios-native-longrun-20261025/ALARM-CREATE-A04/verification.json"
+    },
+    {
+      "case": "A05",
+      "build": 125,
+      "status": "passed actual zero own-alarm list after system Stop",
+      "evidence": "output/ios-native-longrun-20261025/ALARM-CLEANUP-A05/verification.json"
+    },
+    {
+      "case": "A06",
+      "build": 126,
+      "status": "passed actual one-query Agent call,new2191-byte standalone guide,exact visible JSON and zero writes",
+      "evidence": "output/ios-native-longrun-20261025/ALARM-SKILL-A06/verification.json"
+    }
+  ],
+  "matchingAppCardPhysicallyVerified": true,
+  "runtimeSkillLoadVerified": true,
+  "visualAlertVerified": true,
+  "soundAudibilityVerified": false,
+  "clockWholeLibraryAccess": false,
+  "esp32Used": false,
+  "limitations": [
+    "Only this app's alarms, list returns up to20 items",
+    "No Agent modify/cancel/delete/stop/snooze/recurrence/timer operation",
+    "A02-A05 used built-in guidance;126 A06 independently verifies new standalone guide query path,not new audible-alarm evidence"
+  ],
+  "operatorSystemStopAndEmptyOwnAlarmReadbackVerified": true,
+  "latestActualRuntimeGuideLoad": {
+    "build": 128,
+    "bodyUTF8Bytes": 2454,
+    "evidence": "output/ios-native-longrun-20261025/ALARM-SKILL-A07/verification.json",
+    "businessCall": "one alarm_list; actual updated Health/Notes guides loaded,but this is not their business acceptance"
+  },
+  "actualConversationResultCards": {
+    "build": 130,
+    "queryCardWithActualZeroCount": true,
+    "createdAlarmCardIDAndTimestampBoundToRealReceipt": true,
+    "realClockIconAndProminentTimeVisuallyVerified": true,
+    "coldFourStoresUnchanged": true,
+    "coldConversationCardRestoredAfterOpeningConversation": true,
+    "systemAlertVisualVerifiedInThisCase": false,
+    "actualSDKLaterState": "alerting",
+    "operatorFixtureCleanupStillPending": false,
+    "evidence": "output/ios-native-longrun-20261025/ALARM-CARD-CREATE-A09/verification.json",
+    "AgentStopCapabilityAdded": false
+  },
+  "fixtureAbsentReadback": {
+    "status": "passed_real_Agent_own_alarm_zero_query_and132_result_card_after_fixture_already_absent",
+    "fullTaskAcceptance": true,
+    "build": 132,
+    "taskID": "E339A016-E45C-4E91-A180-47F5AE31F633",
+    "actualAlarmCount": 0,
+    "originalFixtureIDAbsent": true,
+    "operatorStopActuallyExecuted": false,
+    "operatorCleanupNotice": "already_absent_no_operation",
+    "disappearanceCauseNotEstablished": true,
+    "oneSend": true,
+    "actualAlarmListCalls": 1,
+    "extraExecutionApprovalTaps": 0,
+    "actualPerCardAXIdentifierMatched": true,
+    "defaultCompletedReportCollapsed": true,
+    "oldReceiptsAndContentStoresByteIdentical": true,
+    "oldTaskHistoryExactExistingLimit50Matched": true,
+    "esp32Used": false,
+    "verifiedAt": "2026-10-25T13:09:25.564441+00:00"
+  }
+}

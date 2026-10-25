@@ -1,0 +1,3 @@
+interface:
+  display_name: "iOS 闹钟"
+  short_description: "查询和创建 Sela 自己的单次闹钟，核对时间、权限、回执与实际范围。"

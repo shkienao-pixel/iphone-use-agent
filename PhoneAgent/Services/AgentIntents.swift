@@ -3,7 +3,7 @@ import AppIntents
 
 struct StartCurrentPhoneTaskIntent: AppIntent {
     static let title: LocalizedStringResource = "开始当前手机任务"
-    static let description = IntentDescription("执行 Phone Agent 中保存的当前任务。")
+    static let description = IntentDescription("执行 Sela 中保存的当前任务。")
     static let supportedModes: IntentModes = [.foreground(.immediate)]
     static let allowedExecutionTargets: IntentExecutionTargets = [.main]
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
@@ -17,7 +17,7 @@ struct StartCurrentPhoneTaskIntent: AppIntent {
 
 struct RunPhoneTaskIntent: AppIntent {
     static let title: LocalizedStringResource = "执行手机任务"
-    static let description = IntentDescription("把文字任务交给 Phone Agent，可用于固定口令或接收听写结果。")
+    static let description = IntentDescription("把文字任务交给 Sela，可用于固定口令或接收听写结果。")
     static let supportedModes: IntentModes = [.foreground(.immediate)]
     static let allowedExecutionTargets: IntentExecutionTargets = [.main]
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
@@ -114,7 +114,7 @@ struct AmendPhoneTaskIntent: AppIntent {
 
 struct ListenPhoneTaskIntent: AppIntent {
     static let title: LocalizedStringResource = "语音告诉助手"
-    static let description = IntentDescription("打开 Phone Agent 本机听写，识别后可修改并提交任务。")
+    static let description = IntentDescription("打开 Sela 本机听写，识别后可修改并提交任务。")
     static let supportedModes: IntentModes = [.foreground(.immediate)]
     static let allowedExecutionTargets: IntentExecutionTargets = [.main]
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
@@ -125,46 +125,43 @@ struct ListenPhoneTaskIntent: AppIntent {
     }
 }
 
-// Available as parameterized actions in Shortcuts. Existing App Shortcut phrases
-// remain stable; queue controls require the authenticated foreground app.
+// Keep legacy intent identities so saved shortcuts fail gracefully. Queue
+// controls are no longer discoverable or allowed to create or run work.
 struct QueuePhoneTaskIntent: AppIntent {
     static let title: LocalizedStringResource = "将手机任务加入队列"
-    static let description = IntentDescription("保存新任务，保留当前执行；运行队列后依次处理。")
+    static let description = IntentDescription("此功能已移除，请在 Sela 中直接输入任务。")
     static let supportedModes: IntentModes = [.foreground(.immediate)]
     static let allowedExecutionTargets: IntentExecutionTargets = [.main]
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
+    static let isDiscoverable = false
     @Parameter(title: "任务", requestValueDialog: "要加入哪项任务？") var task: String
     static var parameterSummary: some ParameterSummary { Summary("将 \(\.$task) 加入手机任务队列") }
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        let message = PhoneAgentViewModel.shared.requestQueuedVoiceTask(task, priority: false)
-        return .result(dialog: "\(message)")
+        .result(dialog: "任务列表功能已移除，请在 Sela 中直接输入任务。")
     }
 }
 struct PrioritizePhoneTaskIntent: AppIntent {
     static let title: LocalizedStringResource = "优先执行手机任务"
-    static let description = IntentDescription("收到任务参数后暂停原任务，优先执行新任务，完成后继续原任务。")
+    static let description = IntentDescription("此功能已移除，请在 Sela 中直接输入任务。")
     static let supportedModes: IntentModes = [.foreground(.immediate)]
     static let allowedExecutionTargets: IntentExecutionTargets = [.main]
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
+    static let isDiscoverable = false
     @Parameter(title: "任务", requestValueDialog: "要优先做什么？") var task: String
     static var parameterSummary: some ParameterSummary { Summary("优先执行 \(\.$task)") }
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        let message = PhoneAgentViewModel.shared.requestQueuedVoiceTask(task, priority: true)
-        return .result(dialog: "\(message)")
+        .result(dialog: "任务列表功能已移除，请在 Sela 中直接输入任务。")
     }
 }
 struct RunPhoneQueueIntent: AppIntent {
     static let title: LocalizedStringResource = "运行手机任务队列"
-    static let description = IntentDescription("明确确认后继续下一项；有执行中的任务时，等待它完成。")
+    static let description = IntentDescription("此功能已移除，请在 Sela 中直接输入任务。")
     static let supportedModes: IntentModes = [.foreground(.immediate)]
     static let allowedExecutionTargets: IntentExecutionTargets = [.main]
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
+    static let isDiscoverable = false
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        let model = PhoneAgentViewModel.shared
-        guard model.taskQueue.pendingCount > 0 else { return .result(dialog: "队列没有待处理任务。") }
-        model.runTaskQueue(); model.voiceRequestID = UUID()
-        let message = model.queueStatus
-        return .result(dialog: "\(message)")
+        .result(dialog: "任务列表功能已移除，请在 Sela 中直接输入任务。")
     }
 }
 

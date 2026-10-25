@@ -38,13 +38,65 @@ struct PhoneTaskRecord: Identifiable, Codable {
     var outcome: TaskOutcome = .running
     var summary = "正在准备"
     var logs: [AgentLogEntry] = []
+    // Actual completed native results for conversation cards; absent in old records.
+    var nativeResults: [NativeTaskResult]? = nil
     // Optional so existing task files remain readable.
     var amendments: [TaskAmendment]? = nil
     var subtasks: [TaskSubtask]? = nil
+    // Optional so existing history and queue documents remain readable.
+    var contextMemory: TaskContextMemory? = nil
+    var attachments: [ComposerAttachment]? = nil
+    /// Same-conversation source excerpts selected during intent resolution.
+    /// Reference data only; goal/amendments and verified receipts keep authority.
+    var conversationReference: String? = nil
+    /// Scheduling provenance only; never restores an execution session or tool authority.
+    var executionLane: String? = nil
+    // Optional checkpoints preserve an interrupted attempt's exact action
+    // budget without restoring any process-local execution authority.
+    var checkpointStep: Int? = nil
+    var attemptStartStep: Int? = nil
+    var validConversationReference: Bool { (conversationReference?.utf8.count ?? 0) <= 64_000 }
     var effectiveGoal: String {
         let additions = (amendments ?? []).enumerated().map { "\($0.offset + 1). \($0.element.text)" }
         guard !additions.isEmpty else { return goal }
         return goal + "\n\n用户后续补充（与前文冲突时，以较新的明确要求为准）：\n" + additions.joined(separator: "\n")
+    }
+}
+
+/// A local snapshot, with retention limits kept beside the actual saved record.
+/// Exporting does not consult a model or restore any execution authority.
+enum TaskRecordExport {
+    struct Coverage: Codable {
+        let scope: String
+        let fullHistoricalTranscriptGuaranteed: Bool
+        let rawLogCount: Int
+        let firstRawLogStep: Int?
+        let lastRawLogStep: Int?
+        let compactedSourceEntryCount: Int
+        let retainedCompactedEntryCount: Int
+        let truncatedCompactedCharacters: Int
+        let notIncluded: [String]
+    }
+    struct Document: Codable {
+        let schemaVersion: Int
+        let exportedAt: Date
+        let dateEncoding: String
+        let coverage: Coverage
+        let record: PhoneTaskRecord
+    }
+    static func data(record: PhoneTaskRecord, exportedAt: Date = Date()) throws -> Data {
+        let coverage = Coverage(scope: "retained_task_snapshot", fullHistoricalTranscriptGuaranteed: false,
+            rawLogCount: record.logs.count, firstRawLogStep: record.logs.map(\.step).min(),
+            lastRawLogStep: record.logs.map(\.step).max(),
+            compactedSourceEntryCount: record.contextMemory?.compactedEntryCount ?? 0,
+            retainedCompactedEntryCount: record.contextMemory?.retainedEntryCount ?? 0,
+            truncatedCompactedCharacters: record.contextMemory?.truncatedCharacterCount ?? 0,
+            notIncluded: ["已压缩或被覆盖日志的完整原文", "附件及保存产物的原文件", "独立系统核验结果",
+                          "单独保存的工具提交回执账本与运行计时文件"])
+        let document = Document(schemaVersion: 1, exportedAt: exportedAt,
+            dateEncoding: "seconds_since_2001-01-01T00:00:00Z", coverage: coverage, record: record)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(document)
     }
 }
 
@@ -60,8 +112,13 @@ final class TaskHistoryStore: ObservableObject {
             .appendingPathComponent("PhoneAgent", isDirectory: true).appendingPathComponent("tasks.json")
         guard FileManager.default.fileExists(atPath: self.url.path) else { return }
         do {
+            guard (try self.url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 64_000_000 else { throw CocoaError(.fileReadTooLarge) }
             let document = try JSONDecoder().decode(Document.self, from: Data(contentsOf: self.url))
             guard document.version == 1 else { throw CocoaError(.fileReadUnknown) }
+            for record in document.records {
+                try ComposerAttachmentPolicy.validate(record.attachments ?? [])
+                guard record.validConversationReference else { throw CocoaError(.fileReadCorruptFile) }
+            }
             records = Array(document.records.prefix(50)).map { record in
                 var value = record
                 if [.running, .paused, .needsUser].contains(value.outcome) {
@@ -77,6 +134,11 @@ final class TaskHistoryStore: ObservableObject {
     }
     func upsert(_ record: PhoneTaskRecord) {
         guard readable else { return }
+        do {
+            try ComposerAttachmentPolicy.validate(record.attachments ?? [])
+            guard record.validConversationReference else { throw CocoaError(.fileReadCorruptFile) }
+        }
+        catch { self.error = error.localizedDescription; return }
         records.removeAll { $0.id == record.id }; records.insert(record, at: 0)
         records = Array(records.prefix(50)); save()
     }
@@ -100,6 +162,7 @@ final class TaskHistoryStore: ObservableObject {
             var values = URLResourceValues(); values.isExcludedFromBackup = true
             var excluded = folder; try excluded.setResourceValues(values)
             let data = try JSONEncoder().encode(Document(records: records))
+            guard data.count <= 64_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
             #if os(iOS)
             try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             #else

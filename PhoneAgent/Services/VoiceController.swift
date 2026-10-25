@@ -93,7 +93,7 @@ final class VoiceController: NSObject, ObservableObject, AVSpeechSynthesizerDele
             do {
                 let microphone = await AVAudioApplication.requestRecordPermission()
                 try self.check(token)
-                guard microphone else { throw AgentError.message("请在系统设置中允许 Phone Agent 使用麦克风") }
+                guard microphone else { throw AgentError.message("请在系统设置中允许 Sela 使用麦克风") }
                 try await self.prepareAudio?(); try self.check(token)
                 let session = AVAudioSession.sharedInstance()
                 try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])

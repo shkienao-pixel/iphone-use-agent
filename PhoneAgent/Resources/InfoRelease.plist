@@ -2,8 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>LSApplicationQueriesSchemes</key>
+	<array><string>ctrip</string></array>
 	<key>CFBundleDisplayName</key>
-	<string>Phone Agent</string>
+	<string>Sela</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -11,13 +13,17 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Sela</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>PhoneAgentSourceRevision</key>
+	<string>$(PHONE_AGENT_SOURCE_REVISION)</string>
+	<key>PhoneAgentHarnessVersion</key>
+	<string>$(PHONE_AGENT_HARNESS_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
@@ -42,15 +48,17 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>将你主动说出的内容识别成可编辑文字，兼容听写优先使用本机识别。</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>确认工具请求后，查找或添加你指定的日程。匹配结果将发送给你授权的 AI 服务。</string>
+	<string>按你的任务查找或添加指定日程。匹配结果将发送给你授权的 AI 服务。</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>确认工具请求后，查找或添加你指定的提醒。匹配结果将发送给你授权的 AI 服务。</string>
+	<string>按你的任务查找或添加指定提醒。匹配结果将发送给你授权的 AI 服务。</string>
 	<key>NSContactsUsageDescription</key>
-	<string>确认请求后，查找你指定的联系人，匹配的姓名、号码和邮箱会发送给你授权的 AI 服务。</string>
+	<string>按你的任务查找指定联系人，匹配的姓名、号码和邮箱会发送给你授权的 AI 服务。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>确认请求后，按日期查找你授权可见照片的元数据，结果将发送给你授权的 AI 服务。</string>
+	<string>按你的任务及指定日期查找已授权可见照片的元数据，结果将发送给你授权的 AI 服务。</string>
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
 	<key>NSAlarmKitUsageDescription</key>
-	<string>确认请求后，创建和查看 Phone Agent 自己的闹钟。</string>
+	<string>按你的任务创建和查看 Sela 自己的闹钟。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>在你开启相机对话后预览；提问发送选定画面，另行开启连续观察后定期发送多张抽样画面给你授权的 AI 服务。</string>
 	<key>NSSupportsLiveActivities</key>
@@ -65,6 +73,24 @@
 				<string>phoneagent</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Sela connection authorization</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>sela-auth</string>
+			</array>
+		</dict>
 	</array>
+	<key>NSHealthShareUsageDescription</key>
+	<string>在你主动设置后，按所选范围读取健康数据；授权本身不会读取或发送健康记录。</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>在你主动授权后访问音乐资料库，支持后续音乐功能。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>在你主动使用位置相关功能时获取大致位置，作为地点参考。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>确认工具请求后，查找或添加你指定的日程。匹配结果将发送给你授权的 AI 服务。</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>确认工具请求后，查找或添加你指定的提醒。匹配结果将发送给你授权的 AI 服务。</string>
 </dict>
 </plist>

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "native_approximate_read_permission_wait_and_real_OS_stop_late_grant_protection_verified",
+  "supportedOperations": [
+    "location_current"
+  ],
+  "physicalCases": [
+    {
+      "case": "global-services-off",
+      "evidence": "output/ios-native-longrun-20261025/LOCATION-DENY-L01/verification.json"
+    },
+    {
+      "case": "permission-ui-timeout-no-late-restart",
+      "evidence": "output/ios-native-longrun-20261025/LOCATION-READ-L02/verification.json"
+    },
+    {
+      "case": "approximate-single-read",
+      "evidence": "output/ios-native-longrun-20261025/LOCATION-READ-L03/verification.json"
+    },
+    {
+      "case": "permission wait beyond old deadline then automatic same-ID completion",
+      "taskID": "766D1735-63C6-4D98-9CB3-B428D523E2D8",
+      "build": 102,
+      "evidence": "output/ios-native-longrun-20261025/LOCATION-WAIT-L04/verification.json"
+    },
+    {
+      "case": "actual OS authorization stopped before late grant; no read or resume after >110 seconds",
+      "taskID": "7828D677-D210-43F7-B45D-1850FE306D8A",
+      "build": 102,
+      "evidence": "output/ios-native-longrun-20261025/LOCATION-STOP-L05/verification.json"
+    }
+  ],
+  "runtimeSkillLoadVerified": true,
+  "esp32Used": false
+}

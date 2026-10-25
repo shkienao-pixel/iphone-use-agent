@@ -1,0 +1,17 @@
+Sela app icon — abstract v1
+Created: 2026-10-24 (Asia/Shanghai)
+Generation mode: built-in image_gen
+User direction: no cartoon; an abstract brand emblem with the design sensibility of Muse, Claude and GPT.
+Deliverable: sela-app-icon-abstract-v1-1024.png
+Original: sela-app-icon-abstract-v1-original.png
+Status: design asset only; existing app icon has not been replaced.
+
+Use case: logo-brand.
+Asset type: a finished, original abstract brand symbol as an iPhone app icon for Sela, an intelligent personal assistant.
+Primary request: create ONE exceptional minimal abstract emblem with the visual confidence of a leading contemporary AI brand. The user wants sophisticated graphic design, memorable silhouette and restraint. Invent Sela's own identity; do not copy an existing brand.
+Design idea: "a gesture becoming an action". Explore one compact, bold sculptural S-adjacent glyph, formed by two broad offset curved folds that feel like a single decisive flowing gesture. The upper and lower masses should have a subtle asymmetric relationship, and the counterform should be intentional and beautiful. The S is suggested through the entire silhouette and negative space, not rendered as a font character. Find an elegant, unexpected geometry with rounded terminals and clean deliberate cuts. The mark must have character even as a tiny one-color silhouette. Prioritize a strong authored shape over literal storytelling.
+Style/medium: ultra-refined flat vector-style graphic identity, optically balanced geometry, smooth solid filled shapes, no outlines, no gradients, no texture, no rendered materials, absolutely no 3D. Editorial, cultured, intelligent, quietly bold. Think of an iconic symbol designed by an independent identity studio.
+Scene/backdrop: the entire square canvas is a pure near-black charcoal background, filled to all edges and corners. One solid warm ivory symbol centered on it. No additional colors.
+Composition/framing: square, straight-on. Emblem occupies approximately 62–68 percent of canvas width and height, generous controlled negative space around it, neither too thin nor too complex. A clean symbol that remains recognizable at 32px.
+Text: none.
+Constraints: ONE original standalone icon only. No mockup, board, variations, labels, frames, pre-rounded canvas corners, border, slogan, brand name, watermark, text or typography. No mascot, face, creature, eyes, hands, phone drawing, cursor, chat bubble, chip, brain, sparkle, starburst, asterisk, radial sun, looped rope knot, sixfold interlace, flower, infinity sign, yin-yang symbol, loading spinner, or conventional S from a typeface. No resemblance to the OpenAI knot or Claude sunburst. The result should be a beautiful independent abstract brand mark, highly simple and intentional.

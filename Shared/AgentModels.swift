@@ -12,6 +12,8 @@ struct AgentSettings: Codable {
     var jsonMode = true
     var legacyTokenLimit = false
     var maxSteps = 25
+    // Missing in older saved settings: long tasks continue until completion or pause.
+    var continuousExecution: Bool? = nil
     var startDelay = 5.0
     var stepInterval = 1.0
     var previewOnly = false
@@ -20,6 +22,10 @@ struct AgentSettings: Codable {
     // Optional for backward-compatible settings decoding; confirmation is per accessory.
     var homeMappedPeripheralID: String? = nil
     var providerName: String? = nil
+    // Existing installations keep API-key billing. ChatGPT plan usage is an
+    // explicit, separately authorized OAuth connection.
+    var modelAuthentication: String? = nil
+    var usesChatGPTPlan: Bool { modelAuthentication == "chatgpt_plan" }
     // Optional so existing saved settings keep their endpoint/key association.
     var maxResponseTokens: Int? = nil
     var autoPiPOnExit: Bool? = nil
@@ -27,8 +33,19 @@ struct AgentSettings: Codable {
     var useMemories: Bool? = nil
     var systemToolsEnabled: Bool? = nil
     var toolsOnly: Bool? = nil
-    var liveTaskStatus: Bool? = nil
+    var liveTaskStatus: Bool? = true
     var responseTokenLimit: Int { max(1024, min(16384, maxResponseTokens ?? 4096)) }
+    var runsContinuously: Bool { continuousExecution != false }
+    var executionPolicyInstructions: String {
+        confirmEachStep
+            ? "Review mode: the host pauses operations for step approval. Request the next tool/action directly; the host presents its review once. Do not add a separate ask_user confirmation before that review."
+            : "Automatic execution: receiving a clear user task authorizes the supported operations needed to complete it. Start immediately and continue without asking whether to begin or requesting per-step/tool approval. The user can pause or stop at any time; an interrupted task must not restart without an explicit continue request. Ask only for genuinely missing task information, unavailable capabilities, OS authorization or authentication. Preserve uncertain-write and duplicate protections."
+    }
+    var validStepConfiguration: Bool { (1...100).contains(maxSteps) }
+    func allowsNextStep(after completedSteps: Int) -> Bool {
+        completedSteps >= 0 && completedSteps < Int.max &&
+            (runsContinuously || completedSteps < maxSteps)
+    }
     func homeButtonIsMapped(to device: String?) -> Bool {
         guard let device else { return false }
         return homeMappedPeripheralID == device
@@ -344,6 +361,14 @@ struct AgentAction: Codable, Equatable {
     var seconds: Double?
     var reason: String
 
+    // Keep action captions short while preserving the answer the user requested.
+    // Older model responses only supplied reason and remain readable.
+    var completionSummary: String {
+        guard kind == .finish, let report = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !report.isEmpty else { return reason }
+        return report
+    }
+
     // JSON mode alone does not constrain field names or types.
     static var responseFormat: [String: Any] {
         let properties: [String: Any] = [
@@ -359,13 +384,17 @@ struct AgentAction: Codable, Equatable {
     }
 
     func validate() throws {
-        guard reason.count <= 1600, (text?.count ?? 0) <= ([Kind.system_tool, .phone_tool].contains(kind) ? 4000 : 500) else { throw AgentError.message("模型动作过长") }
+        let textLimit = kind == .system_tool ? 256_000 : kind == .phone_tool ? 4000 : kind == .finish ? 8000 : 500
+        guard reason.count <= 1600, (text?.count ?? 0) <= textLimit else { throw AgentError.message("模型动作过长") }
         func point(_ a: Double?, _ b: Double?) -> Bool {
             guard let a, let b else { return false }
             return a.isFinite && b.isFinite && (0...1).contains(a) && (0...1).contains(b)
         }
         if [.tap, .long_press, .drag].contains(kind), !point(x, y) { throw AgentError.message("模型返回无效坐标") }
         if kind == .drag && !point(x2, y2) { throw AgentError.message("拖动终点无效") }
+        if kind == .scroll && (x != nil || y != nil) && !point(x, y) {
+            throw AgentError.message("滚动定位须提供完整有效的 x、y 坐标")
+        }
         if let seconds, !seconds.isFinite || !(0...10).contains(seconds) { throw AgentError.message("动作等待时间超出范围") }
         if kind == .scroll, let amount, !(-20...20).contains(amount) { throw AgentError.message("滚动量超出范围") }
         if kind == .complete_subtask { guard UUID(uuidString: text ?? "") != nil else { throw AgentError.message("子任务缺少有效 ID") } }

@@ -30,8 +30,8 @@ final class TaskActivityController: ObservableObject {
             return
         }
         let final = [.completed, .failed, .stopped, .idle, .preview].contains(phase)
-        // Only generic action/status is exposed, never the task goal, screenshots,
-        // model reasoning, contact details or other private result contents.
+        // The user opted to display the task name. Never expose screenshots,
+        // model reasoning or tool result contents on the lock screen.
         var status: String
         switch phase {
         case .preparing: status = "正在准备"
@@ -42,18 +42,18 @@ final class TaskActivityController: ObservableObject {
         }
         if releasing { status = "\(phase.outcome.label)，正在结束操作与释放输入" }
         let state = AgentActivityAttributes.ContentState(status: String(status.prefix(80)), step: step, updatedAt: Date(),
-            controlSessionID: final ? nil : sessionID, canPause: !final && canPause && !releasing, canStop: !final && canStop)
+            controlSessionID: final ? nil : sessionID, canPause: !final && canPause && !releasing, canStop: !final && canStop, completed: phase == .completed && !releasing, phase: phase.rawValue, taskTitle: String((record.title.components(separatedBy: .newlines).first ?? record.title).prefix(60)))
         let content = ActivityContent(state: state, staleDate: final && !releasing ? nil : Date().addingTimeInterval(60))
         if let activity, activity.attributes.taskID != record.id { await activity.end(nil, dismissalPolicy: .immediate); self.activity = nil }
         if final && !releasing {
             if let activity { await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(300))); self.activity = nil }
             return
         }
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { error = "系统未允许实时活动，请在系统设置中检查 Phone Agent 权限"; return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { error = "系统未允许实时活动，请在系统设置中检查 Sela 权限"; return }
         if let activity { await activity.update(content); error = "" }
         else if !final && UIApplication.shared.applicationState == .active {
             do { activity = try Activity.request(attributes: AgentActivityAttributes(taskID: record.id), content: content, pushType: nil); error = "" }
-            catch { self.error = "实时活动暂时无法开启；任务仍可在 App 内查看" }
+            catch { self.error = "实时活动暂时无法开启（" + String((error as NSError).code) + "）；任务仍可在 App 内查看" }
         }
     }
 }

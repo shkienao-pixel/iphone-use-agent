@@ -1,0 +1,6 @@
+Tool: built-in image_gen
+Use case: background-extraction
+Edit target: sela-mascot-3d-original.png
+Transparent background: true
+
+Remove ONLY the entire periwinkle/lavender colored background and all ground/floor shadows, making the outside truly transparent with an alpha channel. Preserve the same cream soft-clay 3D little spirit, long S-shaped curled ear with warm peach inner surface, tiny round ear, dark indigo oval eyes and brows, smiling mouth, chubby body, waving left hand, lowered right hand, small feet, exact pose, proportions and material texture. Do not redesign or restyle the character. Keep natural self-shading on the body, but no external cast shadow, floor, pedestal, colored rim or backdrop. Tightly frame the complete visible mascot with only 4–6% transparent margin at its top and bottom so it reads large in an avatar, and center it horizontally. Clean antialiased silhouette edges, no residual purple fringe. No text, no badge, no rounded square, no background shape. Actual transparent PNG, not a checkerboard rendered into pixels.

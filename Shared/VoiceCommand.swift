@@ -46,14 +46,13 @@ enum VoiceCommand: Equatable {
 
 enum VoiceTaskRequestRoute: Equatable {
     case start
-    case queue
     case busy
 }
 
 enum VoiceTaskRequestRouter {
     static func route(
         hasCurrentTask: Bool,
-        pendingTaskCount: Int,
+        pendingTaskCount _: Int,
         queueRunning: Bool,
         engineRunning: Bool,
         queueSwitching: Bool,
@@ -62,9 +61,10 @@ enum VoiceTaskRequestRouter {
         manualBusy: Bool,
         calibrating: Bool
     ) -> VoiceTaskRequestRoute {
-        guard !queueSwitching, !engineReleasing, !voicePending, !manualBusy, !calibrating else { return .busy }
-        if hasCurrentTask || pendingTaskCount > 0 { return .queue }
-        guard !queueRunning, !engineRunning else { return .busy }
+        // Legacy saved queue records are retained as data, not routing state.
+        // Only current owners may block a new direct task.
+        guard !hasCurrentTask, !queueRunning, !engineRunning, !queueSwitching,
+              !engineReleasing, !voicePending, !manualBusy, !calibrating else { return .busy }
         return .start
     }
 }

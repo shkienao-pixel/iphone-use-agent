@@ -1,0 +1,17 @@
+Tool: built-in imagegen (reference image edit)
+Brand: Sela / 塞拉
+Source: sela-mascot-original.png
+Output: sela-app-icon-3d-1024.png (1024 x 1024)
+Original generated output: sela-mascot-3d-original.png
+
+Use case: style-transfer.
+Asset type: a finished 3D version of the existing Sela cartoon mascot app icon.
+Input image 1: EDIT TARGET AND CHARACTER IDENTITY REFERENCE. Preserve this exact original Sela character.
+Primary request: turn the supplied flat 2D character into a beautifully crafted three-dimensional soft-clay / satin vinyl art-toy rendering. Change only the visual medium and dimensionality; preserve its identity and all defining features.
+Identity invariants: the exact giant flowing S-shaped curled ear rising from the upper-right side of its head and curling toward upper-left, the apricot inner-ear inset, the small rounded ear nub at upper-left, a warm ivory head-and-body silhouette, two short thick feet, the screen-left mitten hand lifted in a greeting, the screen-right arm lowered, the slightly tilted face with two dark indigo oval eyes, asymmetric eyebrows, and tiny curved smile. Keep the same personality, relative proportions, silhouette, expression, pose and orientation. No new accessories or facial details.
+Style/medium: genuine full-volume 3D sculpted character, not a flat extrusion. Plump soft continuous forms with rounded transitions, subtle satin clay finish with a clean surface, gentle cream material, very soft warm highlights and cool lavender bounced light. Small dark indigo facial features can be shallow inlaid or raised sculpted details. Translate the drawn dark outer contours into natural dimensional edges; no thick black cartoon outline. The spectacular curled ear should be sculpted as a thick soft dimensional curl with a softly recessed apricot interior.
+Lighting/mood: large soft studio light above-left, delicate ambient occlusion in the curl and around arms and feet, a soft understated contact shadow, polished designer-toy product render. Calm and artistic, friendly rather than glossy.
+Scene/backdrop: same soft periwinkle-lavender background, seamless full-bleed square field; slight tonal light falloff allowed but no separate ground plane line, plinth or props.
+Composition/framing: preserve the centered full-body composition with the entire curl, hands and feet visible; adjust scale slightly only as needed to retain generous outer safe margins. Character occupies about 76–80 percent of total canvas height and no more than 64 percent width. Front-facing camera with just enough subtle perspective to show the character's sculptural volume. One character only.
+Text: none.
+Constraints: faithfully recreate the supplied mascot as 3D; do not redesign it, replace the curled ear, create a separate letter on its head, change its emotion, make it a rabbit, robot, bird or ghost, add ears, extra fingers or limbs, add fur, pores, fabric, seams, glitter, metallic/chrome/glass surfaces, an icon frame, pre-rounded outside canvas corners, words, logo text, watermark, mockup, or presentation board. Keep the quiet ivory/apricot/indigo/periwinkle color identity.

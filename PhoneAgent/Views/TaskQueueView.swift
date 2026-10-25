@@ -2,97 +2,216 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct TaskQueueView: View {
+    var allowsExecution = true
     @EnvironmentObject private var model: PhoneAgentViewModel
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var clear = false
-    @State private var removing: UUID?
+    @State private var stopping: UUID?
     @State private var exporting = false
     @State private var document: ArtifactDocument?
     @State private var error = ""
-    private var locked: Bool { model.queueRunning || model.queueSwitching || model.engine.releasing }
+    private var waiting: [QueuedPhoneTask] { model.screenQueueWaiting }
+    private var ended: [QueuedPhoneTask] {
+        model.taskQueue.items.filter { $0.settings.toolsOnly != true && $0.record.executionLane != "native" && !$0.resumable && $0.id != model.screenQueueCurrent?.id }
+    }
+    private var canStart: Bool {
+        allowsExecution && !model.screenQueueBusy && model.screenQueueCount > 0 && !model.engine.releasing &&
+        !model.preparingAutomatically && !model.calibrating && !model.manualBusy && !model.voicePending
+    }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Text("按顺序完成任务").font(.title2.weight(.semibold)); Spacer()
-                    Menu {
-                        Button("导出队列") {
-                            do { document = ArtifactDocument(data: try model.taskQueue.exportData()); exporting = true }
-                            catch { self.error = error.localizedDescription }
-                        }
-                        Button("清除队列", role: .destructive) { clear = true }.disabled(locked || model.engine.running)
-                    } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.buttonStyle(.glass).accessibilityLabel("队列选项")
-                }
-                Text(model.queueStatus).font(.subheadline.weight(.medium))
-                AgentHelp(title: "队列如何运行", text: "完成一项后按顺序继续。插队会保存原任务，优先任务完成后从新画面恢复。暂停、需你处理或发生错误时，整个队列等待确认。重新打开 App 后不会自动运行。仅在前台开启下一项；已执行操作不会因移除队列而撤销。")
-                if !model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("首页草稿").font(.subheadline.weight(.semibold))
-                        Text(model.goal).font(.subheadline).lineLimit(3).foregroundStyle(.secondary)
-                        Button("加入首页草稿") { model.enqueueDraft() }
-                            .buttonStyle(AgentButtonStyle(primary: false))
-                            .disabled(locked || model.voicePending || model.calibrating || model.manualBusy || model.executor.calibrationInProgress || model.taskQueue.items.count >= 20)
-                        Text("只加入队列；点“运行队列”后才开始执行。")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }.agentPanel()
-                }
-                if !model.notice.isEmpty { AgentNotice(text: model.notice) }
-                if !model.taskQueue.error.isEmpty { AgentNotice(text: model.taskQueue.error, error: true) }
-                if !error.isEmpty { AgentNotice(text: error, error: true) }
-                if model.taskQueue.items.isEmpty {
-                    AgentEmptyState(title: "还没有排队任务", detail: "在主页填写任务，再加入队列。最多保留 20 项。", icon: "list.bullet")
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 20) {
-                        ForEach(Array(model.taskQueue.items.enumerated()), id: \.element.id) { index, item in
-                            queueRow(item, index: index)
-                        }
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(model.queueStatus).font(.subheadline.weight(.medium))
+                        Text("一次执行一个屏幕任务。拖动等待项调整顺序；暂停项会等待你开始，再继续后面的任务。")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.padding(.vertical, 4)
+                    if !model.taskQueue.error.isEmpty { AgentNotice(text: model.taskQueue.error, error: true) }
+                    if !model.notice.isEmpty { AgentNotice(text: model.notice) }
+                    if !error.isEmpty { AgentNotice(text: error, error: true) }
+                }.listRowBackground(Color.clear).listRowSeparator(.hidden)
+                if let current = model.screenQueueCurrent {
+                    Section("当前任务") {
+                        currentRow(current)
+                            .accessibilityIdentifier("screenQueue.current")
                     }
                 }
-            }.padding(20)
-        }.scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-            .animation(reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.3), value: model.taskQueue.items.map(\.id))
-            .safeAreaBar(edge: .bottom, spacing: 0) {
+                if !waiting.isEmpty {
+                    Section {
+                        waitingRows(waiting)
+                    } header: {
+                        Text("等待执行 · \(waiting.count)")
+                    } footer: {
+                        Text("当前任务的位置固定。开始此项仅恢复排队；队列暂停时，请再点“开始队列”。")
+                    }
+                } else if model.screenQueueCurrent == nil {
+                    Section {
+                        AgentEmptyState(title: "还没有排队任务", detail: "需要操作手机的任务会在这里等待。你可以回到对话，继续开始新任务。", icon: "list.bullet.rectangle")
+                            .accessibilityIdentifier("screenQueue.empty")
+                    }.listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
+                if !ended.isEmpty {
+                    Section {
+                        DisclosureGroup("已结束 · \(ended.count)") {
+                            ForEach(ended) { item in
+                                HStack(alignment: .top, spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(item.record.title).font(.subheadline.weight(.medium))
+                                        Text(item.state.label).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer(minLength: 0)
+                                    removeButton(item)
+                                }.padding(.vertical, 4)
+                            }
+                        }.font(.subheadline)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped).scrollContentBackground(.hidden)
+            .environment(\.editMode, .constant(.active))
+            .background(AgentPalette.background)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: waiting.map(\.id))
+            .navigationTitle("任务队列").navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("screenQueue.panel")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        do { document = ArtifactDocument(data: try model.taskQueue.exportData()); exporting = true }
+                        catch { self.error = error.localizedDescription }
+                    } label: { Image(systemName: "square.and.arrow.up") }
+                    .accessibilityLabel("导出任务队列").accessibilityIdentifier("screenQueue.export")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }.accessibilityIdentifier("screenQueue.close")
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 12) {
-                    if model.queueSwitching { ProgressView("正在切换任务…").frame(maxWidth: .infinity, minHeight: 48) }
-                    else if model.queueRunning { Button("暂停队列") { model.pauseQueue() }.buttonStyle(AgentButtonStyle()) }
-                    else { Button("运行队列") { model.runTaskQueue() }.buttonStyle(AgentButtonStyle()).disabled(model.taskQueue.pendingCount == 0 || model.engine.releasing || model.calibrating || model.manualBusy || model.voicePending) }
-                }.padding(.horizontal, 24).padding(.vertical, 10)
+                    if model.screenQueueBusy {
+                        ProgressView("正在切换任务…").frame(maxWidth: .infinity, minHeight: 48)
+                    } else if model.queueRunning || model.screenQueueCurrent?.state == .running {
+                        Button("暂停队列") { model.pauseScreenQueue() }
+                            .buttonStyle(AgentButtonStyle()).accessibilityIdentifier("screenQueue.pause")
+                    } else {
+                        Button("开始队列") { _ = model.startScreenQueue() }
+                            .buttonStyle(AgentButtonStyle()).disabled(!canStart)
+                            .accessibilityIdentifier("screenQueue.start")
+                    }
+                }.padding(.horizontal, 24).padding(.vertical, 12)
+                    .background(AgentPalette.background)
             }
-            .fileExporter(isPresented: $exporting, document: document, contentType: .json, defaultFilename: "Phone Agent 任务队列.json") { result in
-                if case .failure(let failure) = result { error = failure.localizedDescription }; document = nil
+            .fileExporter(isPresented: $exporting, document: document, contentType: .json, defaultFilename: "Sela 任务队列.json") { result in
+                if case .failure(let failure) = result { error = failure.localizedDescription }
+                document = nil
             }
-            .confirmationDialog("清除本机任务队列？", isPresented: $clear, titleVisibility: .visible) {
-                Button("清除队列", role: .destructive) { model.clearTaskQueue() }
-            } message: { Text("删除等待项与保存的进度，不会撤销手机上已经执行的操作，也不会删除任务历史和工具回执。当前已暂停的任务仍可在主页手动继续。") }
-            .confirmationDialog("移除此队列任务？", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
-                Button("移除", role: .destructive) { if let id = removing { model.removeQueuedTask(id) }; removing = nil }
-            } message: { Text("已执行的实际操作和任务历史不会撤销。") }
+            .confirmationDialog("终止这项任务？", isPresented: Binding(get: { stopping != nil }, set: { if !$0 { stopping = nil } }), titleVisibility: .visible) {
+                Button("终止任务", role: .destructive) {
+                    if let id = stopping { _ = model.stopScreenQueueTask(id) }
+                    stopping = nil
+                }.accessibilityIdentifier("screenQueue.confirmStop")
+            } message: { Text("任务将停止执行，已完成的操作和任务记录会保留。") }
+        }
     }
-    private func queueRow(_ item: QueuedPhoneTask, index: Int) -> some View {
+
+    private func currentRow(_ item: QueuedPhoneTask) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, height: 24)
-                Text(item.record.title).font(.headline).fixedSize(horizontal: false, vertical: true)
+            rowSummary(item)
+            HStack(spacing: 12) {
+                if item.state == .running {
+                    Button("暂停") { _ = model.pauseScreenQueueTask(item.id) }
+                        .accessibilityIdentifier("screenQueue.pause." + item.id.uuidString)
+                } else {
+                    Button("开始") { _ = model.resumeScreenQueueTask(item.id) }
+                        .disabled(!allowsExecution)
+                        .accessibilityIdentifier("screenQueue.start." + item.id.uuidString)
+                }
+                Button("终止", role: .destructive) { stopping = item.id }
+                    .accessibilityIdentifier("screenQueue.stop." + item.id.uuidString)
+            }.buttonStyle(AgentButtonStyle(primary: false)).disabled(model.screenQueueBusy || model.engine.releasing)
+        }.padding(.vertical, 6)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("screenQueue.row." + item.id.uuidString)
+    }
+
+    private func waitingRows(_ items: [QueuedPhoneTask]) -> some View {
+        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+            waitingRow(item, index: index)
+                .moveDisabled(model.screenQueueBusy)
+        }
+        .onMove { offsets, destination in
+            guard !model.screenQueueBusy else { return }
+            // SwiftUI supplies offsets for this displayed snapshot. Submit the
+            // corresponding identities; the store rejects stale membership.
+            var order = items.map(\.id)
+            order.move(fromOffsets: offsets, toOffset: destination)
+            _ = model.reorderScreenQueueTasks(order)
+        }
+    }
+
+    private func waitingRow(_ item: QueuedPhoneTask, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .frame(minWidth: 18, minHeight: 24)
+                rowSummary(item)
                 Spacer(minLength: 0)
+            }
+            HStack(spacing: 16) {
+                if item.state == .waiting {
+                    Button("暂停") { _ = model.pauseScreenQueueTask(item.id) }
+                        .accessibilityIdentifier("screenQueue.pause." + item.id.uuidString)
+                } else {
+                    Button("开始") { _ = model.resumeScreenQueueTask(item.id) }
+                        .accessibilityHint("恢复等待，按当前位置依次执行")
+                        .accessibilityIdentifier("screenQueue.start." + item.id.uuidString)
+                }
+                Button("终止", role: .destructive) { stopping = item.id }
+                    .accessibilityIdentifier("screenQueue.stop." + item.id.uuidString)
                 Menu {
-                    Button("移到上一项") { model.moveQueuedTask(item.id, by: -1) }.disabled(locked || index == 0)
-                    Button("移到下一项") { model.moveQueuedTask(item.id, by: 1) }.disabled(locked || index == model.taskQueue.items.count - 1)
-                    Button("使用当前配置") { model.useCurrentQueueConfiguration(item.id) }.disabled(locked || !item.resumable || model.engine.running)
-                    Button("移除", role: .destructive) { removing = item.id }.disabled(locked || (model.engine.currentRecord?.id == item.id && model.engine.hasCurrentTask))
-                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("\(item.record.title)的队列选项")
+                    Button("使用当前配置") { model.useCurrentQueueConfiguration(item.id) }
+                        .disabled(model.queueRunning || model.engine.running || model.engine.releasing)
+                        .accessibilityIdentifier("screenQueue.configuration." + item.id.uuidString)
+                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 36) }
+                    .accessibilityLabel(item.record.title + "的队列选项")
+                    .accessibilityIdentifier("screenQueue.options." + item.id.uuidString)
+                Spacer(minLength: 0)
+                removeButton(item)
+            }.font(.subheadline.weight(.medium)).buttonStyle(.borderless)
+                .disabled(model.screenQueueBusy)
+        }.padding(.vertical, 6)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("screenQueue.row." + item.id.uuidString)
+            .accessibilityAction(named: "上移") { moveAccessible(item.id, by: -1) }
+            .accessibilityAction(named: "下移") { moveAccessible(item.id, by: 1) }
+    }
+
+    private func rowSummary(_ item: QueuedPhoneTask) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(item.record.title).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+            if item.record.effectiveGoal != item.record.title {
+                Text(item.record.effectiveGoal).font(.caption).foregroundStyle(.secondary).lineLimit(3)
             }
-            Text(item.record.effectiveGoal).font(.subheadline).lineLimit(4)
-            Label(item.state.label, systemImage: item.state == .completed ? "checkmark.circle" : item.state == .running ? "circle.dotted" : "clock")
-                .font(.caption).foregroundStyle(item.state == .completed ? Color.green : .secondary)
-            Text("\(item.settings.toolsOnly == true ? "仅系统工具" : "视觉操控") · \(PrivacyConsent.recipient(item.settings)) · \(item.settings.model)")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if item.started { Text("已执行至第 \(item.step) 步 · \((item.record.subtasks ?? []).filter(\.completed).count) 个子任务已确认").font(.caption).foregroundStyle(.secondary) }
-            if !item.note.isEmpty { Text(item.note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-            if item.resumable && item.state != .running {
-                Button(model.engine.running ? "优先执行这项" : item.started ? "核对结果后继续这项" : "执行这项") { model.runTaskQueue(first: item.id) }
-                    .buttonStyle(AgentButtonStyle(primary: false))
-                    .disabled(model.queueSwitching || model.engine.releasing || model.calibrating || model.manualBusy || model.voicePending)
-            }
-        }.agentPanel()
+            Label(item.state.label, systemImage: item.state == .running ? "circle.dotted" : item.state == .waiting ? "clock" : "pause.circle")
+                .font(.caption).foregroundStyle(.secondary)
+            if item.started { Text("已执行至第 \(item.step) 步").font(.caption).foregroundStyle(.secondary) }
+            if !item.note.isEmpty { Text(item.note).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func removeButton(_ item: QueuedPhoneTask) -> some View {
+        Button(role: .destructive) { _ = model.removeScreenQueueTask(item.id) } label: {
+            Image(systemName: "trash").frame(width: 36, height: 36)
+        }.buttonStyle(.borderless).disabled(model.screenQueueBusy)
+            .accessibilityLabel("删除" + item.record.title)
+            .accessibilityIdentifier("screenQueue.remove." + item.id.uuidString)
+    }
+
+    private func moveAccessible(_ id: UUID, by offset: Int) {
+        guard !model.screenQueueBusy else { return }
+        var order = waiting.map(\.id)
+        guard let index = order.firstIndex(of: id), order.indices.contains(index + offset) else { return }
+        order.swapAt(index, index + offset)
+        _ = model.reorderScreenQueueTasks(order)
     }
 }

@@ -1,0 +1,13 @@
+Tool: built-in imagegen
+Concept: 渡渡 / Dodo
+Asset: dodo-1024.png (1024 x 1024)
+Original: dodo-original.png
+
+Use case: logo-brand.
+Asset type: a new finished icon for an iPhone assistant app, brand concept "渡渡" (Dodo). The assistant sees phone screens and carries out actions across different apps.
+Primary request: create a genuinely distinctive brand emblem, combining the character of a dodo bird with the decisive gesture of tapping. This is a bold graphic identity exercise with clever silhouette and negative space. Create just ONE icon, not a contact sheet, not a brand board.
+Scene/backdrop: perfectly flat solid warm vermilion-orange (#F45A32), filling the square edge to edge. No pre-rounded exterior corners.
+Subject: an oversized, extremely simplified dodo bird head seen in right-facing profile, drawn as a beautiful custom logo. The warm ivory head is a single heavy, smooth, almost circular silhouette with an elegantly flattened lower-left neck. Its striking oversized ink-black beak projects to the right with a subtly hooked tip: the strong beak silhouette should suggest an intentional tap without drawing a literal mouse pointer. A small single black eye sits confidently in the ivory head. Design a clever minimal curved orange counterform at the beak/head junction so the whole emblem has a deliberate architectural rhythm. The bird feels alert, quietly capable, slightly mischievous, and friendly. Strong visual personality without cuteness or baby proportions.
+Style/medium: exceptional contemporary brand identity, flat cut-paper-like geometric design, confident asymmetric massing, optically balanced. Few precise bespoke curves, thick shapes, witty negative space. Logo-design craft, not a stock bird illustration or emoji. Exactly three solid colors: vermilion orange, warm ivory, ink black.
+Composition/framing: emblem centered and optically balanced, about 66–72 percent of canvas, generous clean margins. Front-on square icon artwork, no perspective. It must have a strong, instantly recognizable silhouette at 48px.
+Constraints: no text, lettering, words, border, watermark, feathers, wings, body, feet, extra birds, sparkles, eye highlights, gradients, shadows, bevels, 3D, glass, ribbon, generic arrow, smartphone frame, airplane, robot, decorative elements, mockup, or presentation surface. No penguin: use the unmistakable large hooked beak and distinctive dodo head proportions. Aim for a finished iconic design with surprising simplicity.

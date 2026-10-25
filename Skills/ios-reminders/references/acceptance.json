@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "status": "automatic_named_list_and_batch_pause_resume_verified",
+  "verifiedAt": "2026-10-25",
+  "device": "iPhone 13 Pro",
+  "iOS": "27.0.1",
+  "appBuild": 81,
+  "execution": "Real Sela model routing and native EventKit tools; XCTest only for setup, confirmation and separate system-App verification.",
+  "evidence": "output/iphone13-native-retry-20261024/verification.json",
+  "verified": [
+    "Exact-title duplicate query returned zero",
+    "User confirmation preceded one native creation",
+    "Durable successful tool receipt",
+    "One matching real system reminder with correct due time, notes and test list",
+    "Completed task history survived process restart",
+    "Build90 automatic 10-reminder batch in exact named list; same-task pause/resume without duplicates"
+  ],
+  "remaining": [
+    "Uncertain commit recovery",
+    "Permission denial and recovery",
+    "Other account/list configurations",
+    "Stop during reminder commit is not covered by read/model cancellation acceptance",
+    "Sustained-duration and >100-step acceptance"
+  ],
+  "unsupported": [
+    "Complete reminder",
+    "Modify reminder",
+    "Delete reminder"
+  ],
+  "hardware": {
+    "esp32Used": false,
+    "screenSharingUsed": false
+  },
+  "explicitNamedList": {
+    "status": "verified_on_iphone13_build90",
+    "parameter": "list_name",
+    "behavior": "Exactly one writable match; no fallback on absent, read-only or ambiguous names.",
+    "evidence": "output/ios-native-longrun-20261025/L1/verification.json"
+  },
+  "longTask": {
+    "status": "13-object batch passed with pause and explicit same-task resume; completed before 15 minutes",
+    "taskID": "18E8D10B-E685-4DB6-BE8F-85F68D47AA10",
+    "build": 90,
+    "objects": 13,
+    "finalStep": 31,
+    "engineActiveElapsedSeconds": 115.04917045833463,
+    "pauseSeconds": 306.67870903015137,
+    "evidence": "output/ios-native-longrun-20261025/L1/verification.json",
+    "scope": "10 reminders and 3 calendar events, exactly verified in their system Apps; no ESP32, no per-tool approvals"
+  },
+  "nativeConversationResultCardAcceptance": {
+    "build": 132,
+    "oneSend": true,
+    "extraExecutionApprovalTaps": 0,
+    "actualCreationReceiptBoundCard": true,
+    "coldFourStoresByteIdentical": true,
+    "coldCardRestoredInRealConversationAX": true,
+    "correspondingNativeIconVisuallyInspected": true,
+    "evidence": "output/ios-native-longrun-20261025/NATIVE-RESULT-CARDS-M01/verification.json",
+    "independentSystemObjectReviewPending": false,
+    "currentRootGuideCardInstructionsNotYetRepackaged": true,
+    "independentSystemObjectMatched": true
+  }
+}

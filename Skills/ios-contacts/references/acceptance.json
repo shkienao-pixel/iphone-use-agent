@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "status": "native_limited_read_permission_recovery_runtime_skill_and_cold_restart_resume_verified",
+  "appBuild": 97,
+  "supported": [
+    "contact_search"
+  ],
+  "unsupported": [
+    "Create/modify/delete contacts",
+    "Phone/email reverse search",
+    "Calls or messages"
+  ],
+  "phoneCases": [
+    {
+      "case": "permission denied",
+      "taskID": "B165EC19-D345-4FB9-BDA7-8F184F1C43A7",
+      "evidence": "output/ios-native-longrun-20261025/CONTACTS-DENY-01/verification.json"
+    },
+    {
+      "case": "limited-one-contact real read",
+      "taskID": "FCE1D3D1-3C47-4A88-86ED-FE81CDDF3BC0",
+      "evidence": "output/ios-native-longrun-20261025/CONTACTS-READ-01/verification.json"
+    },
+    {
+      "case": "single-send automatic contact read after stop/cold restart/same-ID resume; bundled skill loaded",
+      "taskID": "77469E70-5E70-48AA-9BC8-4B4754A89E87",
+      "evidence": "output/ios-native-longrun-20261025/HISTORY-C02/verification.json"
+    }
+  ],
+  "remaining": [
+    "Same-name ambiguity and per-contact phone/email field limits"
+  ],
+  "esp32Used": false
+}

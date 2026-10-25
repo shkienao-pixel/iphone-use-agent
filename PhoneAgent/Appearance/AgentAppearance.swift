@@ -43,11 +43,7 @@ enum AgentPalette {
     static let placeholder = gray(light: 0.43, dark: 0.62)
     static let secondaryText = gray(light: 0.40, dark: 0.70)
     static let onContrast = Color(uiColor: .systemBackground)
-    static let userBubble = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.045, green: 0.13, blue: 0.23, alpha: 1)
-            : UIColor(red: 0.90, green: 0.95, blue: 1, alpha: 1)
-    })
+    static let userBubble = gray(light: 0.92, dark: 0.20)
     static let positive = Color.green
     private static func gray(light: CGFloat, dark: CGFloat) -> Color {
         Color(uiColor: UIColor { traits in UIColor(white: traits.userInterfaceStyle == .dark ? dark : light, alpha: 1) })

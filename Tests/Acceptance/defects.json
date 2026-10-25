@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "defects": [
+    {
+      "id": "QA-20261025-01",
+      "title": "任务通知冷启动时 UIKit 状态恢复崩溃",
+      "priority": "P0",
+      "state": "fixed_with_simulator_regression",
+      "evidence": [
+        "output/simulator-notifications-20261025/cold-start-crash.ips",
+        "output/simulator-notifications-20261025/callback-fixed/cold-start-verification.json"
+      ],
+      "fix": "PhoneAgent/Services/TaskNotificationsController.swift：启动前注册，主线程完成响应。",
+      "limits": "合成任务的三轮真实系统冷启动；不代表真实业务引擎触发已通过。"
+    },
+    {
+      "id": "QA-20261025-02",
+      "title": "手动文件草稿被误标为 AI 整理",
+      "priority": "P1",
+      "state": "fixed_with_simulator_regression",
+      "evidence": [
+        "output/simulator-native-content-20261025/memory-provenance-failure.json",
+        "output/simulator-native-content-20261025/memory-source-save-verification.json"
+      ],
+      "fix": "PhoneAgent/Views/WorkbenchView.swift：来源标为真实文件草稿入口。",
+      "limits": "保留手动记忆既有首尾空白归一化，正文工具另行逐字节验收。"
+    },
+    {
+      "id": "QA-20261025-03",
+      "title": "测试工具把引用 runner 路径的 shell 误认为活跃进程",
+      "priority": "P0",
+      "state": "fixed_with_focused_regression",
+      "evidence": [
+        "output/simulator-plan-20261025/operator-liveness-before.log",
+        "output/simulator-plan-20261025/operator-liveness-after.log",
+        "output/simulator-plan-20261025/operator-liveness-real-verification.json"
+      ],
+      "fix": "Tools/SimulatorLab/live.py：实际 argv 起点、专用设备、UUID 容器与完整执行名。",
+      "limits": "10 项检查；原有真实 runner ping；不是整个 App 或模型验收。"
+    },
+    {
+      "id": "QA-20261025-04",
+      "title": "系统通知设置链接落到模拟器设置首页",
+      "priority": "P1",
+      "state": "unaccepted",
+      "evidence": [
+        "output/simulator-notifications-20261025/screenshots/notification-system-settings-settled.png"
+      ],
+      "fix": "未通过私有设置 URL、重置权限或卸载绕过。",
+      "limits": "需查实际平台支持；目前不把目标页跳转计为通过。"
+    },
+    {
+      "id": "QA-20261025-05",
+      "title": "过期状态在系统中的刷新截止时刻未获证明",
+      "priority": "P1",
+      "state": "unaccepted",
+      "evidence": [
+        "output/simulator-native-content-20261025/island/lock-screen-verification.json",
+        "output/simulator-native-content-20261025/island/minimal-verification.json"
+      ],
+      "fix": "已展示待核对，仍保留系统渲染延迟的限制。",
+      "limits": "未承诺恰好 60 秒刷新，也未以反复提交活动伪造新鲜状态。"
+    },
+    {
+      "id": "QA-20261025-06",
+      "title": "同账户正常令牌轮换丢弃成功的记忆学习结果",
+      "priority": "P1",
+      "state": "fixed_with_focused_offline_regression",
+      "evidence": [
+        "output/simulator-plan-20261025/plan-memory-before-validated-transport.log",
+        "output/simulator-plan-20261025/before-fixture-identity.json",
+        "output/simulator-plan-20261025/offline-regression-verification.json"
+      ],
+      "fix": "Shared/ChatGPTPlanProtocol.swift / PhoneAgent/Services/ChatGPTPlanRuntime.swift：账户、注册、主体、权限和授权代次绑定；HTTP 另取访问令牌，迟到刷新核对代次。",
+      "limits": "四种离线场景及两项刷新持久化控制通过；未使用真实账号、钥匙串或远端模型。"
+    }
+  ]
+}

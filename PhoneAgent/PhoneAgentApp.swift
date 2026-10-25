@@ -3,9 +3,15 @@ import AppIntents
 
 @main
 struct PhoneAgentApp: App {
+    @UIApplicationDelegateAdaptor(SelaAppDelegate.self) private var appDelegate
     @StateObject private var viewModel = PhoneAgentViewModel.shared
+    @StateObject private var authorization = OfficeAuthorizationFlow.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        #if DEBUG
+        DebugPaotuiConfigImport.runIfRequested()
+        #endif
         PhoneAgentShortcuts.updateAppShortcutParameters()
     }
 
@@ -14,6 +20,20 @@ struct PhoneAgentApp: App {
             root
                 .environmentObject(viewModel)
                 .agentTheme()
+                .task { authorization.restore() }
+                .task {
+                    #if DEBUG
+                    await SelaDeviceDiagnostics.run(model: viewModel)
+                    #endif
+                }
+                .onOpenURL { url in if !NotesShortcutBridge.shared.handle(url) { authorization.handle(url) } }
+                .onChange(of: scenePhase) { _, phase in
+                    authorization.sceneActive(phase != .background)
+                    if phase == .active {
+                        NotesShortcutBridge.shared.becameActive()
+                        Task { await viewModel.taskNotifications.refreshAuthorization() }
+                    }
+                }
         }
     }
 

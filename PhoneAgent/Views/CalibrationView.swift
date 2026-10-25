@@ -6,6 +6,7 @@ final class CalibrationModel: ObservableObject {
     @Published var text = "21 步自动测量，开始后请勿触碰屏幕并保持竖屏"
     @Published var busy = false
     @Published var finished = false
+    @Published private(set) var cancelled = false
     @Published var error = ""
     @Published var markers: [CGPoint] = []
     @Published var target: CGPoint?
@@ -38,7 +39,13 @@ final class CalibrationModel: ObservableObject {
         finishWait(token, result: .success(point))
     }
     func cancel() {
-        guard busy else { return }
+        cancelled = true
+        guard busy else {
+            text = finished ? "校准已保存，后续准备已取消" : "校准已取消"
+            return
+        }
+        // Saving can finish before the final BLE release; cancellation still invalidates this run.
+        finished = false
         session = UUID(); task?.cancel()
         if let token = waiterToken { finishWait(token, result: .failure(CancellationError())) }
         text = "正在结束校准…"
@@ -98,7 +105,7 @@ final class CalibrationModel: ObservableObject {
         let screen = size, connection = executor.ble.pointerConnectionGeneration
         let token = UUID(); session = token
         executor.calibrationInProgress = true
-        busy = true; finished = false; error = ""; markers = []; target = nil; latestPoint = nil
+        busy = true; finished = false; cancelled = false; error = ""; markers = []; target = nil; latestPoint = nil
         completedSteps = 0; summary = ""; diagnosticLines = []
         record("Calibration version=\(CalibrationSolver.version) motionProfile=\(PointerMotion.profileVersion) screen=\(screen.width)x\(screen.height)")
         task = Task {
@@ -184,8 +191,11 @@ final class CalibrationModel: ObservableObject {
             if let pending = waiterToken { finishWait(pending, result: .failure(CancellationError())) }
             waitTimeout?.cancel(); target = nil
             // A cancelled task cannot send release through BLETransport. Use a new task.
-            await Task { @MainActor in await executor.ble.release() }.value
+            _ = await Task { @MainActor in await executor.ble.release(expectedConnection: connection) }.value
             executor.invalidatePosition(); executor.calibrationInProgress = false
+            if cancelled || token != session || Task.isCancelled {
+                finished = false; text = "校准已取消"
+            }
             busy = false; task = nil
         }
     }
@@ -193,12 +203,18 @@ final class CalibrationModel: ObservableObject {
 
 struct CalibrationView: View {
     @StateObject var model: CalibrationModel
+    var autoStart = false
+    var allowsAutomaticStart: () -> Bool = { true }
+    var onAutomaticCancel: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @State private var appeared = false
+    @State private var automaticStartAttempted = false
+    @State private var automaticDismissRequested = false
     var body: some View {
         ZStack {
             CalibrationSurface(target: model.target, latestPoint: model.latestPoint, markers: model.markers,
-                onPoint: { model.receive($0) }, onSize: { model.size = $0 }).ignoresSafeArea()
+                onPoint: { model.receive($0) }, onSize: { model.size = $0; startAutomaticallyIfReady() }).ignoresSafeArea()
             if model.busy {
                 VStack {
                     HStack(alignment: .top, spacing: 12) {
@@ -207,7 +223,10 @@ struct CalibrationView: View {
                             ProgressView(value: Double(model.completedSteps), total: Double(CalibrationSolver.totalSteps))
                         }.padding(12).background(AgentPalette.surface.opacity(0.95), in: RoundedRectangle(cornerRadius: 12))
                             .allowsHitTesting(false).accessibilityHidden(true)
-                        Button("取消") { model.cancel(); dismiss() }
+                        Button("取消") {
+                            cancelRunningCalibration()
+                            if !autoStart { dismiss() }
+                        }
                             .font(.subheadline.weight(.medium)).padding(12)
                             .agentGlass(in: Capsule(), interactive: true).buttonStyle(.plain)
                     }
@@ -228,16 +247,50 @@ struct CalibrationView: View {
                             .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         GlassEffectContainer(spacing: 8) {
                             HStack(spacing: 10) {
-                                Button(model.finished ? "重新校准" : "开始校准") { model.start() }.buttonStyle(AgentButtonStyle())
-                                Button("完成") { model.cancel(); dismiss() }.buttonStyle(AgentButtonStyle(primary: false))
+                                Button(model.finished ? "重新校准" : autoStart && automaticStartAttempted ? "重试校准" : "开始校准") {
+                                    guard !autoStart || (allowsAutomaticStart() && !model.cancelled) else { return }
+                                    model.start()
+                                }
+                                    .buttonStyle(AgentButtonStyle())
+                                    .disabled(autoStart && (!automaticStartAttempted || !allowsAutomaticStart() || model.cancelled))
+                                Button(autoStart ? "返回" : "完成") { model.cancel(); dismiss() }.buttonStyle(AgentButtonStyle(primary: false))
                             }
                         }
                     }.padding(20).frame(maxWidth: 390).agentGlass(in: RoundedRectangle(cornerRadius: 24))
                         .padding(.horizontal, 20).padding(.bottom, 16)
                 }
             }
-        }.tint(AgentPalette.accent).onDisappear { model.cancel() }
-            .onChange(of: scenePhase) { _, phase in if phase != .active { model.cancel() } }
+        }.tint(AgentPalette.accent)
+            .onAppear { appeared = true; startAutomaticallyIfReady() }
+            .onDisappear {
+                appeared = false
+                if !model.finished || model.busy { model.cancel() }
+            }
+            .onChange(of: model.busy) { _, _ in dismissAutomaticallyIfFinished() }
+            .onChange(of: model.finished) { _, _ in dismissAutomaticallyIfFinished() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active, model.busy { cancelRunningCalibration() }
+                else { startAutomaticallyIfReady(); dismissAutomaticallyIfFinished() }
+            }
+    }
+    private func cancelRunningCalibration() {
+        model.cancel()
+        if autoStart { onAutomaticCancel?() }
+    }
+    private func startAutomaticallyIfReady() {
+        guard autoStart, appeared, scenePhase == .active, allowsAutomaticStart(), !model.cancelled else { return }
+        if model.finished { dismissAutomaticallyIfFinished(); return }
+        guard !automaticStartAttempted, !model.busy, model.size.width > 0, model.size.height > 0 else { return }
+        // A valid surface and an active app are required before the first pointer probe.
+        automaticStartAttempted = true
+        model.start()
+    }
+    private func dismissAutomaticallyIfFinished() {
+        // Saving precedes the final input release. Only leave after that release completes.
+        guard autoStart, appeared, scenePhase == .active, allowsAutomaticStart(), !model.cancelled,
+              model.finished, !model.busy, !automaticDismissRequested else { return }
+        automaticDismissRequested = true
+        dismiss()
     }
 }
 

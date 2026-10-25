@@ -70,11 +70,12 @@ enum DebugModelConfigImport {
             var settings = SettingsStore.load()
             settings.endpoint = "https://api.openai.com/v1/chat/completions"
             settings.providerName = "OpenAI"
+            settings.modelAuthentication = "api_key"
             settings.model = "gpt-6.1-sol"
             settings.maxResponseTokens = 4096
             settings.legacyTokenLimit = false
             settings.jsonMode = true
-            settings.maxSteps = 6
+            // Importing a credential must preserve the user's long-task policy.
             settings.systemToolsEnabled = false
             settings.toolsOnly = false
             settings.previewOnly = false

@@ -86,6 +86,9 @@ actor MemoryIndex {
 
 @MainActor
 final class MemoryStore: ObservableObject {
+    let intelligence: SelaMemoryService
+    private var manualRecallGeneration = UUID()
+    var recallRevision: String { manualRecallGeneration.uuidString + ":" + intelligence.recallGeneration.uuidString }
     @Published private(set) var records: [AssistantMemory] = []
     @Published private(set) var error = ""
     private let folder: URL
@@ -94,6 +97,7 @@ final class MemoryStore: ObservableObject {
     private var url: URL { folder.appendingPathComponent("memories.json") }
     private struct Document: Codable { var version = 1; var records: [AssistantMemory] }
     init(folder: URL? = nil) {
+        intelligence = SelaMemoryService(root: folder?.deletingLastPathComponent().appendingPathComponent("Intelligence", isDirectory: true))
         self.folder = folder ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PhoneAgent/Memories", isDirectory: true)
         guard FileManager.default.fileExists(atPath: url.path) else { return }
@@ -126,18 +130,18 @@ final class MemoryStore: ObservableObject {
         var updated = records.filter { $0.id != value.id }; updated.insert(value, at: 0)
         do { try persist(updated) }
         catch { if let newImage { try? FileManager.default.removeItem(at: newImage) }; throw error }
-        records = updated; error = ""
+        records = updated; error = ""; manualRecallGeneration = UUID()
         if let oldName = old?.imageName, oldName != value.imageName, let oldURL = imageURL(oldName) { try? FileManager.default.removeItem(at: oldURL) }
     }
     func remove(_ id: UUID) throws {
         guard readable else { throw AgentError.message(error) }
         let old = records.first { $0.id == id }; let updated = records.filter { $0.id != id }
-        try persist(updated); records = updated
+        try persist(updated); records = updated; manualRecallGeneration = UUID()
         if let name = old?.imageName, let target = imageURL(name) { try? FileManager.default.removeItem(at: target) }
     }
     func clear() throws {
         if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) }
-        records = []; readable = true; error = ""
+        records = []; readable = true; error = ""; manualRecallGeneration = UUID()
     }
     func exportText() throws -> Data {
         if FileManager.default.fileExists(atPath: url.path) {
@@ -166,11 +170,62 @@ final class MemoryStore: ObservableObject {
         result.hits = result.hits.filter { hit in records.contains { $0.id == hit.id && $0.updatedAt == hit.memory.updatedAt && (!enabledOnly || $0.enabled) } }
         return result
     }
-    func context(for query: String) async -> String {
+    func context(for query: String, settings requestedSettings: AgentSettings? = nil) async -> String {
+        let settings = requestedSettings ?? SettingsStore.load()
+        guard settings.useMemories == true, PrivacyConsent.allowed(settings) else { return "" }
+        for _ in 0..<2 {
+            let revision = recallRevision
+            let prepared = await intelligence.prepare(question: query, settings: settings)
+            let manual = await savedMemoryContext(for: query)
+            let current = SettingsStore.load()
+            guard current.useMemories == true, PrivacyConsent.allowed(current),
+                  SelaMemoryService.recipient(current) == SelaMemoryService.recipient(settings), current.model == settings.model else { return "" }
+            guard revision == recallRevision else { continue }
+            return [prepared.identity, ConversationMemorySources.envelope(semantic: prepared.reference, manual: manual)].filter { !$0.isEmpty }.joined(separator: "\n")
+        }
+        return ""
+    }
+    func prepareConversation(id: UUID, messages: [AssistantMessage], question: String, settings: AgentSettings) async -> PreparedAssistantMemory {
+        var excludedSoFar = Set<UUID>()
+        // Explicit forget/edit/clear may race local retrieval. Retry once with
+        // fresh sources; never hand an invalidated reference to the classifier.
+        for _ in 0..<2 {
+            let revision = recallRevision
+            do { excludedSoFar.formUnion(try await intelligence.recallExclusions()) }
+            catch { if revision != recallRevision { continue }; return .unavailable(excluded: excludedSoFar) }
+            guard settings.useMemories == true, PrivacyConsent.allowed(settings) else {
+                return PreparedAssistantMemory(excludedMessageIDs: excludedSoFar)
+            }
+            let recallQuery = ConversationWorkingMemory.recallQuery(question: question, history: messages.filter { !excludedSoFar.contains($0.id) })
+            var prepared = await intelligence.prepare(question: recallQuery, conversationID: id, messages: messages, settings: settings)
+            excludedSoFar.formUnion(prepared.excludedMessageIDs)
+            guard prepared.canUseConversationHistory else { return .unavailable(excluded: excludedSoFar) }
+            let manual = await savedMemoryContext(for: recallQuery)
+            guard SettingsStore.load().useMemories == true, PrivacyConsent.allowed(settings) else {
+                return PreparedAssistantMemory(excludedMessageIDs: excludedSoFar)
+            }
+            guard revision == recallRevision else { continue }
+            prepared.reference = ConversationMemorySources.envelope(semantic: prepared.reference, manual: manual)
+            prepared.excludedMessageIDs = excludedSoFar
+            prepared.recallRevision = revision
+            return prepared
+        }
+        return .unavailable(excluded: excludedSoFar)
+    }
+    func learnConversation(id: UUID, messages: [AssistantMessage], settings: AgentSettings, apiKey: String) {
+        intelligence.completedTurn(conversationID: id, messages: messages, settings: settings, apiKey: apiKey)
+    }
+    func flushConversation(id: UUID) { intelligence.flushConversation(id) }
+    func exportAllMemories() async throws -> Data {
+        let manual = try JSONSerialization.jsonObject(with: exportText())
+        let learned = try JSONSerialization.jsonObject(with: await intelligence.exportText())
+        return try JSONSerialization.data(withJSONObject: ["version": 2, "manual": manual, "assistant": learned], options: [.sortedKeys, .prettyPrinted])
+    }
+    private func savedMemoryContext(for query: String) async -> String {
         let result = await search(query, limit: 3, enabledOnly: true)
         var selected = result.hits.map(\.memory)
         if let preference = records.first(where: { $0.kind == .preference && $0.enabled }), !selected.contains(where: { $0.id == preference.id }) { selected.insert(preference, at: 0) }
-        let items = selected.prefix(3).map { ["title": $0.title, "content": excerpt($0.text, query: query), "source": $0.source,
+        let items = selected.prefix(3).map { ["id": $0.id.uuidString, "title": $0.title, "content": excerpt($0.text, query: query), "source": $0.source,
             "updated_at": ISO8601DateFormatter().string(from: $0.updatedAt)] }
         guard !items.isEmpty, let data = try? JSONSerialization.data(withJSONObject: items), let text = String(data: data, encoding: .utf8) else { return "" }
         return text

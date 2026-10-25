@@ -7,19 +7,31 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var selectedDestination: WorkspaceDestination = .tasks
+    @State private var toolsOrigin: WorkspaceDestination = .tasks
+    @State private var toolsPath: [WorkspaceDestination] = []
+    @State private var settingsPageOpen = false
     @State private var navigationForward = true
     @State private var calibration: CalibrationModel?
     @State private var showCalibration = false
+    @State private var calibrationAutoStart = false
+    @State private var pendingCalibration: Bool?
     @State private var sheet: WorkspaceSheet?
     @State private var pendingSheet: WorkspaceSheet?
     @State private var dismissingSheet = false
     @State private var confirmingWorkbenchExit = false
     @State private var pendingDestination: WorkspaceDestination?
     @State private var pendingDestinationSheet: WorkspaceSheet?
+    @State private var pendingAssistantAction: AssistantNavigationAction?
+    @State private var pendingTaskAction: TaskNavigationAction?
     @State private var screen: TaskScreen = .draft
     @State private var sidebarOpen = false
     @State private var modeSwitcherOpen = false
-    @State private var newAssistantRequest = UUID()
+    private enum AssistantNavigationAction {
+        case create, open(UUID)
+    }
+    private enum TaskNavigationAction {
+        case create, reset, open(UUID)
+    }
     @State private var reviewVoicePhase: DictationPhase?
     private let reviewVoiceError: String
     @State private var dictatedDraft: String?
@@ -27,6 +39,8 @@ struct ContentView: View {
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.28, dampingFraction: 1))) private var sidebarDrag: CGFloat = 0
     @State private var viewportWidth: CGFloat = 393
     @State private var preparationExpanded = false
+    @State private var configurationCompletionPending = false
+    @State private var showingConfigurationComplete = false
     @State private var expandedSteps = false
     @State private var followLatest = true
     @State private var appeared = false
@@ -34,10 +48,17 @@ struct ContentView: View {
     @State private var amendmentDrafts: [UUID: String] = [:]
     @State private var searchText = ""
     @State private var sidebarSearchExpanded = false
+    @StateObject private var attachmentDraft = ComposerAttachmentStore()
+    @State private var attachmentSnapshots: [TaskScreen: [ComposerAttachment]] = [:]
+    @State private var attachmentSelectionID = UUID()
+    @State private var showAttachmentPhotos = false
+    @State private var showAttachmentFiles = false
     @FocusState private var composing: Bool
     @Namespace private var glassNamespace
     private var calibrated: Bool { model.calibrationReady }
-    private var sidebarWidth: CGFloat { min(viewportWidth * 0.77, 360) }
+    private var sidebarWidth: CGFloat {
+        min(viewportWidth * (typeSize.isAccessibilitySize ? 0.92 : 0.84), typeSize.isAccessibilitySize ? 440 : 360)
+    }
     private var sidebarScrimColor: Color {
         colorScheme == .light ? Color.white.opacity(0.4) : Color.black.opacity(0.4)
     }
@@ -61,15 +82,30 @@ struct ContentView: View {
         }
         return $model.goal
     }
-    private var queueingDraft: Bool { !composingSupplement && (model.engine.hasCurrentTask || model.taskQueue.pendingCount > 0 || model.queueRunning) }
+    private var isTaskHome: Bool { selectedDestination == .tasks && displayedRecord == nil }
+    private var homeInputActive: Bool { composing || model.voiceMode != nil || reviewVoicePhase != nil }
     private var inputBlocked: Bool {
-        model.recordingAudioOwner != nil || model.queueSwitching || model.calibrating || model.manualBusy || model.voicePending || model.engine.releasing
+        attachmentDraft.importing || model.preparingAutomatically || model.recordingAudioOwner != nil || model.queueSwitching || model.calibrating || model.manualBusy || model.voicePending || model.engine.releasing
     }
-    init(reviewDestination: WorkspaceDestination = .tasks, reviewConversation: UUID? = nil, reviewVoice: DictationPhase? = nil, reviewVoiceError: String = "") {
-        _selectedDestination = State(initialValue: reviewDestination)
+    init(reviewDestination: WorkspaceDestination = .tasks, reviewConversation: UUID? = nil, reviewVoice: DictationPhase? = nil, reviewVoiceError: String = "", reviewSidebarOpen: Bool = false) {
+        _selectedDestination = State(initialValue: reviewDestination == .settings ? .tasks : reviewDestination)
+        #if DEBUG
+        // A directly opened review page keeps the same back path as normal navigation.
+        switch reviewDestination {
+        case .appConnections, .phoneConnections, .modelMemory:
+            _toolsPath = State(initialValue: [reviewDestination])
+        case .appConnection(_), .nativeAppConnection(_):
+            _toolsPath = State(initialValue: [.appConnections, reviewDestination])
+        case .connectionBridge:
+            _toolsPath = State(initialValue: [.appConnections, .connectionBridge])
+        default: break
+        }
+        #endif
+        _settingsPageOpen = State(initialValue: reviewDestination == .settings)
         _reviewVoicePhase = State(initialValue: reviewVoice)
         self.reviewVoiceError = reviewVoiceError
         _screen = State(initialValue: reviewConversation.map { .conversation($0) } ?? .draft)
+        _sidebarOpen = State(initialValue: reviewSidebarOpen)
     }
     var body: some View {
         lifecycleWorkspace
@@ -78,28 +114,38 @@ struct ContentView: View {
     private var workspace: some View {
         ZStack {
             // The shifted main page is the raised surface; the sidebar stays flat.
-            (sidebarOpen ? AgentPalette.surface : AgentPalette.background)
+            (sidebarOpen ? AgentPalette.surface : isTaskHome ? SelaHomePalette.background : AgentPalette.background)
                 .ignoresSafeArea().accessibilityHidden(true)
             Group {
                 switch selectedDestination {
                 case .screenShare: CaptureView()
-                case .device: DeviceView(onCalibration: beginCalibration)
+                case .device: DeviceView(onCalibration: { beginCalibration() })
                 case .settings: SettingsView(onBack: { navigate(.tasks) })
-                case .assistant: AssistantView(newConversationRequest: newAssistantRequest, reviewDictation: reviewVoicePhase, allowsDictation: sheet == nil && !sidebarOpen && !modeSwitcherOpen, onModelSetup: { navigate(.settings) })
+                case .assistant: AssistantView(reviewDictation: reviewVoicePhase, allowsDictation: !model.preparingAutomatically && sheet == nil && !settingsPageOpen && !sidebarOpen && !modeSwitcherOpen, onModelSetup: { present(.connection(.model)) })
                 case .memory: MemoryView()
                 case .workbench: WorkbenchView()
-                case .queue: TaskQueueView()
+                case .tools: ToolsConnectionsView(onNavigate: openToolDestination)
+                case .phoneConnections: DeviceView(onCalibration: { beginCalibration() },
+                    onScreenShare: { openToolDestination(.screenShare) })
+                case .appConnections: AppConnectionsView(onNavigate: openToolDestination,
+                    onConfiguration: { present(.connection($0)) })
+                case .modelMemory: ModelMemoryConnectionsView(onNavigate: openToolDestination,
+                    onConfiguration: { present(.connection($0)) })
+                case .appConnection(let service): ExternalAppConnectionDetailView(service: service,
+                    onConfiguration: { present(.connection($0)) }, onNavigate: openToolDestination)
+                case .nativeAppConnection(let app): NativeConnectionDetailView(app: app)
+                case .connectionBridge: ConnectionBridgeSettingsView()
                 case .tasks: taskPage
                 }
             }.id(selectedDestination).transition(pageTransition)
         }
         .animation(pageAnimation, value: selectedDestination).tint(AgentPalette.accent)
-        .safeAreaBar(edge: .top, spacing: 0) {
+        .modifier(SelaTopChrome(conversation: selectedDestination.isConversation) {
             VStack(spacing: 0) {
                 if selectedDestination != .settings { topBar }
                 AgentPiPPanel(controller: model.pip)
             }
-        }
+        })
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
         .modifier(SidebarMainSurface(open: sidebarOpen))
         .offset(x: sidebarOpen && !reduceMotion ? max(0, sidebarWidth + sidebarDrag) : 0)
@@ -107,32 +153,67 @@ struct ContentView: View {
         .overlay { sidebarOverlay }
     }
 
+    private var settingsWorkspace: some View {
+        ZStack {
+            workspace
+                .allowsHitTesting(!settingsPageOpen)
+                .accessibilityHidden(settingsPageOpen)
+            if settingsPageOpen {
+                SettingsView(onBack: closeSettingsPage)
+                    .environmentObject(model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(AgentPalette.background)
+                    .transition(pageTransition)
+                    .zIndex(1)
+                    .onDisappear {
+                        model.configurationSettingsDismissed()
+                        consumeModalRequests()
+                        presentConfigurationCompletion()
+                    }
+            }
+        }
+        .animation(pageAnimation, value: settingsPageOpen)
+    }
+
     private var presentedWorkspace: some View {
-        workspace
+        settingsWorkspace
         .sheet(item: $sheet, onDismiss: {
             dismissingSheet = false
-            if let next = pendingSheet {
-                pendingSheet = nil
-                sheet = next
-            } else { consumeModalRequests() }
+            consumeModalRequests()
+            presentConfigurationCompletion()
         }) { route in
             Group { switch route {
             case .task(let id): TaskDetailView(id: id)
+            case .taskQueue: TaskQueueView()
             case .plan: TaskPlanView()
             case .preparation:
-                PreparationView { destination in sheet = nil; model.showPreparation = false; navigate(destination) }
+                PreparationView(navigate: { destination in
+                    sheet = nil; model.showPreparation = false
+                    if (selectedDestination == .tools || toolsPath.contains(selectedDestination)) && destination != .tasks && destination != .settings {
+                        openToolDestination(destination)
+                    } else { navigate(destination) }
+                }, onModelSetup: { present(.connection(.model)) })
             case .consent: DataConsentView(onDecision: dismissCurrentSheet)
             case .policy: DataPolicyView()
-            case .settings: SettingsView(onBack: dismissCurrentSheet)
+            case .connection(let page):
+                SettingsView(focusedPage: page, onBack: dismissCurrentSheet)
+                    .onDisappear { model.configurationSettingsDismissed() }
             case .tool(let value): ToolApprovalView(approval: value)
-            } }.agentSheetStyle()
+            } }
+            .environmentObject(model)
+            .agentSheetStyle()
         }
-        .fullScreenCover(isPresented: $showCalibration, onDismiss: { model.calibrating = false; model.cancelCalibration = nil }) {
-            if let calibration { CalibrationView(model: calibration) }
+        .fullScreenCover(isPresented: $showCalibration, onDismiss: calibrationDismissed) {
+            if let calibration {
+                CalibrationView(model: calibration, autoStart: calibrationAutoStart,
+                    allowsAutomaticStart: { model.preparingAutomatically },
+                    onAutomaticCancel: { model.cancelAutomaticPreparation() })
+                    .environmentObject(model)
+            }
         }
     }
 
-    private var lifecycleWorkspace: some View {
+    private var modalLifecycleWorkspace: some View {
         presentedWorkspace
         .onAppear {
             if model.engine.hasCurrentTask, let record = model.engine.currentRecord { screen = .conversation(record.id) }
@@ -141,11 +222,39 @@ struct ContentView: View {
             consumeModalRequests()
             if let mode = model.voiceMode { routeInlineVoice(mode) }
         }
-        .onOpenURL { url in if url.scheme == "phoneagent", url.host == "task", let record = model.engine.currentRecord { openConversation(record) } }
+        .onOpenURL(perform: openActivityTask)
+        .onReceive(model.taskNotifications.$openRequest.compactMap { $0 }.receive(on: RunLoop.main)) { request in
+            openActivityTask(TaskActivityLink.url(taskID: request.taskID))
+            model.taskNotifications.consumeOpenRequest(request.id)
+        }
         .onChange(of: model.engine.currentRecord?.id) { _, id in
             if let id {
-                if screen == .draft, model.goal == model.engine.currentRecord?.goal { model.goal = "" }
+                if screen == .draft, model.goal == model.engine.currentRecord?.goal,
+                   (model.engine.currentRecord?.attachments ?? []) == attachmentDraft.items {
+                    model.goal = ""; attachmentDraft.clear()
+                }
                 screen = .conversation(id); expandedSteps = false; followLatest = true
+            }
+        }
+        .onChange(of: screen) { old, new in
+            attachmentSnapshots[old] = attachmentDraft.items
+            attachmentDraft.cancelImport()
+            attachmentDraft.replace(attachmentSnapshots[new] ?? [])
+            attachmentSelectionID = UUID()
+        }
+        .onChange(of: model.deviceDebugDestination) { _, destination in
+            #if DEBUG
+            if let destination, ProcessInfo.processInfo.arguments.contains("--sela-device-debug") { navigate(destination) }
+            #endif
+        }
+        .onChange(of: selectedDestination) { _, _ in
+            attachmentDraft.cancelImport(); attachmentSelectionID = UUID()
+        }
+        .onChange(of: model.engine.running) { _, running in
+            if running {
+                model.showPreparation = false
+                if pendingSheet?.id == "preparation" { pendingSheet = nil }
+                if sheet?.id == "preparation" { dismissCurrentSheet() }
             }
         }
         .onChange(of: model.history.records.map(\.id)) { _, ids in
@@ -155,16 +264,37 @@ struct ContentView: View {
             if show { consumeModalRequests() }
         }
         .onChange(of: model.showPreparation) { _, show in if show { consumeModalRequests() } }
+        .onChange(of: model.showConfigurationSettings) { _, show in if show { consumeModalRequests() } }
+        .onChange(of: model.configurationCompletionID) { _, id in
+            if id != nil { configurationCompletionPending = true; presentConfigurationCompletion() }
+        }
+        .onChange(of: model.preparingAutomatically) { _, preparing in
+            if preparing {
+                if !isTaskHome { preparationExpanded = true }
+                composing = false; modeSwitcherOpen = false
+            } else { presentConfigurationCompletion() }
+        }
+        .onChange(of: model.automaticCalibrationRequested) { _, requested in
+            if requested { consumeModalRequests() }
+            else if pendingCalibration == true { pendingCalibration = nil }
+        }
         .onChange(of: model.showPrivacyPolicy) { _, show in if show { consumeModalRequests() } }
+    }
+    private var lifecycleWorkspaceObservers: some View {
+        modalLifecycleWorkspace
         .onChange(of: model.voiceRequestID) { _, _ in navigate(model.voiceMode == .question ? .assistant : .tasks); setSidebar(false); composing = false }
         .onChange(of: model.voiceMode) { _, mode in
             if let mode { routeInlineVoice(mode) }
         }
-        .onChange(of: model.tools.pending?.id) { _, id in
-            if let value = model.tools.pending { present(.tool(value)) }
-            else {
-                if pendingSheet?.id.hasPrefix("tool:") == true { pendingSheet = nil }
-                if sheet?.id.hasPrefix("tool:") == true { dismissCurrentSheet() }
+        .onChange(of: model.tools.pending?.id) { previousID, _ in
+            if let previousID {
+                let previousSheetID = "tool:" + previousID.uuidString
+                if pendingSheet?.id == previousSheetID { pendingSheet = nil }
+                if sheet?.id == previousSheetID { dismissCurrentSheet() }
+            }
+            if let value = model.tools.pending {
+                let background = value.taskID.map { model.backgroundTasks.contains($0) } ?? false
+                if !background { present(.tool(value)) }
             }
         }
         .onChange(of: model.showAssistant) { _, show in if show { model.showAssistant = false; navigate(.assistant) } }
@@ -172,24 +302,36 @@ struct ContentView: View {
             configureAutomaticPiP(value ?? false)
         }
         .alert("离开记录与文件？", isPresented: $confirmingWorkbenchExit) {
-            Button("继续编辑", role: .cancel) { pendingDestination = nil; pendingDestinationSheet = nil }
+            Button("继续编辑", role: .cancel) {
+                pendingDestination = nil; pendingDestinationSheet = nil; pendingAssistantAction = nil; pendingTaskAction = nil
+            }
             Button("离开并清空草稿", role: .destructive) {
                 if let destination = pendingDestination {
                     let route = pendingDestinationSheet
-                    pendingDestination = nil; pendingDestinationSheet = nil
-                    completeNavigation(destination, showing: route)
+                    let assistantAction = pendingAssistantAction
+                    let taskAction = pendingTaskAction
+                    pendingDestination = nil; pendingDestinationSheet = nil; pendingAssistantAction = nil; pendingTaskAction = nil
+                    completeNavigation(destination, showing: route, assistantAction: assistantAction, taskAction: taskAction)
                 }
             }
         } message: { Text("原文、文件草稿和纪要仅保留在当前工作台会话。继续编辑后可以保存到记忆或导出；离开会清空此页内容。") }
-        .confirmationDialog("清空未提交的任务？", isPresented: $discardingDraft, titleVisibility: .visible) {
+        .alert("清空未提交的任务？", isPresented: $discardingDraft) {
             Button("清空并新建", role: .destructive) { resetDraft() }
             Button("继续编辑", role: .cancel) {}
+        } message: { Text("清空会移除尚未提交的文字和附件；继续编辑可保留当前草稿。") }
+        .alert("配置完成", isPresented: $showingConfigurationComplete) {
+            Button("好的", role: .cancel) {}
         }
+    }
+    private var lifecycleWorkspace: some View {
+        lifecycleWorkspaceObservers
         .onReceive(NotificationCenter.default.publisher(for: AgentPiPController.restoreTask)) { _ in
             if let record = model.engine.currentRecord { openConversation(record) } else { navigate(.tasks) }
         }
         .onChange(of: phase) { _, new in
             if new == .active { model.ble.refresh() }
+            if new == .active { consumeModalRequests() }
+            if new == .active { presentConfigurationCompletion() }
             if new == .active && !model.speech.usingAudio { model.pip.applicationBecameActive() }
             if new == .background && !model.speech.usingAudio { model.pip.applicationEnteredBackground() }
             if new == .background {
@@ -197,7 +339,7 @@ struct ContentView: View {
                 // The inline composer retains partial text before releasing audio.
                 if model.voiceMode == nil { model.speech.cancel() }
             }
-            if new != .active && model.manualBusy { model.stop() }
+            if new != .active && model.manualBusy && !model.manualScreenWorkflow { model.stop() }
         }
     }
     private func routeInlineVoice(_ mode: VoiceInputMode) {
@@ -215,8 +357,17 @@ struct ContentView: View {
         return $model.goal
     }
     private func consumeModalRequests() {
+        guard phase == .active, !showCalibration else { return }
         if model.showPrivacyConsent {
             model.showPrivacyConsent = false; composing = false; present(.consent)
+        } else if model.automaticCalibrationRequested {
+            beginCalibration(autoStart: true)
+        } else if let autoStart = pendingCalibration {
+            beginCalibration(autoStart: autoStart)
+        } else if model.showConfigurationSettings {
+            model.showConfigurationSettings = false; composing = false; present(.connection(.model))
+        } else if let next = pendingSheet, sheet == nil, !dismissingSheet {
+            pendingSheet = nil; sheet = next
         } else if model.showPreparation {
             model.showPreparation = false; composing = false; present(.preparation)
         } else if model.showPrivacyPolicy {
@@ -226,6 +377,7 @@ struct ContentView: View {
     private func present(_ route: WorkspaceSheet) {
         composing = false
         setSidebar(false)
+        if showCalibration { pendingSheet = route; return }
         if sheet == nil, !dismissingSheet { sheet = route }
         else if sheet?.id != route.id {
             pendingSheet = route; dismissingSheet = true; sheet = nil
@@ -235,72 +387,224 @@ struct ContentView: View {
         // A queued destination opens only after the current presentation has closed.
         dismissingSheet = true; sheet = nil
     }
+    private func closeSettingsPage() {
+        settingsPageOpen = false
+    }
     private var pageAnimation: Animation { reduceMotion ? .easeOut(duration: 0.12) : .spring(duration: 0.28, bounce: 0) }
     private var pageTransition: AnyTransition {
         reduceMotion ? .opacity : .asymmetric(
             insertion: .opacity.combined(with: .offset(x: navigationForward ? 18 : -18)),
             removal: .opacity.combined(with: .offset(x: navigationForward ? -10 : 10)))
     }
-    private func navigate(_ destination: WorkspaceDestination, showing route: WorkspaceSheet? = nil) {
+    private func navigate(_ destination: WorkspaceDestination, showing route: WorkspaceSheet? = nil, assistantAction: AssistantNavigationAction? = nil, taskAction: TaskNavigationAction? = nil) {
         setSidebar(false)
-        if destination == .settings { present(.settings); return }
-        guard destination != selectedDestination else { if let route { present(route) }; return }
+        if destination == .settings {
+            composing = false; modeSwitcherOpen = false
+            navigationForward = true; settingsPageOpen = true
+            return
+        }
+        guard destination != selectedDestination else {
+            if destination == .assistant { applyAssistantAction(assistantAction) }
+            if destination == .tasks { applyTaskAction(taskAction) }
+            if let route { present(route) }
+            return
+        }
         if selectedDestination == .workbench && model.workbenchHasDraft {
             pendingDestination = destination; pendingDestinationSheet = route
+            pendingAssistantAction = assistantAction
+            pendingTaskAction = taskAction
             composing = false; confirmingWorkbenchExit = true; return
         }
-        completeNavigation(destination, showing: route)
+        completeNavigation(destination, showing: route, assistantAction: assistantAction, taskAction: taskAction)
     }
-    private func completeNavigation(_ destination: WorkspaceDestination, showing route: WorkspaceSheet? = nil) {
+    private func completeNavigation(_ destination: WorkspaceDestination, showing route: WorkspaceSheet? = nil, assistantAction: AssistantNavigationAction? = nil, taskAction: TaskNavigationAction? = nil) {
         if destination.pausesTaskOnEntry && (model.engine.running || model.voicePending) { model.pauseTask() }
+        if destination != .tools && !toolsPath.contains(destination) { toolsPath = [] }
         navigationForward = destination != .tasks; selectedDestination = destination; composing = false
+        if destination == .assistant { applyAssistantAction(assistantAction) }
+        if destination == .tasks { applyTaskAction(taskAction) }
         if let route { present(route) }
     }
+    private func applyAssistantAction(_ action: AssistantNavigationAction?) {
+        guard let action else { return }
+        switch action {
+        case .create: model.conversation.newConversation()
+        case .open(let id): model.conversation.openConversation(id)
+        }
+    }
+    private func applyTaskAction(_ action: TaskNavigationAction?) {
+        guard let action else { return }
+        switch action {
+        case .open(let id):
+            screen = .conversation(id); expandedSteps = false; followLatest = true; composing = false
+        case .create:
+            if model.goal == displayedRecord?.goal { model.goal = ""; model.removeTaskPlan() }
+            screen = .draft; model.notice = ""; composing = false
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        case .reset:
+            attachmentSnapshots[.draft] = []
+            if screen == .draft { attachmentDraft.clear() }
+            model.removeTaskPlan(); model.goal = ""; model.notice = ""; screen = .draft; composing = false
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+    }
     private var isConversationMode: Bool { selectedDestination.isConversation }
-    private var topBar: some View {
+    private var backDestination: WorkspaceDestination {
+        if selectedDestination == .tools { return toolsOrigin }
+        if let index = toolsPath.lastIndex(of: selectedDestination) {
+            return index == 0 ? .tools : toolsPath[index - 1]
+        }
+        return .tasks
+    }
+    private var backButtonLabel: String {
+        switch backDestination {
+        case .tasks: "返回任务"
+        case .assistant: "返回对话"
+        default: "返回" + backDestination.title
+        }
+    }
+    private func openTools() {
+        toolsOrigin = selectedDestination; toolsPath = []
+        navigate(.tools)
+    }
+    private func openToolDestination(_ destination: WorkspaceDestination) {
+        if destination != .settings {
+            if let index = toolsPath.firstIndex(of: destination) { toolsPath = Array(toolsPath.prefix(index + 1)) }
+            else { toolsPath.append(destination) }
+        }
+        navigate(destination)
+    }
+    private func navigateBack() {
+        let destination = backDestination
+        if destination == .tools || selectedDestination == .tools { toolsPath = [] }
+        else if let index = toolsPath.lastIndex(of: destination) { toolsPath = Array(toolsPath.prefix(index + 1)) }
+        navigate(destination)
+    }
+    @ViewBuilder private var topBar: some View {
+        if selectedDestination.isConversation { homeTopBar }
+        else { standardTopBar }
+    }
+    private var selaMotion: String {
+        if model.voiceMode != nil || reviewVoicePhase != nil { return "listening" }
+        switch model.engine.phase {
+        case .observing: return "thinking"
+        case .acting: return "acting"
+        case .preparing: return "preparing"
+        case .awaitingApproval: return "awaitingApproval"
+        case .completed: return "completed"
+        case .paused: return "paused"
+        case .failed: return "failed"
+        case .stopped: return "stopped"
+        default: return "idle"
+        }
+    }
+    private var homeTopBar: some View {
+        HStack(spacing: 12) {
+            Button { composing = false; setSidebar(true) } label: {
+                SelaMenuGlyph()
+                    .font(.system(size: 19, weight: .medium))
+                    .frame(width: 44, height: 44)
+                    .background(SelaHomePalette.surface, in: Circle())
+                    .overlay { Circle().stroke(SelaHomePalette.line, lineWidth: 0.7) }
+            }
+            .buttonStyle(AgentPressStyle()).tint(.primary)
+            .accessibilityLabel("打开任务与工具侧栏")
+            .accessibilityIdentifier("conversation.menu")
+            Spacer(minLength: 0)
+            taskQueueButton
+        }
+        .padding(.horizontal, 20).padding(.top, 2).padding(.bottom, 6)
+    }
+    private var taskQueueButton: some View {
+        Button {
+            modeSwitcherOpen = false
+            present(.taskQueue)
+        } label: {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.system(size: 19, weight: .medium))
+                .frame(width: 44, height: 44)
+                .background(SelaHomePalette.surface, in: Circle())
+                .overlay { Circle().stroke(SelaHomePalette.line, lineWidth: 0.7) }
+                .overlay(alignment: .topTrailing) {
+                    if model.screenQueueCount > 0 {
+                        Text(model.screenQueueCount > 99 ? "99+" : String(model.screenQueueCount))
+                            .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(SelaHomePalette.surface)
+                            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+                            .background(SelaHomePalette.accent, in: Capsule())
+                            .offset(x: 3, y: -2)
+                            .accessibilityHidden(true)
+                    }
+                }
+        }
+        .buttonStyle(AgentPressStyle()).tint(.primary)
+        .accessibilityLabel("任务队列")
+        .accessibilityValue("\(model.screenQueueCount) 个屏幕任务")
+        .accessibilityHint("查看执行进度，调整等待任务的顺序")
+        .accessibilityIdentifier("conversation.queue")
+    }
+    private var standardTopBar: some View {
         HStack(spacing: 12) {
             Button {
-                if isConversationMode { composing = false; setSidebar(true) } else { navigate(.tasks) }
+                if isConversationMode { composing = false; setSidebar(true) } else { navigateBack() }
             } label: {
-                Image(systemName: isConversationMode ? "line.3.horizontal" : "chevron.left")
+                Group { if isConversationMode { SelaMenuGlyph() } else { Image(systemName: "chevron.left") } }
                     .font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44)
                     .agentGlass(in: Circle(), interactive: true)
             }.buttonStyle(AgentPressStyle()).tint(.primary)
-                .accessibilityLabel(isConversationMode ? "打开任务与工具侧栏" : "返回任务")
+                .accessibilityLabel(isConversationMode ? "打开任务与工具侧栏" : backButtonLabel)
             if !isConversationMode { Text(pageTitle).font(.headline).lineLimit(1) }
             Spacer(minLength: 8)
             if !isConversationMode {
-                Button { navigate(.settings) } label: { Image(systemName: "gearshape").frame(width: 44, height: 44) }
+                Button { navigate(.settings) } label: { Image(systemName: "gearshape").font(.system(size: 19)).frame(width: 44, height: 44) }
                     .tint(.primary).buttonStyle(AgentPressStyle()).accessibilityLabel("设置")
             }
         }
         .overlay {
-            if isConversationMode { modeSwitcher }
+            if selectedDestination == .assistant { modeSwitcher }
         }
         .padding(.horizontal, 16).padding(.vertical, 6)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
     private var modeSwitcher: some View {
         Button { composing = false; modeSwitcherOpen.toggle() } label: {
-            HStack(spacing: 6) {
-                Text(selectedDestination == .assistant ? "问助手" : "操控手机").font(.headline).lineLimit(1).minimumScaleFactor(0.8)
-                Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(modeSwitcherOpen ? 180 : 0))
+            Group {
+                if isTaskHome {
+                    modeSwitcherLabel
+                        .foregroundStyle(SelaHomePalette.accent)
+                        .background(homeInputActive ? Color.clear : SelaHomePalette.accentSurface, in: Capsule())
+                } else {
+                    modeSwitcherLabel.agentGlass(in: Capsule(), interactive: true)
+                }
             }
-            .padding(.horizontal, 10).frame(height: 44)
-            .frame(maxWidth: max(92, min(184, viewportWidth - 216)))
-            .agentGlass(in: Capsule(), interactive: true)
         }
         .tint(.primary).buttonStyle(AgentPressStyle())
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: modeSwitcherOpen)
-        .accessibilityLabel("切换模式，当前" + (selectedDestination == .assistant ? "问助手" : "操控手机"))
+        .accessibilityLabel("切换模式，当前" + (selectedDestination == .assistant ? "对话" : "任务"))
         .popover(isPresented: $modeSwitcherOpen, arrowEdge: .top) {
             VStack(spacing: 4) {
-                modeOption(title: "操控手机", detail: "执行任务与操控手机", icon: "computermouse", destination: .tasks)
-                modeOption(title: "问助手", detail: model.engine.running || model.voicePending ? "暂停任务，进入对话" : "提问与交流", icon: "bubble.left.and.bubble.right", destination: .assistant)
+                modeOption(title: "任务", detail: "执行任务与操控手机", icon: "computermouse", destination: .tasks)
+                modeOption(title: "对话", detail: model.engine.running || model.voicePending ? "暂停任务，进入对话" : "聊天与参考历史上下文", icon: "bubble.left.and.bubble.right", destination: .assistant)
             }
             .padding(10).frame(width: min(320, max(240, viewportWidth - 40)))
             .presentationCompactAdaptation(.popover)
 
+        }
+    }
+    @ViewBuilder private var modeSwitcherLabel: some View {
+        if isTaskHome && homeInputActive {
+            SelaMotionAvatar(motion: selaMotion, dark: colorScheme == .dark, reduceMotion: reduceMotion).sized()
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.75)))
+        } else {
+        HStack(spacing: 7) {
+            Text(selectedDestination == .assistant ? "对话" : "任务")
+                .font(isTaskHome ? .subheadline.weight(.semibold) : .headline).lineLimit(1).minimumScaleFactor(0.8)
+            Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                .rotationEffect(.degrees(modeSwitcherOpen ? 180 : 0))
+        }
+        .padding(.horizontal, isTaskHome ? 18 : 10).frame(height: 44)
+        .frame(maxWidth: isTaskHome ? max(128, min(184, viewportWidth - 160)) : max(92, min(184, viewportWidth - 216)))
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
     }
     private func modeOption(title: String, detail: String, icon: String, destination: WorkspaceDestination) -> some View {
@@ -342,35 +646,76 @@ struct ContentView: View {
             else { draftCanvas }
         }
         .opacity(appeared ? 1 : 0).offset(y: appeared || reduceMotion ? 0 : 6)
-        .safeAreaBar(edge: .bottom, spacing: 0) { composerArea }
+        .safeAreaInset(edge: .bottom, spacing: 0) { composerArea }
+        .composerAttachmentPicker(store: attachmentDraft, showPhotos: $showAttachmentPhotos, showFiles: $showAttachmentFiles, selectionID: attachmentSelectionID)
     }
     private var draftCanvas: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                VStack(spacing: 24) {
-                    Spacer(minLength: 32)
-                    VStack(spacing: 14) {
-                        AgentOrb(size: 56)
-                        Text("让手机为你做些什么？").font(.title2.weight(.semibold))
-                        Text("说出目标，让助手操控手机。")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }.multilineTextAlignment(.center)
-                    Spacer(minLength: 32)
-                    if !composing {
-                        HStack(spacing: 10) {
-                            suggestion("浏览朋友圈", icon: "bubble.left", text: "打开微信朋友圈，停留在页面，不发布内容")
-                            suggestion("查看电量", icon: "battery.75percent", text: "打开设置，查看电池用量")
-                        }.transition(.opacity).padding(.bottom, 12)
-                    }
-                }.padding(.horizontal, 20).frame(maxWidth: .infinity).frame(minHeight: geometry.size.height)
-            }.scrollDismissesKeyboard(.interactively).animation(pageAnimation, value: composing)
+        SelaHomeCanvas(compact: homeInputActive, onSuggestion: { text in model.goal = text; composing = true }) {
+            homePreparation
+        }
+        .animation(pageAnimation, value: model.configurationReady)
+    }
+    private var homePreparationDetail: String {
+        switch model.savedPreparationConfiguration.configurationStep {
+        case .model: "先配置模型，再连接手机"
+        case .consent: "确认模型的数据使用授权"
+        case .systemTools: "在设置中开启系统工具"
+        case .device: "连接并保存你的手机配件"
+        case .calibration: "完成配件的定位校准"
+        default: "检查已保存的设置"
         }
     }
-    private func suggestion(_ title: String, icon: String, text: String) -> some View {
-        Button { model.goal = text; composing = true } label: {
-            Label(title, systemImage: icon).font(.subheadline).frame(maxWidth: .infinity, minHeight: AgentInputMetrics.height)
-                .agentGlass(in: AgentInputMetrics.shape, interactive: true)
-        }.tint(.primary).buttonStyle(AgentPressStyle()).disabled(model.voiceMode != nil || reviewVoicePhase != nil)
+    @ViewBuilder private var homePreparation: some View {
+        if model.preparingSavedConfiguration || !model.configurationReady {
+            Group {
+                if model.preparingAutomatically {
+                    HStack(spacing: 12) {
+                        ProgressView().frame(width: 44, height: 44)
+                        Text("配置中…").font(.subheadline.weight(.semibold))
+                        Spacer(minLength: 4)
+                        Button("取消") { model.cancelAutomaticPreparation() }
+                            .font(.caption.weight(.medium)).frame(minWidth: 44, minHeight: 44)
+                            .buttonStyle(AgentPressStyle())
+                    }
+                    .accessibilityIdentifier("home.preparation.progress")
+                } else {
+                    Button(action: configureSavedSettings) {
+                        homeConfigurationLabel
+                    }
+                    .buttonStyle(AgentPressStyle())
+                    .disabled(busy || model.calibrating)
+                    .accessibilityLabel("一键配置，" + homePreparationDetail)
+                    .accessibilityIdentifier("home.preparation.start")
+                }
+            }
+            .padding(16)
+            .background(SelaHomePalette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 22).stroke(SelaHomePalette.line, lineWidth: 0.7) }
+            .tint(SelaHomePalette.accent)
+            .transition(.opacity)
+        }
+    }
+    private var homeConfigurationLabel: some View {
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
+            HStack(spacing: 12) {
+                Image(systemName: "iphone")
+                    .font(.system(size: 19, weight: .medium))
+                    .frame(width: 44, height: 44)
+                    .background(SelaHomePalette.accentSurface, in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("准备好，再出发").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text(homePreparationDetail).font(.caption).foregroundStyle(SelaHomePalette.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("一键配置").font(.caption.weight(.semibold))
+                .padding(.horizontal, 12).frame(minHeight: 44)
+                .background(SelaHomePalette.accentSurface, in: Capsule())
+        }
+        .foregroundStyle(SelaHomePalette.accent)
+        .contentShape(Rectangle())
     }
     private func promptCard(title: String, subtitle: String, icon: String, goal: String) -> some View {
         Button {
@@ -415,7 +760,9 @@ struct ContentView: View {
         ScrollViewReader { reader in
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    SelaConversationAvatar(motion: selaMotion)
                     userMessage(record.goal)
+                    if let attachments = record.attachments, !attachments.isEmpty { ComposerAttachmentList(attachments: attachments) }
 
                     operationAccordion(record)
 
@@ -440,15 +787,25 @@ struct ContentView: View {
 
                     Color.clear.frame(height: 1).id("conversationBottom")
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 16)
+                .simultaneousGesture(TapGesture().onEnded { composing = false })
             }
             .scrollDismissesKeyboard(.interactively)
-            .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+            .scrollEdgeEffectHidden(for: .top)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.visibleRect.maxY >= geometry.contentSize.height - 80
             } action: { _, nearBottom in followLatest = nearBottom }
+            .overlay(alignment: .bottom) {
+                if !followLatest {
+                    SelaScrollLatestButton {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                            reader.scrollTo("conversationBottom", anchor: .bottom)
+                        }
+                    }.padding(.bottom, 12)
+                }
+            }
             .onAppear { reader.scrollTo("conversationBottom", anchor: .bottom) }
             .onChange(of: record.logs.last?.id) { _, _ in
                 if followLatest { reader.scrollTo("conversationBottom", anchor: .bottom) }
@@ -496,13 +853,13 @@ struct ContentView: View {
                                 Text("执行步骤")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
-                                Text("\(activities.count)")
+                                Text("\(isCurrentConversation && model.engine.running ? model.engine.currentStep : activities.count)")
                                     .font(.caption2.monospacedDigit().weight(.bold))
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(AgentPalette.ink.opacity(0.08), in: Capsule())
                             }
-                            if !expandedSteps, let last = activities.last {
+                            if !expandedSteps && !(isCurrentConversation && model.engine.running), let last = activities.last {
                                 Text(last.title + (last.detail.isEmpty ? "" : " · " + last.detail))
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
@@ -583,7 +940,9 @@ struct ContentView: View {
     }
 
     private func taskResponse(_ record: PhoneTaskRecord) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let offers = record.logs.filter { $0.title == "工具回执" && $0.detail.hasPrefix("来源：携程") }
+            .flatMap { CtripFlightParser.offers($0.detail, query: record.goal, at: record.updatedAt) }
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: record.outcome == .completed ? "checkmark.circle.fill" : (record.outcome == .failed ? "exclamationmark.circle.fill" : "sparkles"))
                     .foregroundStyle(record.outcome == .completed ? Color.green : (record.outcome == .failed ? Color.red : AgentPalette.ink))
@@ -592,37 +951,38 @@ struct ContentView: View {
                     .font(.subheadline.weight(.semibold))
             }
 
-            Text(isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary)
-                .font(.body)
-                .lineSpacing(4)
-                .textSelection(.enabled)
+            if !offers.isEmpty { CtripFlightCards(offers: offers, onBook: model.bookFlight) }
+            let response = isCurrentConversation && model.engine.running ? "正在处理当前步骤" : isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
+            let narrative = offers.isEmpty ? response : CtripFlightParser.narrative(response, representedBy: offers)
+            if !narrative.isEmpty {
+                SelaMarkdownText(text: narrative).font(.body).lineSpacing(4).textSelection(.enabled)
+            }
 
-            HStack(spacing: 16) {
+            HStack(spacing: 6) {
                 Button {
                     let content = isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
                     UIPasteboard.general.string = content
                     model.notice = "已复制结果"
                 } label: {
-                    Label("复制", systemImage: "doc.on.doc")
+                    Label("复制", systemImage: "doc.on.doc").frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("复制任务结果")
-
-                if !(isCurrentConversation && model.engine.hasCurrentTask) {
-                    Button { reuseTask(record) } label: {
-                        Label("用作新任务", systemImage: "arrow.up.left")
-                    }
-                    .accessibilityLabel("把此任务用作新任务草稿")
-                }
-
-                ShareLink(item: record.summary) {
-                    Label("分享", systemImage: "square.and.arrow.up")
-                }
-                .accessibilityLabel("分享任务结果")
+                .accessibilityIdentifier("response.copy")
+                Button { _ = model.retryTask(record.id) } label: {
+                    Label("重试", systemImage: "arrow.clockwise").frame(width: 44, height: 44)
+                }.disabled(model.recoverableTask(record.id) == nil || model.taskRecoveryBusy)
+                    .accessibilityIdentifier("response.retry")
             }
             .font(.caption)
+            .labelStyle(.iconOnly)
             .foregroundStyle(.secondary)
             .padding(.top, 4)
             .buttonStyle(AgentPressStyle())
+            if model.recoverableTask(record.id) != nil {
+                Button("继续任务") { _ = model.continueTask(record.id) }
+                    .buttonStyle(.bordered).disabled(model.taskRecoveryBusy)
+                    .accessibilityIdentifier("task.continue")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12)
@@ -633,7 +993,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             if model.engine.phase == .awaitingApproval, let action = model.engine.pendingAction {
                 Button(action.kind == .complete_subtask ? "确认完成这一步" : "确认执行这一步") { model.engine.approve() }
-                    .buttonStyle(AgentButtonStyle()).disabled(model.engine.releasing)
+                    .buttonStyle(AgentButtonStyle()).disabled(model.engine.releasing || model.preparingAutomatically)
             }
             controlButtons
         }
@@ -645,8 +1005,8 @@ struct ContentView: View {
                 taskControl("暂停", icon: "pause.fill") { model.pauseTask() }
                 taskControl("接管", icon: "hand.raised.fill") { model.pauseTask(handoff: true) }
             } else if model.engine.canResume {
-                taskControl("继续", icon: "play.fill") { model.resumeAgent() }
-                taskControl("补充", icon: "text.bubble.fill") { composing = true }
+                taskControl("继续", icon: "play.fill") { model.resumeAgent() }.disabled(model.preparingAutomatically)
+                taskControl("补充", icon: "text.bubble.fill") { composing = true }.disabled(model.preparingAutomatically)
             }
             taskControl("停止", icon: "stop.fill", destructive: true) { model.stop() }
         }.disabled(model.engine.releasing || model.voiceMode != nil).padding(.top, 2)
@@ -681,57 +1041,19 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
             }
-            if preparationExpanded { readiness.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity)) }
-
-            HStack(spacing: 8) {
-                Button { withAnimation(pageAnimation) { preparationExpanded.toggle() } } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: model.preparationReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(model.preparationReady ? Color.green : Color.orange)
-                        Text(model.preparationReady ? "已就绪" : "使用准备")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.primary)
-                        Image(systemName: preparationExpanded ? "chevron.down" : "chevron.up")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .agentGlass(in: Capsule(), interactive: true)
-                }
-                .buttonStyle(AgentPressStyle())
-                .accessibilityLabel(preparationExpanded ? "收起使用准备" : model.preparationReady ? "已就绪，查看使用准备" : "展开使用准备")
-
-                if model.taskQueue.pendingCount > 0 {
-                    Button { navigate(.queue) } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "list.bullet").font(.system(size: 10))
-                            Text("队列 \(model.taskQueue.pendingCount)").font(.caption2.weight(.medium))
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .agentGlass(in: Capsule(), interactive: true)
-                    }
-                    .buttonStyle(AgentPressStyle())
-                    .accessibilityLabel("任务队列，\(model.taskQueue.pendingCount) 项待处理")
-                }
-
-                Spacer(minLength: 4)
-
-                if composingSupplement || queueingDraft {
-                    Text(composingSupplement ? (model.engine.hasCurrentTask ? "补充要求" : "转为新任务") : "加入队列")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
+            if !attachmentDraft.items.isEmpty || attachmentDraft.importing || !attachmentDraft.error.isEmpty {
+                ComposerAttachmentTray(store: attachmentDraft)
+                    .disabled(model.preparingAutomatically)
             }
-            .padding(.horizontal, 8)
-
             composer
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.voiceMode != nil)
         }
         .agentComposerLeadingGlyph(recording: reviewVoicePhase != nil || (model.voiceMode != nil && model.voiceMode != .question))
         .padding(.horizontal, 16)
-        .padding(.top, 4)
+        .padding(.top, isTaskHome ? 12 : 4)
         .padding(.bottom, 8)
+        .background(isTaskHome ? SelaHomePalette.background : AgentPalette.background)
+        .tint(isTaskHome ? SelaHomePalette.accent : AgentPalette.accent)
     }
 
     @ViewBuilder private var composer: some View {
@@ -742,34 +1064,31 @@ struct ContentView: View {
         } else if let mode = model.voiceMode, mode != .question {
             let requestID = model.voiceRequestID
             InlineDictationComposer(speech: model.speech, draft: voiceComposerText,
-                                    isVisible: sheet == nil && !showCalibration && !sidebarOpen && !modeSwitcherOpen,
-                                    isCurrent: { model.voiceMode == mode && model.voiceRequestID == requestID }) { text in
+                                    isVisible: sheet == nil && !settingsPageOpen && !showCalibration && !sidebarOpen && !modeSwitcherOpen,
+                                    isCurrent: { model.voiceMode == mode && model.voiceRequestID == requestID },
+                                    onSend: { submitComposer() }) { text in
                 guard model.voiceMode == mode, model.voiceRequestID == requestID else { return }
                 dictatedDraft = text; model.voiceMode = nil
             }.id(requestID).transition(.opacity)
         } else { textComposer.transition(.opacity) }
     }
     private var textComposer: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Menu {
-                Button { navigate(.screenShare) } label: { Label("共享屏幕", systemImage: "rectangle.on.rectangle") }
-                Button { navigate(.device) } label: { Label("设备与校准", systemImage: "computermouse") }
-                Button { present(.plan) } label: { Label("组合任务清单", systemImage: "list.number") }.disabled(busy || composingSupplement)
-                Button { model.pip.enabled ? model.pip.close() : model.pip.open() } label: { Label("动作画中画", systemImage: "pip.enter") }
-            } label: {
-                AgentComposerLeadingSlot()
-            }
-            .tint(.primary).accessibilityLabel("添加任务工具")
+        SelaComposerLayout(expanded: composing) {
+            SelaAttachmentMenu(onPhotos: { composing = false; showAttachmentPhotos = true },
+                               onFiles: { composing = false; showAttachmentFiles = true })
+                .disabled(model.preparingAutomatically || attachmentDraft.importing)
 
-            TextField(composingSupplement ? "补充要求…" : "告诉我你想做什么…", text: composerText,
-                      prompt: Text(composingSupplement ? "补充要求…" : "告诉我你想做什么…").foregroundStyle(AgentPalette.placeholder), axis: .vertical)
+            TextField(composingSupplement ? "补充要求…" : "Ask Sela", text: composerText,
+                      prompt: Text(composingSupplement ? "补充要求…" : "Ask Sela").foregroundStyle(AgentPalette.placeholder), axis: .vertical)
                 .lineLimit(1...(typeSize.isAccessibilitySize ? 3 : 5))
                 .font(.body)
                 .focused($composing)
                 .padding(.vertical, 8)
                 .frame(minHeight: 44)
                 .accessibilityLabel(composingSupplement ? "补充当前任务的要求" : "新任务内容")
+                .accessibilityIdentifier("composer.text")
 
+            HStack(spacing: 8) {
             if !model.taskPlan.isEmpty && !composingSupplement {
                 Button { present(.plan) } label: {
                     Text("清单 \(model.taskPlan.count)")
@@ -780,39 +1099,46 @@ struct ContentView: View {
                 .buttonStyle(AgentPressStyle())
             }
 
-            if composerText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if composing || (composerText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachmentDraft.items.isEmpty) {
                 Button {
                     composing = false
                     model.beginVoice(composingSupplement ? .supplement : .task)
                 } label: {
                     Image(systemName: "mic.fill")
                         .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(isTaskHome ? SelaHomePalette.accent : AgentPalette.ink)
                         .frame(width: 44, height: 44)
-                        .background(AgentPalette.ink.opacity(0.08), in: Circle())
+                        .background(isTaskHome ? SelaHomePalette.accentSurface : AgentPalette.ink.opacity(0.08), in: Circle())
                 }
                 .buttonStyle(AgentPressStyle())
                 .disabled(inputBlocked)
                 .accessibilityLabel(composingSupplement ? "语音补充要求" : "语音输入任务")
+                .accessibilityIdentifier("composer.mic")
                 .transition(.opacity)
-            } else {
+            }
+            if !composerText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachmentDraft.items.isEmpty {
                 Button { submitComposer() } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(isTaskHome ? SelaHomePalette.onSend : Color.white)
                         .frame(width: 44, height: 44)
-                        .background(AgentPalette.accent, in: Circle())
+                        .background(isTaskHome ? SelaHomePalette.send : AgentPalette.accent, in: Circle())
                 }
                 .buttonStyle(AgentPressStyle())
                 .disabled(inputBlocked)
-                .accessibilityLabel(composingSupplement ? (model.engine.hasCurrentTask ? "提交补充并暂停，确认后继续" : "把补充转为新任务草稿") : (queueingDraft ? "加入任务队列" : "开始任务"))
+                .accessibilityLabel(composingSupplement ? "发送补充要求" : "开始任务")
+                .accessibilityIdentifier("composer.send")
                 .transition(.opacity)
             }
+            }.accessibilityElement(children: .contain).accessibilityIdentifier("composer.actions")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .frame(minHeight: AgentInputMetrics.height)
-        .agentGlass(in: AgentInputMetrics.shape)
+        .modifier(SelaHomeComposerSurface(active: isTaskHome))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("composer.container")
+        .accessibilityValue(composing ? "两行输入" : "单行输入")
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: composerText.wrappedValue.isEmpty)
     }
     private func configureAutomaticPiP(_ enabled: Bool) {
@@ -824,8 +1150,11 @@ struct ContentView: View {
     private func submitComposer() {
         guard !inputBlocked else { return }
         composing = false
+        if composerText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !attachmentDraft.items.isEmpty {
+            composerText.wrappedValue = composingSupplement ? "请参考这些补充附件。" : "请帮我处理这些附件。"
+        }
         let draft = composerText.wrappedValue
-        if dictatedDraft == draft, let command = VoiceCommand.parse(draft) {
+        if attachmentDraft.items.isEmpty, dictatedDraft == draft, let command = VoiceCommand.parse(draft) {
             composerText.wrappedValue = ""; dictatedDraft = nil
             voiceCommandTask?.cancel()
             voiceCommandTask = Task {
@@ -836,29 +1165,35 @@ struct ContentView: View {
             return
         }
         dictatedDraft = nil
-        if composingSupplement, let record = displayedRecord {
-            let text = amendmentDrafts[record.id] ?? ""
-            if model.engine.hasCurrentTask {
-                let previousCount = record.amendments?.count ?? 0
-                model.supplementTask(text)
-                if (model.engine.currentRecord?.amendments?.count ?? 0) > previousCount { amendmentDrafts[record.id] = nil }
-            } else {
-                model.goal = text; amendmentDrafts[record.id] = nil; screen = .draft
-                model.notice = "补充已保留为新任务。确认后再开始。"
-            }
-        } else { model.startAgent() }
+        // Both the home and an existing task feed the same conversation.
+        // Attachments keep their existing explicit selection and data consent.
+        model.unifiedFocusedTaskID = displayedRecord?.id
+        model.conversation.draft = draft
+        if model.conversation.send(settings: model.settings, apiKey: SettingsStore.apiKey(for: model.settings.endpoint), memories: model.memories,
+                                   taskRecords: model.history.records, attachments: attachmentDraft.items) {
+            if composingSupplement, let id = displayedRecord?.id { amendmentDrafts[id] = nil } else { model.goal = "" }
+            attachmentDraft.clear()
+            navigate(.assistant)
+        }
     }
+
     private var readiness: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(model.modelReady ? "连接你的手机" : "准备第一项任务").font(.subheadline.weight(.medium))
+                Text(isTaskHome ? "准备详情" : model.preparingAutomatically ? "正在自动检测与准备" : model.modelReady ? "连接你的手机" : "准备第一项任务").font(.subheadline.weight(.medium))
                 Spacer(minLength: 4)
-                Button("查看全部") { present(.preparation) }.font(.caption).frame(minHeight: 44)
+                if model.preparingAutomatically { ProgressView().controlSize(.small) }
+                else if !isTaskHome { Button("一键准备", action: prepareAutomatically).font(.caption.weight(.medium)).frame(minHeight: 44).disabled(busy || model.calibrating) }
+                Button("详情") { present(.preparation) }.font(.caption).frame(minHeight: 44)
+            }
+            if !isTaskHome && !model.automaticPreparationStatus.isEmpty {
+                Text(model.automaticPreparationStatus).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 10) {
                 if model.settings.toolsOnly == true {
-                    setupItem("模型", active: model.modelReady, icon: "sparkles") { navigate(.settings) }
-                    setupItem("授权", active: model.consentReady, icon: "hand.raised") { if model.modelReady { model.requestConsent() } else { navigate(.settings) } }
+                    setupItem("模型", active: model.modelReady, icon: "sparkles") { present(.connection(.model)) }
+                    setupItem("授权", active: model.consentReady, icon: "hand.raised") { if model.modelReady { model.requestConsent() } else { present(.connection(.model)) } }
                     setupItem("工具", active: model.settings.systemToolsEnabled == true, icon: "wrench") { navigate(.settings) }
                 } else {
                     setupItem("画面", active: model.capture.frame?.fullDisplay == true && model.capture.running, icon: "rectangle.on.rectangle") { navigate(.screenShare) }
@@ -880,9 +1215,12 @@ struct ContentView: View {
         GeometryReader { geometry in
             if sidebarOpen {
                 ZStack(alignment: .leading) {
-                    Button { setSidebar(false) } label: { sidebarScrimColor.ignoresSafeArea() }
+                    Button { setSidebar(false) } label: { Rectangle().fill(sidebarScrimColor).contentShape(Rectangle()) }
+                    .frame(width: max(0, geometry.size.width - sidebarWidth), height: geometry.size.height)
+                    .offset(x: sidebarWidth)
+                    .accessibilityActivationPoint(CGPoint(x: geometry.frame(in: .global).maxX - 20, y: geometry.frame(in: .global).midY))
                     .buttonStyle(.plain).accessibilityLabel("关闭侧栏")
-                    sidebar.frame(width: min(geometry.size.width * 0.77, 360), height: geometry.size.height)
+                    sidebar.frame(width: sidebarWidth, height: geometry.size.height)
                         .background(AgentPalette.background.ignoresSafeArea(.container, edges: .vertical))
                         .transition(reduceMotion ? .opacity : .move(edge: .leading))
                         .offset(x: reduceMotion ? 0 : sidebarDrag)
@@ -900,53 +1238,112 @@ struct ContentView: View {
         SidebarView(
             selectedDestination: selectedDestination,
             screen: screen,
-            displayedRecord: displayedRecord,
             searchText: $searchText,
             sidebarSearchExpanded: $sidebarSearchExpanded,
-            onNavigate: { navigate($0) },
+            onNavigate: { if $0 == .tools { openTools() } else { navigate($0) } },
             onTaskDetail: { present(.task($0)) },
-            onPreparation: { setSidebar(false); present(.preparation) },
             onOpenConversation: openConversation,
-            onNewConversation: {
-                if selectedDestination == .assistant {
-                    setSidebar(false)
-                    newAssistantRequest = UUID()
-                } else {
-                    requestNewTask()
-                }
-            }
+            onOpenAssistantConversation: { navigate(.assistant, assistantAction: .open($0)) },
+            onNewTask: requestNewTask,
+            onNewConversation: { navigate(.assistant, assistantAction: .create) }
         )
     }
     private func setSidebar(_ open: Bool) {
+        if open {
+            composing = false
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         withAnimation(reduceMotion ? .easeOut(duration: 0.12) : .spring(duration: open ? 0.28 : 0.20, bounce: 0)) { sidebarOpen = open }
     }
     private func openConversation(_ record: PhoneTaskRecord) {
-        screen = .conversation(record.id); expandedSteps = false; followLatest = true
-        navigate(.tasks); composing = false
+        navigate(.tasks, taskAction: .open(record.id))
+    }
+    private func openActivityTask(_ url: URL) {
+        guard url.scheme == "phoneagent", url.host == "task" else { return }
+        guard let id = TaskActivityLink.taskID(from: url) else {
+            model.notice = "此任务链接缺少有效编号，请从侧栏选择任务。"
+            return
+        }
+        let record = model.engine.currentRecord.flatMap { $0.id == id ? $0 : nil }
+            ?? model.history.records.first { $0.id == id }
+        guard let record else {
+            model.notice = "这条任务记录已不在本机，请从侧栏查看现有任务。"
+            return
+        }
+        openConversation(record)
     }
     private func requestNewTask() {
         setSidebar(false)
-        if screen == .draft && !model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { discardingDraft = true }
-        else {
-            if model.goal == displayedRecord?.goal { model.goal = ""; model.removeTaskPlan() }
-            screen = .draft; model.notice = ""; navigate(.tasks); composing = true
-        }
+        if screen == .draft && (!model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachmentDraft.items.isEmpty) { discardingDraft = true }
+        else { navigate(.tasks, taskAction: .create) }
     }
     private func resetDraft() {
-        model.removeTaskPlan(); model.goal = ""; model.notice = ""; screen = .draft; navigate(.tasks); composing = true
+        navigate(.tasks, taskAction: .reset)
     }
     private func reuseTask(_ record: PhoneTaskRecord) {
         // Keep an existing unsent task intact; reuse opens only an editable draft.
-        if !model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.goal != record.effectiveGoal {
+        let materials = screen == .draft ? attachmentDraft.items : (attachmentSnapshots[.draft] ?? [])
+        if (!model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.goal != record.effectiveGoal) || (!materials.isEmpty && materials != (record.attachments ?? [])) {
             screen = .draft; model.notice = "输入框里还有未提交的任务，请先处理草稿。"
-        } else { model.goal = record.effectiveGoal; screen = .draft }
+        } else {
+            model.goal = record.effectiveGoal
+            attachmentSnapshots[.draft] = record.attachments ?? []
+            if screen == .draft { attachmentDraft.replace(record.attachments ?? []) }
+            screen = .draft
+        }
         composing = true
     }
-    private func beginCalibration() {
+    private func prepareAutomatically() {
+        guard !model.preparingAutomatically, !busy, !model.calibrating else { return }
+        composing = false; modeSwitcherOpen = false; setSidebar(false)
+        preparationExpanded = true
+        model.prepareAutomatically()
+    }
+    private func configureSavedSettings() {
+        guard !busy, !model.calibrating else { return }
+        composing = false; modeSwitcherOpen = false; setSidebar(false)
+        model.prepareAutomatically(configurationOnly: true)
+    }
+    private func presentConfigurationCompletion() {
+        guard configurationCompletionPending, !model.preparingAutomatically,
+              phase == .active, sheet == nil, !settingsPageOpen, pendingSheet == nil,
+              !dismissingSheet, !showCalibration else { return }
+        configurationCompletionPending = false
+        showingConfigurationComplete = true
+    }
+    private func beginCalibration(autoStart: Bool = false) {
+        guard !showCalibration else { return }
+        if !autoStart {
+            guard !busy, !model.calibrating, !model.executor.calibrationInProgress else {
+                pendingCalibration = nil
+                model.notice = "请先结束当前操作，再开始校准"
+                return
+            }
+        }
+        composing = false; modeSwitcherOpen = false; setSidebar(false)
+        pendingCalibration = autoStart
+        if sheet != nil {
+            pendingSheet = nil
+            dismissCurrentSheet()
+            return
+        }
+        guard !dismissingSheet, phase == .active else { return }
+        pendingCalibration = nil
+        calibrationAutoStart = autoStart
+        if autoStart { model.automaticCalibrationRequested = false }
         let next = CalibrationModel(executor: model.executor)
         model.calibrating = true
         model.cancelCalibration = { [weak next] in next?.cancel() }
         next.onSaved = { model.objectWillChange.send() }
         calibration = next; showCalibration = true
+    }
+    private func calibrationDismissed() {
+        let automatic = calibrationAutoStart
+        let success = calibration?.finished == true && calibration?.busy == false && calibration?.cancelled == false
+        let error = calibration.map { $0.error.isEmpty ? $0.text : $0.error } ?? "校准已取消"
+        model.calibrating = false; model.cancelCalibration = nil
+        calibration = nil; calibrationAutoStart = false
+        if automatic { model.automaticCalibrationFinished(success: success, error: success ? "" : error) }
+        consumeModalRequests()
     }
 }

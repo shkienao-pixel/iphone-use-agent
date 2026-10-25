@@ -1,0 +1,4 @@
+interface:
+  display_name: "携程机票"
+  short_description: "在 Sela 查询真实机票、展示航班卡片、连续追问并交接携程预订"
+  default_prompt: "使用 $ctrip-travel 查询明天下午上海到北京的直飞机票，比较选项并在我选定后打开携程。"

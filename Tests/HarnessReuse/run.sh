@@ -10,13 +10,22 @@ source = Path(sys.argv[1]).read_text()
 assert source.count('import UIKit') == 1
 Path(sys.argv[2]).write_text(source.replace('import UIKit', 'import CoreGraphics'))
 PY
+python3 - "$project_dir/PhoneAgent/Services/WorkflowObservationLease.swift" "$check_dir/LeaseFailure.swift" <<'PYLEASE'
+from pathlib import Path
+import sys
+s=Path(sys.argv[1]).read_text(); start=s.index('struct WorkflowLeaseFailure:'); end=s.index('/// Pixel recognition reuse only.')
+Path(sys.argv[2]).write_text('import Foundation\n'+s[start:end])
+PYLEASE
 xcrun swiftc -module-cache-path "$check_dir/module-cache" -parse-as-library \
+  "$project_dir/Shared/FrameReadiness.swift" "$project_dir/Shared/RunMetrics.swift" \
+  "$project_dir/Shared/PhonePageAdapters.swift" "$project_dir/Shared/XiaohongshuPageAdapter.swift" \
   "$project_dir/Shared/SystemToolRequest.swift" \
-  "$project_dir/Shared/PhoneHarness.swift" "$project_dir/Shared/AgentModels.swift" \
+  "$project_dir/Shared/PhoneHarness.swift" "$project_dir/Shared/ComposerAttachment.swift" "$project_dir/Shared/AgentModels.swift" \
   "$project_dir/Shared/MouseProtocol.swift" "$project_dir/Shared/VoiceCommand.swift" \
-  "$project_dir/PhoneAgent/Stores/TaskHistoryStore.swift" \
+  "$project_dir/Shared/ModelHistoryContext.swift" \
+  "$project_dir/Shared/NativeTaskResult.swift" "$project_dir/Shared/NativePlanningRecovery.swift" "$project_dir/PhoneAgent/Stores/TaskHistoryStore.swift" \
   "$project_dir/PhoneAgent/Services/PrivacyConsent.swift" \
   "$project_dir/Tests/ProductState/Environment.swift" \
-  "$check_dir/Engine.swift" "$project_dir/Tests/HarnessReuse/main.swift" \
+  "$check_dir/LeaseFailure.swift" "$check_dir/Engine.swift" "$project_dir/Tests/HarnessReuse/main.swift" \
   -o "$check_dir/checks"
 "$check_dir/checks"

@@ -45,3 +45,6 @@ __pycache__/
 model-config.once.json
 *.receipt.json
 /verification-local/
+
+# Reproducible local baseline, builds and acceptance evidence
+/output/

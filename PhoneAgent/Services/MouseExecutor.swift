@@ -46,7 +46,7 @@ final class MouseExecutor {
         } catch {
             invalidatePosition()
             await Task { @MainActor in
-                if ble.pointerConnectionGeneration == connection { await ble.release() }
+                if ble.pointerConnectionGeneration == connection { await ble.release(expectedConnection: connection) }
             }.value
             throw error
         }
@@ -69,15 +69,22 @@ final class MouseExecutor {
         } catch {
             invalidatePosition()
             await Task { @MainActor in
-                if ble.pointerConnectionGeneration == connection { await ble.release() }
+                if ble.pointerConnectionGeneration == connection { await ble.release(expectedConnection: connection) }
             }.value
             throw error
         }
     }
     func click(button: UInt8 = 1) async throws {
-        try await ble.send(.click, buttons: button)
-        try await sleep(0.16)
-        try await ble.waitIdle()
+        let connection = ble.pointerConnectionGeneration
+        do {
+            let sequence = try await ble.send(.click, buttons: button)
+            try await ble.waitIdle(after: sequence)
+        }
+        catch {
+            invalidatePosition()
+            await ble.release(expectedConnection: connection)
+            throw error
+        }
     }
     func validateCalibration(frame: ScreenFrame? = nil) throws -> PointerCalibration {
         guard !calibrationInProgress else { throw AgentError.message("校准尚未结束，请稍候") }
@@ -117,30 +124,53 @@ final class MouseExecutor {
         case .tap:
             try await locate(x: action.x!, y: action.y!, frame: frame); try await click()
         case .long_press:
+            let connection = ble.pointerConnectionGeneration
             try await locate(x: action.x!, y: action.y!, frame: frame)
-            try await ble.send(.report, buttons: 1)
-            for _ in 0..<max(1, Int((action.seconds ?? 0.8) / 0.3)) {
-                try await sleep(0.3); try await ble.send(.report, buttons: 1)
+            do {
+                try await ble.send(.report, buttons: 1)
+                for _ in 0..<max(1, Int((action.seconds ?? 0.8) / 0.3)) {
+                    try await sleep(0.3); try await ble.send(.report, buttons: 1)
+                }
+                try await ble.send(.release)
+            } catch {
+                invalidatePosition(); await ble.release(expectedConnection: connection); throw error
             }
-            try await ble.send(.release)
         case .drag:
+            let connection = ble.pointerConnectionGeneration
             let c = try validateCalibration(frame: frame)
             try await locate(x: action.x!, y: action.y!, frame: frame)
             let units = c.fit.units(x: action.x2! * c.screenWidth, y: action.y2! * c.screenHeight)
             let destinationX = max(0, units.x), destinationY = max(0, units.y)
             guard destinationX < 10000, destinationY < 10000 else { throw AgentError.message("拖动终点异常，请重新校准") }
             let current = pointerUnits ?? .zero
-            try await ble.send(.report, buttons: 1)
             do {
+                try await ble.send(.report, buttons: 1)
                 try await movePositionUnits(x: destinationX - Int(current.x), y: destinationY - Int(current.y),
                     buttons: 1, minimumDuration: action.seconds ?? 0.6)
                 try await ble.send(.release)
             } catch {
-                invalidatePosition(); await ble.release(); throw error
+                invalidatePosition(); await ble.release(expectedConnection: connection); throw error
             }
         case .scroll:
             guard ble.status?.bootMode != true else { throw AgentError.message("系统 Boot 模式不支持滚轮") }
-            try await ble.send(.report, wheel: action.amount!)
+            let connection = ble.pointerConnectionGeneration
+            do {
+                // Move without clicking: an opening button may sit outside the
+                // newly presented scroll container. Legacy amount-only actions
+                // retain their current-pointer behavior.
+                if let x = action.x, let y = action.y {
+                    try await locate(x: x, y: y, frame: frame)
+                }
+                guard ble.status?.bootMode != true else { throw AgentError.message("系统 Boot 模式不支持滚轮") }
+                let sequence = try await ble.send(.report, wheel: action.amount!, expectedConnection: connection)
+                try await ble.waitIdle(after: sequence)
+            } catch {
+                invalidatePosition()
+                await Task { @MainActor in
+                    if ble.pointerConnectionGeneration == connection { await ble.release(expectedConnection: connection) }
+                }.value
+                throw error
+            }
         case .type:
             guard ble.keyboardReady else { throw AgentError.message("蓝牙键盘未就绪，请查看设备连接状态或使用屏幕键盘") }
             let text = (action.text ?? "").replacingOccurrences(of: "\r\n", with: "\n")
@@ -179,7 +209,7 @@ final class MouseExecutor {
         } catch {
             // A fresh task can release even when its parent was cancelled.
             await Task { @MainActor in
-                if ble.pointerConnectionGeneration == connection { await ble.release() }
+                if ble.pointerConnectionGeneration == connection { await ble.release(expectedConnection: connection) }
             }.value
             throw error
         }

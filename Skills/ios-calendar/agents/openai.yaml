@@ -1,0 +1,4 @@
+interface:
+  display_name: "iOS 日历"
+  short_description: "通过原生日历工具安排和查询日程，核对起止时间时区与所属日历"
+  default_prompt: "使用 $ios-calendar 在 iPhone 上安排并核对一条测试日程。"

@@ -1,0 +1,16 @@
+Tool: built-in imagegen
+Brand: Sela / 塞拉
+Concept: Original cartoon mascot with a signature S-shaped curled ear
+Icon: sela-app-icon-1024.png (1024 x 1024)
+Original: sela-mascot-original.png
+
+Use case: logo-brand.
+Asset type: one finished iPhone app icon with an original cartoon mascot for the brand Sela / 塞拉.
+Primary request: design a charming, distinctive cartoon character that can become the face of Sela, a capable personal assistant. The user likes the simple, artistic naming and brand sensibility of Meta and Muse, but explicitly wants a cartoon character. Aim for a character people would want as a small collectible sticker: quietly clever, friendly, expressive, with real visual identity.
+Scene/backdrop: flat soft periwinkle-lavender background, filling the entire square canvas, no pre-rounded outside corners, no surrounding mockup.
+Subject: an original small warm-ivory creature, a compact rounded body with a soft slightly squarish head-and-body silhouette, two very short chunky feet, and little mitten hands. Its signature feature is ONE long, thick, floppy ear whose flowing outer curve curls into a clear but natural S shape above the head; a second ear is only a short rounded nub. This is a lovable invented creature, not a rabbit illustration, not a ghost, not a robot. One small hand is lifted in a relaxed helpful greeting. Give it two small dark oval eyes, subtly asymmetric expressive brows, and a tiny confident curved mouth. A calm, curious, slightly knowing personality; avoid a vacant generic cute expression. Add a restrained muted apricot inset in the long ear for a single small warm accent.
+Style/medium: beautiful flat 2D cartoon brand design, confident thick dark-ink outlines, careful custom curves, substantial forms, limited solid colors, no shading. A mix of playful character design and refined graphic-logo craft. The long curled ear creates the unique recognisable silhouette, and small details remain subordinate.
+Composition/framing: one character only, shown head-to-toe, approximately 64 percent of canvas width and 73 percent of canvas height including its ear, optically centered with generous clear margins. The face is sufficiently large to read at 48px. No objects or scenery. This must function as an actual mobile app icon.
+Color palette: soft periwinkle field, warm ivory character, very dark indigo outlines and facial features, minimal muted apricot inside the curled ear.
+Text: none. Brand name does not appear inside the icon.
+Constraints: no words, typography, separate S letter, watermark, sparkles, star, mouse cursor, smartphone, bird, wings, halo, circuit, robot head, speech bubble, extra characters, surrounding border, multi-panel presentation, sticker white border, gloss, gradients, 3D rendering, shadow, texture, mockup, or photorealism. No resemblance to any existing famous mascot. The icon should feel simple, artistic, and unmistakably character-led.

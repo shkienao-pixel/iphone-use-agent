@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "native_limited_metadata_automatic_query_two_cold_starts_no_repeat_reminder_and_explicit_selection_manager_verified",
+  "supportedOperations": [
+    "photo_search"
+  ],
+  "physicalCases": [
+    {
+      "case": "one selected fixture, true native query, independent system details and full user report",
+      "taskID": "8CAAD816-6955-42DB-AA06-F60BA665366B",
+      "build": 100,
+      "evidence": "output/ios-native-longrun-20261025/PHOTO-READ-P01/verification.json"
+    },
+    {
+      "case": "two cold-start queries reuse limited scope with zero repeated permission/execution taps",
+      "taskIDs": [
+        "35074856-D808-451B-B939-11C4DB3166EE",
+        "33AD2D63-4055-4264-BDFE-A85F7B11F8CB"
+      ],
+      "build": 103,
+      "evidence": [
+        "output/ios-native-longrun-20261025/PHOTO-NONAG-P02/verification.json",
+        "output/ios-native-longrun-20261025/PHOTO-NONAG-P03/verification.json"
+      ]
+    },
+    {
+      "case": "explicit selection manager opens existing one-fixture scope and closes without changing selection",
+      "classification": "operator setup, not Agent business",
+      "build": 103,
+      "evidence": "output/ios-native-longrun-20261025/PHOTO-SELECTOR-P02/verification.json"
+    }
+  ],
+  "runtimeSkillLoadVerified": true,
+  "esp32Used": false
+}

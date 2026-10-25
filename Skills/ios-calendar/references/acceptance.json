@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "status": "explicit_named_calendar_loop_verified",
+  "availableOperations": [
+    "calendar_search",
+    "calendar_create"
+  ],
+  "physicalAcceptance": {
+    "permissionGrant": true,
+    "eventCreation": true,
+    "queryRoundTrip": true,
+    "systemObjectVerification": true,
+    "longTask": true,
+    "initialEmptyQuery": true,
+    "explicitTarget": true,
+    "automaticExecution": true
+  },
+  "note": "Default target, named target, one-send automatic loop and 13-object batch with same-task pause/resume verified. Sustained duration and >100-step tests remain pending.",
+  "attempts": [
+    {
+      "fixture": "C01",
+      "device": "iPhone 13 Pro",
+      "build": "81",
+      "taskID": "2F3BA44B-95C6-4C59-8A14-CFCF1464353A",
+      "result": "Search returned 0; create stopped before EventKit save: no writable default calendar. Pending receipt retained.",
+      "pendingReceiptID": "41FD39E5-2454-49E7-9D6E-F2B396459CF3",
+      "evidence": "output/ios-native-longrun-20261025/C01-tasks.json"
+    },
+    {
+      "fixture": "C02",
+      "device": "iPhone 13 Pro",
+      "build": "84",
+      "taskID": "7D3E03C7-7DE9-479D-AB46-CF1F4E9B901A",
+      "receiptID": "CC9FF8CF-340F-4505-9AD5-93A1FCA81C97",
+      "result": "Created once; search returned one matching event with correct 14:30–14:45 +08 times. System Calendar search and event detail independently confirmed title, time, calendar 个人 and notes.",
+      "skillLoaded": "ios-calendar, 1754 UTF-8 bytes, verified in run measurementNotes",
+      "evidence": "output/ios-native-longrun-20261025/CAL-C02/",
+      "limitation": "Settings default showed dedicated calendar while actual target was 个人. Named target support is implemented separately and not yet device-verified."
+    },
+    {
+      "fixture": "C03",
+      "device": "iPhone 13 Pro",
+      "build": "86",
+      "taskID": "BBB7B688-26A6-4089-9AEB-14578BD85E5D",
+      "receiptID": "8B68BFB7-0D75-4935-97CA-C99C08F50225",
+      "result": "One exact event in specified writable test calendar; independent Calendar title/time/calendar/notes verified.",
+      "evidence": "output/ios-native-longrun-20261025/CAL-C03/verification.json"
+    },
+    {
+      "fixture": "AUTO-A01",
+      "device": "iPhone 13 Pro",
+      "build": "90",
+      "taskID": "93640F5A-F018-4788-80CD-99DDD4112E99",
+      "receiptID": "EE2690EF-7E26-4EC5-8E65-CD5CAF62E41F",
+      "result": "Normal chat send once; 0 extra execution/approval taps; search0-create-search1-finish. Engine: 4 model calls in 16.577 seconds, excluding conversation routing. Independent system Calendar title/time/calendar/notes matched.",
+      "evidence": "output/ios-native-longrun-20261025/AUTO-A01/verification.json"
+    }
+  ],
+  "longTask": {
+    "status": "13-object batch passed with pause and explicit same-task resume; completed before 15 minutes",
+    "taskID": "18E8D10B-E685-4DB6-BE8F-85F68D47AA10",
+    "build": 90,
+    "objects": 13,
+    "finalStep": 31,
+    "engineActiveElapsedSeconds": 115.04917045833463,
+    "pauseSeconds": 306.67870903015137,
+    "evidence": "output/ios-native-longrun-20261025/L1/verification.json",
+    "scope": "10 reminders and 3 calendar events, exactly verified in their system Apps; no ESP32, no per-tool approvals"
+  },
+  "nativeConversationResultCardAcceptance": {
+    "build": 132,
+    "oneSend": true,
+    "extraExecutionApprovalTaps": 0,
+    "actualCreationReceiptBoundCard": true,
+    "coldFourStoresByteIdentical": true,
+    "coldCardRestoredInRealConversationAX": true,
+    "correspondingNativeIconVisuallyInspected": true,
+    "evidence": "output/ios-native-longrun-20261025/NATIVE-RESULT-CARDS-M01/verification.json",
+    "independentSystemObjectReviewPending": false,
+    "currentRootGuideCardInstructionsNotYetRepackaged": true,
+    "independentSystemObjectMatched": true
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "iOS 健康"
+  short_description: "通过 HealthKit 读取步数睡眠与运动，明确授权可见范围和数据缺口"
+  default_prompt: "使用 $ios-health 读取指定日期的健康数据并核对范围。"

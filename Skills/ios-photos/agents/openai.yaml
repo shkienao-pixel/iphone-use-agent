@@ -1,0 +1,3 @@
+interface:
+  display_name: "iOS 照片"
+  short_description: "Query metadata from authorized iPhone photo assets."

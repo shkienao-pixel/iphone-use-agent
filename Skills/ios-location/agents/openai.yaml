@@ -1,0 +1,3 @@
+interface:
+  display_name: "iOS 定位"
+  short_description: "Read one foreground approximate iPhone location."

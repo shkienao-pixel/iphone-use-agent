@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "status": "passed_native_library_query_and_Sela_player_status_positive_playback_pending",
+  "supportedOperations": [
+    "music_search",
+    "music_play",
+    "music_pause",
+    "music_resume",
+    "music_status"
+  ],
+  "physicalCases": [
+    {
+      "case": "scoped local library search and own-player status after initial OS authorization",
+      "build": 100,
+      "taskID": "4A67F508-0D1F-4C05-8560-ADEDABD65A21",
+      "evidence": "output/ios-native-longrun-20261025/MUSIC-READ-M01/verification.json"
+    },
+    {
+      "case": "empty-current-item resume rejects once with actual error",
+      "build": 100,
+      "taskID": "E8B63DB9-D66F-4692-8866-2B9EF25C18A8",
+      "evidence": "output/ios-native-longrun-20261025/MUSIC-EMPTY-M02/verification.json"
+    }
+  ],
+  "runtimeSkillLoadVerified": true,
+  "esp32Used": false,
+  "remaining": [
+    "Positive library item search and playback/pause/resume",
+    "Independent system Music library comparison",
+    "Actual physical audio output not verified"
+  ]
+}

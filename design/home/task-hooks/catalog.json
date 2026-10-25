@@ -1,0 +1,502 @@
+{
+  "schemaVersion": 1,
+  "updatedOn": "2026-10-24",
+  "purpose": "首页随机快捷指令与后续真实 iPhone 端到端测试共用目录",
+  "previewBehavior": "fill_composer_only",
+  "testStatusMeaning": {
+    "not_run": "待真实执行测试；预览交互通过不等于任务执行通过"
+  },
+  "display": {
+    "count": 3,
+    "distinctApps": true,
+    "excludePreviousGroup": true,
+    "memoryAware": true
+  },
+  "hooks": [
+    {
+      "id": "meituan_takeout",
+      "appId": "meituan",
+      "title": "帮我点个外卖",
+      "prompt": "帮我在美团外卖点一份外卖，先确认配送地址、想吃什么和预算，再帮我挑合适的。",
+      "requiredInputs": [
+        "配送地址",
+        "口味与忌口",
+        "预算"
+      ],
+      "acceptance": [
+        "店铺和商品可配送",
+        "商品规格、数量与配送地址正确",
+        "实付总价包含包装费和配送费"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "meituan_coffee",
+      "appId": "meituan",
+      "title": "来杯咖啡",
+      "prompt": "帮我在美团外卖点一杯咖啡，先确认地址、饮品、杯型、冷热和糖度。",
+      "requiredInputs": [
+        "配送地址",
+        "饮品与杯型",
+        "冷热与糖度"
+      ],
+      "acceptance": [
+        "饮品规格与购物车一致",
+        "附加费用与到手价清楚"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "meituan_groceries",
+      "appId": "meituan",
+      "title": "补点冰箱食材",
+      "prompt": "帮我在美团外卖买点食材，先确认配送地址、食材清单和需要的数量。",
+      "requiredInputs": [
+        "配送地址",
+        "食材清单",
+        "数量或重量"
+      ],
+      "acceptance": [
+        "品种与规格一致",
+        "缺货时记录替代选择并等待补充需求"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "meituan_compare",
+      "appId": "meituan",
+      "title": "这顿怎么更划算",
+      "prompt": "帮我在美团外卖比较这顿饭怎么买更划算，先确认地址、想吃什么和预算。",
+      "requiredInputs": [
+        "配送地址",
+        "菜品需求",
+        "预算"
+      ],
+      "acceptance": [
+        "按相同份量比较",
+        "总价计入包装费、配送费和可用优惠"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "meituan_track",
+      "appId": "meituan",
+      "title": "外卖送到哪了",
+      "prompt": "帮我在美团外卖查看我选中订单的配送进度和预计送达时间。",
+      "requiredInputs": [
+        "目标订单"
+      ],
+      "acceptance": [
+        "订单匹配",
+        "状态和预计送达时间来自当前订单页面"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "meituan_reorder",
+      "appId": "meituan",
+      "title": "上次那份再点",
+      "prompt": "帮我在美团外卖找到我指定的历史订单，再点一份，先核对这次的地址和商品规格。",
+      "requiredInputs": [
+        "历史订单",
+        "当前配送地址",
+        "商品规格"
+      ],
+      "acceptance": [
+        "复核库存和当前价格",
+        "地址及规格正确且不误用过期信息"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "ctrip_flight",
+      "appId": "ctrip",
+      "title": "帮我订张机票",
+      "prompt": "帮我在携程找一张合适的机票，先问我出发地、目的地、日期、人数和舱位，再比较价格与起降时间。",
+      "requiredInputs": [
+        "出发地与目的地",
+        "出发日期",
+        "人数与舱位"
+      ],
+      "acceptance": [
+        "日期和机场正确",
+        "起降时间、舱位与含税总价一致"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "ctrip_roundtrip",
+      "appId": "ctrip",
+      "title": "比比往返机票",
+      "prompt": "帮我在携程比较往返机票，先确认路线、去程和返程日期，以及出行人数。",
+      "requiredInputs": [
+        "往返路线",
+        "去程与返程日期",
+        "出行人数"
+      ],
+      "acceptance": [
+        "去返程日期正确",
+        "总价包含两个航段且人数正确"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "ctrip_direct",
+      "appId": "ctrip",
+      "title": "找个直飞航班",
+      "prompt": "帮我在携程找直飞航班，先确认路线、出发日期、时间范围和预算。",
+      "requiredInputs": [
+        "路线与日期",
+        "时间范围",
+        "预算"
+      ],
+      "acceptance": [
+        "结果确为直飞",
+        "没有符合条件的航班时明确说明"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "ctrip_hotel",
+      "appId": "ctrip",
+      "title": "挑家舒服的酒店",
+      "prompt": "帮我在携程挑一家酒店，先确认城市、入住和退房日期、人数，以及每晚预算。",
+      "requiredInputs": [
+        "城市",
+        "入住与退房日期",
+        "人数与预算"
+      ],
+      "acceptance": [
+        "地点和房型床型匹配",
+        "入住晚数与总价正确"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "ctrip_train",
+      "appId": "ctrip",
+      "title": "帮我找个高铁",
+      "prompt": "帮我在携程找高铁车次，先确认出发站、到达站、日期、人数和席别。",
+      "requiredInputs": [
+        "出发站与到达站",
+        "日期",
+        "人数与席别"
+      ],
+      "acceptance": [
+        "车站和席别正确",
+        "区分有票、候补和售罄"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "ctrip_orders",
+      "appId": "ctrip",
+      "title": "看看旅行订单",
+      "prompt": "帮我在携程查看我指定的旅行订单，整理行程时间和当前预订状态。",
+      "requiredInputs": [
+        "目标订单"
+      ],
+      "acceptance": [
+        "订单身份匹配",
+        "行程与预订状态准确"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "wechat_like",
+      "appId": "wechat",
+      "title": "朋友圈点个赞",
+      "prompt": "帮我打开微信朋友圈，给我指定的动态点个赞。",
+      "requiredInputs": [
+        "目标动态的作者与内容"
+      ],
+      "acceptance": [
+        "核对正确作者和动态",
+        "只点赞一次，已点赞时不反向取消"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "wechat_comment",
+      "appId": "wechat",
+      "title": "朋友圈留句评论",
+      "prompt": "帮我给微信朋友圈里指定的动态写一句自然的评论，先看动态内容和我想表达的意思。",
+      "requiredInputs": [
+        "目标动态",
+        "表达意图与语气"
+      ],
+      "acceptance": [
+        "评论贴合目标动态",
+        "在正确动态下仅发表一次且内容一致"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "wechat_find-chat",
+      "appId": "wechat",
+      "title": "找找那段聊天",
+      "prompt": "帮我找一段微信聊天记录，先问我联系人或群、关键词，以及大概时间。",
+      "requiredInputs": [
+        "联系人或群",
+        "关键词或时间范围"
+      ],
+      "acceptance": [
+        "消息来源与范围正确",
+        "能定位回原对话中的消息"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "wechat_find-file",
+      "appId": "wechat",
+      "title": "找个微信文件",
+      "prompt": "帮我在微信里找一个聊天文件，先问我联系人或群、文件名关键词和大概日期。",
+      "requiredInputs": [
+        "联系人或群",
+        "文件名关键词或日期"
+      ],
+      "acceptance": [
+        "来源和文件名称匹配",
+        "能打开目标文件"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "wechat_unread",
+      "appId": "wechat",
+      "title": "理理未读消息",
+      "prompt": "帮我整理微信里我指定对话的未读消息，提炼重要事项和需要回复的问题。",
+      "requiredInputs": [
+        "目标对话",
+        "消息范围"
+      ],
+      "acceptance": [
+        "摘要有原消息依据",
+        "不混入其他对话内容"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "wechat_reply",
+      "appId": "wechat",
+      "title": "帮我拟一句回复",
+      "prompt": "帮我给微信里指定的一条消息拟一句回复，先了解上下文、我的意思和希望的语气。",
+      "requiredInputs": [
+        "目标消息",
+        "回复意图与语气"
+      ],
+      "acceptance": [
+        "草稿符合上下文",
+        "草稿保留在正确对话且未自动发送"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "xiaohongshu_travel",
+      "appId": "xiaohongshu",
+      "title": "小红书找攻略",
+      "prompt": "帮我在小红书找旅行攻略，先问我目的地、行程天数和偏好，再整理值得参考的笔记。",
+      "requiredInputs": [
+        "目的地",
+        "行程天数",
+        "旅行偏好"
+      ],
+      "acceptance": [
+        "内容与目的地匹配",
+        "每个参考结果都能打开原笔记"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "xiaohongshu_food",
+      "appId": "xiaohongshu",
+      "title": "附近哪家好吃",
+      "prompt": "帮我在小红书找附近好吃的店，先确认地点、想吃的菜系和预算。",
+      "requiredInputs": [
+        "地点",
+        "菜系与预算"
+      ],
+      "acceptance": [
+        "地点匹配",
+        "区分笔记推荐和已核实门店信息"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "xiaohongshu_review",
+      "appId": "xiaohongshu",
+      "title": "这件东西值不值",
+      "prompt": "帮我在小红书查一件商品的使用体验，先确认准确型号和我最关心的点，再总结优点和槽点。",
+      "requiredInputs": [
+        "商品名称与型号",
+        "关注点"
+      ],
+      "acceptance": [
+        "不混淆不同型号",
+        "优缺点对应到具体笔记"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "xiaohongshu_outfit",
+      "appId": "xiaohongshu",
+      "title": "找点通勤穿搭",
+      "prompt": "帮我在小红书找通勤穿搭灵感，先问我天气、场景、风格偏好和预算。",
+      "requiredInputs": [
+        "天气与场景",
+        "风格与预算"
+      ],
+      "acceptance": [
+        "结果符合指定条件",
+        "参考笔记可打开"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "xiaohongshu_save",
+      "appId": "xiaohongshu",
+      "title": "收藏实用笔记",
+      "prompt": "帮我在小红书收藏我指定的实用笔记，先确认要收藏哪一篇。",
+      "requiredInputs": [
+        "目标笔记",
+        "收藏位置"
+      ],
+      "acceptance": [
+        "收藏目标正确",
+        "已收藏时不取消或重复操作"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "xiaohongshu_draft",
+      "appId": "xiaohongshu",
+      "title": "帮我写篇笔记",
+      "prompt": "帮我写一篇小红书笔记草稿，先问我主题、素材和想要的风格。",
+      "requiredInputs": [
+        "主题",
+        "素材",
+        "表达风格"
+      ],
+      "acceptance": [
+        "标题与正文符合素材",
+        "保留草稿且未发布"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "clock_alarm",
+      "appId": "clock",
+      "title": "帮我定个闹钟",
+      "prompt": "帮我在时钟里设一个闹钟，先问我几点响、是否重复，以及闹钟名称。",
+      "requiredInputs": [
+        "响铃时间",
+        "名称",
+        "重复规则"
+      ],
+      "acceptance": [
+        "本地时间和重复日正确",
+        "闹钟已启用且避免重复创建"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "clock_weekday",
+      "appId": "clock",
+      "title": "工作日叫我起床",
+      "prompt": "帮我设一个工作日重复的起床闹钟，先确认响铃时间和闹钟名称。",
+      "requiredInputs": [
+        "响铃时间",
+        "闹钟名称"
+      ],
+      "acceptance": [
+        "仅周一至周五重复",
+        "时间正确且已启用"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "clock_edit",
+      "appId": "clock",
+      "title": "把闹钟改一下",
+      "prompt": "帮我修改一个已有闹钟，先让我指定闹钟，再确认新的时间或重复规则。",
+      "requiredInputs": [
+        "目标闹钟",
+        "新时间或重复规则"
+      ],
+      "acceptance": [
+        "编辑原闹钟而非额外新增",
+        "其他属性保留"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "clock_disable",
+      "appId": "clock",
+      "title": "暂时关个闹钟",
+      "prompt": "帮我暂时关闭一个闹钟，先让我确认要关闭哪一个。",
+      "requiredInputs": [
+        "目标闹钟"
+      ],
+      "acceptance": [
+        "仅关闭目标闹钟",
+        "其他闹钟状态不变"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "clock_list",
+      "appId": "clock",
+      "title": "看看现有闹钟",
+      "prompt": "帮我查看时钟里现有的闹钟，整理响铃时间、重复日期和开关状态。",
+      "requiredInputs": [
+        "查看范围"
+      ],
+      "acceptance": [
+        "列出正确的时间与重复日",
+        "开关状态与实际界面一致"
+      ],
+      "testStatus": "not_run"
+    },
+    {
+      "id": "clock_timer",
+      "appId": "clock",
+      "title": "开一段专注时间",
+      "prompt": "帮我在时钟里开始一段专注倒计时，先问我需要多长时间和计时器名称。",
+      "requiredInputs": [
+        "倒计时时长",
+        "计时器名称"
+      ],
+      "acceptance": [
+        "实际时长正确",
+        "倒计时已启动且状态可核对"
+      ],
+      "testStatus": "not_run"
+    }
+  ],
+  "memoryPolicy": {
+    "source": "本地记忆与上下文",
+    "requiresUseMemoriesEnabled": true,
+    "requiresRecordEnabled": true,
+    "maxReferences": 3,
+    "ranking": "优先展示与启用的偏好相关的任务，同分随机轮换",
+    "draft": "仅在点选时带入相关偏好；不自动执行任务",
+    "greeting": {
+      "source": [
+        "本地日期和时间",
+        "已启用的记忆中可确定属于当天的安排",
+        "与当前时段相关的偏好"
+      ],
+      "refresh": [
+        "记忆新增/编辑/删除/停用",
+        "总开关变化",
+        "重新打开页面",
+        "日期或时段变化"
+      ],
+      "exclude": [
+        "过期相对日期",
+        "已取消或已完成的安排",
+        "未接入的天气或系统日历数据"
+      ]
+    }
+  }
+}

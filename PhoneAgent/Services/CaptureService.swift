@@ -41,6 +41,11 @@ final class CaptureService: ObservableObject {
     var maxSide = 1280
     private var session = UUID()
     private var lastUpdateSequence: UInt64 = 0
+    private let readiness = FrameReadinessGate()
+    func waitForFrame(after: Date, timeout: Double) async throws -> Bool {
+        readiness.update(confirmedAt: frame?.confirmedAt, available: running && frame?.fullDisplay != false)
+        return try await readiness.wait(after: after, timeout: timeout)
+    }
     #if canImport(ScreenCaptureKit)
     private var capture: NativeCapture?
     #endif
@@ -67,6 +72,8 @@ final class CaptureService: ObservableObject {
                     self.running = running; self.state = status; self.error = error ?? ""
                     if !running { self.frame = nil; self.lastBackgroundFrame = nil; self.fps = 0; self.onStop?() }
                 }
+                self.readiness.update(confirmedAt: self.frame?.confirmedAt,
+                    available: self.running && self.frame?.fullDisplay != false)
             }
         })
         self.capture = capture; capture.present()
@@ -93,6 +100,7 @@ final class CaptureService: ObservableObject {
         capture?.stop(); capture = nil
         #endif
         running = false; waitingForPicker = false; frame = nil; lastBackgroundFrame = nil; state = "捕获已停止"; onStop?()
+        readiness.update(confirmedAt: nil, available: false)
     }
 }
 

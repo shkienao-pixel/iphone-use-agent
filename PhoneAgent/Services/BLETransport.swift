@@ -31,6 +31,26 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
     private var connectTimeout: Task<Void, Never>?
     private var scanTimeout: Task<Void, Never>?
     private var serviceTimeout: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectAttempt = 0
+    private var lastConnectionAttempt = -Double.infinity
+    private var scanTargetID: UUID?
+    private static let rememberedIDKey = "agent.accessory.peripheralID"
+    private static let reconnectPausedKey = "agent.accessory.reconnectPaused"
+    private var automaticReconnectPaused = UserDefaults.standard.bool(forKey: BLETransport.reconnectPausedKey)
+    /// A manual selection takes precedence over an older calibration's device.
+    var rememberedPeripheralID: String? {
+        let saved = UserDefaults.standard.string(forKey: Self.rememberedIDKey)
+        if let saved, let id = UUID(uuidString: saved) { return id.uuidString }
+        guard let saved = SettingsStore.calibration()?.peripheralID, let id = UUID(uuidString: saved) else { return nil }
+        return id.uuidString
+    }
+    var hasSavedAccessory: Bool { rememberedPeripheralID != nil }
+    var bluetoothNeedsPermission: Bool {
+        CBManager.authorization == .denied || CBManager.authorization == .restricted
+    }
+    var bluetoothPoweredOff: Bool { central.state == .poweredOff }
+    var bluetoothPoweredOn: Bool { central.state == .poweredOn }
     private var poll: Timer?
     private var pairingInProgress = false
     private var secureSessionReady = false
@@ -40,6 +60,15 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
     private var lastFlags: UInt8?
     private var latestStatus: MouseProtocol.Status?
     private var pointerMotionTokens = Set<UUID>()
+    private lazy var releaseController = InputReleaseController(state: { [weak self] in
+        guard let self else { return .init(generation: UUID(), transportAvailable: false, writerBusy: false) }
+        return .init(generation: self.connectionGeneration,
+                     transportAvailable: self.connected && self.peer != nil && self.command != nil,
+                     writerBusy: self.writer != nil)
+    }, submit: { [weak self] generation, submitted in
+        guard let self else { throw AgentError.message("蓝牙配件不可用") }
+        try await self.send(.release, expectedConnection: generation, onSubmitted: submitted)
+    })
     var ready: Bool { connected && secureSessionReady && command != nil && status?.ready == true }
     var keyboardReady: Bool { ready && status?.keyboardAvailable == true }
     var bufferedMotionReady: Bool { ready && status?.bufferedMotionAvailable == true }
@@ -53,62 +82,129 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
             Task { @MainActor in self?.refresh(); self?.flushTaskIndicator() }
         }
     }
-    deinit { poll?.invalidate() }
+    deinit { poll?.invalidate(); reconnectTask?.cancel() }
     private func record(_ text: String) {
         diagnosticLines.append("\(Date().ISO8601Format()) \(text)")
         diagnosticLines = Array(diagnosticLines.suffix(150))
         let file = URL.documentsDirectory.appendingPathComponent("ble-diagnostics.log")
         try? diagnosticLines.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
     }
+    /// Restores only the known accessory, without undoing a deliberate disconnect.
+    /// Explicit preparation can call scan() to resume connection or discover a new device.
+    func ensureConnection() {
+        guard central.state == .poweredOn, !automaticReconnectPaused,
+              !connected, peer == nil, !scanning, reconnectTask == nil,
+              let saved = rememberedPeripheralID, let id = UUID(uuidString: saved) else { return }
+        guard ProcessInfo.processInfo.systemUptime - lastConnectionAttempt >= 3 else {
+            scheduleReconnect(); return
+        }
+        if let known = central.retrievePeripherals(withIdentifiers: [id]).first {
+            connectAccessory(AgentPeripheral(peripheral: known))
+        } else {
+            beginScan(targetID: id)
+        }
+    }
     func scan() {
         guard central.state == .poweredOn else {
-            error = central.state == .unauthorized ? "请在 iPhone 设置中允许 Phone Agent 使用蓝牙" : "请先开启 iPhone 蓝牙"
+            error = central.state == .unauthorized ? "请在 iPhone 设置中允许 Sela 使用蓝牙" : "请先开启 iPhone 蓝牙"
             return
         }
         guard !connected, peer == nil, !scanning else { return }
-        devices = []; error = ""; scanning = true; state = "正在查找 AgentMouse…找到后会自动连接"
-        record("Scan requested")
+        setReconnectPaused(false); reconnectAttempt = 0
+        reconnectTask?.cancel(); reconnectTask = nil
+        beginScan(targetID: rememberedPeripheralID.flatMap(UUID.init(uuidString:)))
+    }
+    private func beginScan(targetID: UUID?) {
+        guard central.state == .poweredOn, !connected, peer == nil, !scanning else { return }
+        devices = []; error = ""; scanning = true; scanTargetID = targetID
+        state = targetID == nil ? "正在查找 AgentMouse…单个配件会自动连接" : "正在查找已配置的 AgentMouse…"
+        record("Scan requested; known=\(targetID != nil)")
         let active = central.retrieveConnectedPeripherals(withServices: [MouseProtocol.hid, MouseProtocol.service])
-        if let peripheral = active.first(where: { $0.name?.hasPrefix("AgentMouse") == true }) {
-            let device = AgentPeripheral(peripheral: peripheral)
-            add(peripheral)
-            connect(device)
-            return
+        for peripheral in active where peripheral.name?.hasPrefix("AgentMouse") == true { add(peripheral) }
+        if let targetID, let known = active.first(where: { $0.identifier == targetID }) {
+            connectAccessory(AgentPeripheral(peripheral: known)); return
         }
-        // The control UUID is in the accessory's BLE scan response. An unfiltered scan
-        // also sees devices that advertise only HID in their primary advertisement.
+        // An unfiltered scan also sees devices advertising only HID. Without a
+        // remembered ID, collect candidates before choosing: never race the first advertisement.
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
         scanTimeout?.cancel()
         scanTimeout = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 15_000_000_000)
             guard !Task.isCancelled, let self, self.scanning else { return }
+            let target = self.scanTargetID
             self.stopScan()
-            if self.devices.isEmpty {
+            if target != nil {
+                self.error = "未找到已配置的 AgentMouse。请确认配件有电且在附近；更换配件时请从下方列表选择。"
+                self.state = "等待已配置配件"
+                self.scheduleReconnect()
+            } else if self.devices.count == 1, let only = self.devices.first {
+                self.connect(only)
+            } else if self.devices.count > 1 {
+                self.state = "发现多个 AgentMouse，请选择要连接的配件"
+            } else {
                 self.error = "未找到 AgentMouse。先确认配件有电、iPhone 蓝牙已开启；新设备需先在 iOS“辅助触控 → 设备 → 蓝牙设备”配对，再回此页连接。"
                 self.state = "未找到配件"
             }
         }
     }
-    func stopScan() { central.stopScan(); scanTimeout?.cancel(); scanTimeout = nil; scanning = false }
+    func stopScan() {
+        central.stopScan(); scanTimeout?.cancel(); scanTimeout = nil
+        scanning = false; scanTargetID = nil
+    }
     private func add(_ p: CBPeripheral) {
         if !devices.contains(where: { $0.id == p.identifier }) { devices.append(AgentPeripheral(peripheral: p)) }
     }
     func connect(_ d: AgentPeripheral) {
         guard central.state == .poweredOn, !connected, peer == nil else { return }
+        // This entry point is an explicit selection (or the only discovered candidate).
+        UserDefaults.standard.set(d.id.uuidString, forKey: Self.rememberedIDKey)
+        setReconnectPaused(false); reconnectAttempt = 0
+        connectAccessory(d)
+    }
+    private func connectAccessory(_ d: AgentPeripheral) {
+        guard central.state == .poweredOn, !automaticReconnectPaused, !connected, peer == nil else { return }
+        reconnectTask?.cancel(); reconnectTask = nil
         stopScan(); state = "正在连接 \(d.name)"; error = ""
         peer = d.peripheral; selectedID = d.id.uuidString; peer?.delegate = self
+        lastConnectionAttempt = ProcessInfo.processInfo.systemUptime
         connectionGeneration = UUID()
         desiredIndicator = .idle; sentIndicator = nil; indicatorSentAt = .distantPast
         record("Connect requested: \(d.id)")
         central.connect(d.peripheral, options: nil)
+        let generation = connectionGeneration
         connectTimeout = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 20_000_000_000)
-            guard !Task.isCancelled, let self, !self.connected else { return }
+            guard !Task.isCancelled, let self, !self.connected, self.connectionGeneration == generation else { return }
             self.error = "App 连接超时。请确认 AgentMouse 已在 iOS“辅助触控 → 设备”配对；刚配对后可关闭再开启辅助触控，再回此页重试。"
-            self.disconnect()
+            self.cancelCurrentConnection()
         }
     }
-    func disconnect() { if let peer { central.cancelPeripheralConnection(peer) } }
+    private func setReconnectPaused(_ paused: Bool) {
+        automaticReconnectPaused = paused
+        UserDefaults.standard.set(paused, forKey: Self.reconnectPausedKey)
+    }
+    private func scheduleReconnect() {
+        guard reconnectTask == nil, central.state == .poweredOn, !automaticReconnectPaused,
+              !connected, peer == nil, !scanning, rememberedPeripheralID != nil else { return }
+        let delay = min(30.0, 3.0 * pow(2, Double(min(reconnectAttempt, 4))))
+        reconnectAttempt += 1
+        record("Reconnect scheduled; delay=\(Int(delay))s")
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.reconnectTask = nil
+            self.ensureConnection()
+        }
+    }
+    private func cancelCurrentConnection() {
+        if let peer { central.cancelPeripheralConnection(peer) }
+    }
+    func disconnect() {
+        // Remember this across launches; automatic preparation must not fight a user disconnect.
+        setReconnectPaused(true)
+        reconnectTask?.cancel(); reconnectTask = nil
+        stopScan(); cancelCurrentConnection()
+    }
     func beginPointerMotion() -> UUID {
         let token = UUID(); pointerMotionTokens.insert(token); return token
     }
@@ -143,9 +239,12 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
     func peripheralIsReady(toSendWriteWithoutResponse p: CBPeripheral) {
         if p === peer { flushTaskIndicator() }
     }
+    @discardableResult
     func send(_ op: MouseProtocol.Operation, buttons: UInt8 = 0, x: Int = 0, y: Int = 0,
-              wheel: Int = 0, delay: UInt16 = 0, pairingHandshake: Bool = false) async throws {
+              wheel: Int = 0, delay: UInt16 = 0, pairingHandshake: Bool = false,
+              expectedConnection: UUID? = nil, onSubmitted: (@MainActor () -> Void)? = nil) async throws -> UInt16 {
         try Task.checkCancellation()
+        if let expectedConnection, expectedConnection != connectionGeneration { throw AgentError.message("输入连接已变化") }
         guard connected, peer != nil, command != nil else { throw AgentError.message("蓝牙配件未连接") }
         guard writer == nil else { throw AgentError.message("配件正在接收另一条指令") }
         guard !pairingInProgress || pairingHandshake else { throw AgentError.message("正在建立安全连接，请稍候") }
@@ -160,17 +259,22 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
             bytes = Data([1,4,UInt8(truncatingIfNeeded: sequence),UInt8(sequence >> 8),buttons,
                           UInt8(x),0,0,0,0])
         } else { bytes = MouseProtocol.packet(op, sequence: sequence, buttons: buttons, x: x, y: y, wheel: wheel, delay: delay) }
-        try await writeCommand(bytes, pairingHandshake: pairingHandshake)
-        if latestStatus?.sequence == sequence, let code = latestStatus?.error, code != 0 {
+        let submittedSequence = sequence
+        try await writeCommand(bytes, pairingHandshake: pairingHandshake, expectedConnection: expectedConnection, onSubmitted: onSubmitted)
+        if latestStatus?.sequence == submittedSequence, let code = latestStatus?.error, code != 0 {
             throw AgentError.message("配件报告错误 \(code)，已停止动作")
         }
+        return submittedSequence
     }
-    private func writeCommand(_ bytes: Data, pairingHandshake: Bool = false) async throws {
+    private func writeCommand(_ bytes: Data, pairingHandshake: Bool = false,
+                              expectedConnection: UUID? = nil, onSubmitted: (@MainActor () -> Void)? = nil) async throws {
+        if let expectedConnection, expectedConnection != connectionGeneration { throw AgentError.message("输入连接已变化") }
         guard let peer, let command, writer == nil else { throw AgentError.message("蓝牙写入状态异常") }
         try await withCheckedThrowingContinuation { continuation in
             writer = continuation
             if pairingHandshake { record("Encrypted release handshake: write submitted; timeout=35s") }
             peer.writeValue(bytes, for: command, type: .withResponse)
+            onSubmitted?() // Actual OS transport call, not a HID receipt.
             timeout = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: pairingHandshake ? 35_000_000_000 : 3_000_000_000)
                 guard !Task.isCancelled, let self, let writer = self.writer else { return }
@@ -223,22 +327,27 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
             try await Task.sleep(nanoseconds: 20_000_000)
         }
     }
-    func release() async {
-        for _ in 0..<100 {
-            if writer == nil { break }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        try? await send(.release)
+    @discardableResult func release(expectedConnection: UUID? = nil) async -> InputReleaseResult {
+        let originalGeneration = expectedConnection ?? connectionGeneration
+        return await releaseController.release(expectedGeneration: originalGeneration)
     }
-    func waitIdle() async throws {
-        let deadline = Date().addingTimeInterval(4)
+    func waitIdle(after expectedSequence: UInt16) async throws {
+        let connection = connectionGeneration
+        let started = ContinuousClock.now
+        let deadline = started.advanced(by: .seconds(4))
+        var nextRead = started.advanced(by: .milliseconds(150))
         repeat {
             try Task.checkCancellation()
-            refresh()
-            try await Task.sleep(nanoseconds: 80_000_000)
-            guard ready else { throw AgentError.message("鼠标连接已失效") }
-            if status?.busy != true { return }
-        } while Date() < deadline
+            guard ready, connection == connectionGeneration else { throw AgentError.message("鼠标连接已失效") }
+            guard sequence == expectedSequence else { throw AgentError.message("点击已被其他输入中断") }
+            if let current = latestStatus, current.sequence == expectedSequence {
+                guard current.error == 0 else { throw AgentError.message("点击失败，配件错误 \(current.error)") }
+                if current.released(after: expectedSequence) { return }
+            }
+            let now = ContinuousClock.now
+            if now >= nextRead { refresh(); nextRead = now.advanced(by: .milliseconds(250)) }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        } while ContinuousClock.now < deadline
         throw AgentError.message("等待配件释放按键超时")
     }
     private func clear() {
@@ -254,21 +363,28 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
         record("Central state: \(central.state.rawValue)")
         if central.state == .poweredOn {
             state = "蓝牙已开启"
+            ensureConnection()
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--connect-accessory") { scan() }
             #endif
         }
-        else { stopScan(); clear(); state = central.state == .unauthorized ? "请允许蓝牙权限" : "请开启蓝牙" }
+        else {
+            reconnectTask?.cancel(); reconnectTask = nil
+            stopScan(); clear(); state = central.state == .unauthorized ? "请允许蓝牙权限" : "请开启蓝牙"
+        }
     }
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? ""
-        guard name.hasPrefix("AgentMouse") else { return }
+        guard scanning, name.hasPrefix("AgentMouse") else { return }
         add(peripheral)
-        if peer == nil && !connected { connect(AgentPeripheral(peripheral: peripheral)) }
+        if let target = scanTargetID, peripheral.identifier == target, peer == nil && !connected {
+            connectAccessory(AgentPeripheral(peripheral: peripheral))
+        }
     }
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         guard peer?.identifier == peripheral.identifier else { return }
+        guard !automaticReconnectPaused else { cancelCurrentConnection(); return }
         record("Connected; discovering control service")
         connectTimeout?.cancel(); connected = true; state = "已连接，正在检查配件…"
         peripheral.discoverServices([MouseProtocol.service])
@@ -282,13 +398,16 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
         }
     }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        guard peer?.identifier == peripheral.identifier else { return }
         record("Connect failed: \(String(describing: error))")
         self.error = "iPhone 连接失败：\(error?.localizedDescription ?? "请重试")。若刚完成配对，可关闭再开启辅助触控后重试。"
-        clear(); state = "连接失败"
+        clear(); state = "连接失败"; scheduleReconnect()
     }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        guard peer?.identifier == peripheral.identifier else { return }
         record("Disconnected: \(String(describing: error))")
         if let error { self.error = error.localizedDescription }; clear(); state = "配件已断开"
+        scheduleReconnect()
     }
     func peripheral(_ p: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
         guard p === peer, command != nil,
@@ -304,7 +423,7 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
         record("Services: \(p.services?.map { $0.uuid.uuidString } ?? []); error=\(String(describing: error))")
         guard error == nil, let service = p.services?.first(where: { $0.uuid == MouseProtocol.service }) else {
             self.error = error.map { "读取蓝牙服务失败：\($0.localizedDescription)" } ?? "找不到配件控制服务，请确认固件版本。"
-            return
+            cancelCurrentConnection(); return
         }
         p.discoverCharacteristics([MouseProtocol.command, MouseProtocol.status, MouseProtocol.taskIndicator], for: service)
     }
@@ -318,7 +437,7 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
         guard error == nil, command?.properties.contains(.write) == true,
               let statusChar, statusChar.properties.contains(.read) else {
             self.error = error.map { "读取配件特征失败：\($0.localizedDescription)" } ?? "控制服务不完整，请检查 ESP32 固件。"
-            return
+            cancelCurrentConnection(); return
         }
         serviceTimeout?.cancel(); serviceTimeout = nil
         p.setNotifyValue(true, for: statusChar)
@@ -334,6 +453,8 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
                 try await self.send(.release, pairingHandshake: true)
                 guard generation == self.connectionGeneration else { return }
                 self.pairingInProgress = false; self.secureSessionReady = true
+                self.reconnectAttempt = 0
+                UserDefaults.standard.set(p.identifier.uuidString, forKey: Self.rememberedIDKey)
                 self.record("Secure handshake acknowledged")
                 self.state = "安全连接已建立，正在读取鼠标状态…"
                 self.refresh(); self.flushTaskIndicator()
@@ -342,8 +463,8 @@ final class BLETransport: NSObject, ObservableObject, @preconcurrency CBCentralM
                 self.pairingInProgress = false
                 self.record("Secure handshake failed: \(error)")
                 self.error = error.localizedDescription
-                self.state = "安全连接失败，请重新连接"
-                self.disconnect()
+                self.state = "安全连接失败，等待自动重连"
+                self.cancelCurrentConnection()
             }
         }
     }

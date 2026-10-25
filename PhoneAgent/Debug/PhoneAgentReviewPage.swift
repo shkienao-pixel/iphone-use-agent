@@ -24,12 +24,21 @@ struct PhoneAgentReviewPage: View {
         case "settings": SettingsView(onBack: {})
         case "task": TaskDetailView(id: model.history.records.first?.id ?? UUID())
         case "conversation": ContentView(reviewConversation: model.history.records.first?.id)
+        case "sidebar": ContentView(reviewConversation: model.history.records.first?.id, reviewSidebarOpen: true)
+        case "tools": ContentView(reviewDestination: .tools, reviewConversation: model.history.records.first?.id)
+        case "tools-apps": ContentView(reviewDestination: .appConnections)
+        case "tools-native-health": ContentView(reviewDestination: .nativeAppConnection(.health))
+        case "tools-models": ContentView(reviewDestination: .modelMemory)
         case "device": ContentView(reviewDestination: .device)
         case "share": ContentView(reviewDestination: .screenShare)
         case "assistant": ContentView(reviewDestination: .assistant)
+        case "screen-queue": ScreenQueueReview()
+        case "screen-queue-empty": TaskQueueView(allowsExecution: false)
+        case "paotui-chat": PaotuiConversationReview()
+        case "ctrip-cards": CtripFlightReview()
         case "memory": ContentView(reviewDestination: .memory)
         case "workbench": ContentView(reviewDestination: .workbench)
-        case "queue": ContentView(reviewDestination: .queue)
+        case "workflows": WorkflowWorkspaceView(workflows: model.workflowServices)
         case "voice", "voice-listening": ContentView(reviewVoice: .listening)
         case "voice-preparing": ContentView(reviewVoice: .preparing)
         case "voice-finalizing": ContentView(reviewVoice: .finalizing)
@@ -57,4 +66,78 @@ struct PhoneAgentReviewPage: View {
         }
     }
 }
+
+/// Explicit review flags may seed an empty queue, never replace real records.
+/// Execution stays disabled; reorder/pause/remove use the production queue APIs.
+private struct ScreenQueueReview: View {
+    @EnvironmentObject private var model: PhoneAgentViewModel
+    @State private var prepared = false
+    var body: some View {
+        TaskQueueView(allowsExecution: false)
+            .onAppear {
+                guard !prepared else { return }; prepared = true
+                guard ProcessInfo.processInfo.arguments.contains("--screen-queue-seed"),
+                      model.taskQueue.items.isEmpty, model.taskQueue.error.isEmpty else { return }
+                var settings = AgentSettings()
+                settings.endpoint = "https://queue-preview.invalid/v1/chat/completions"
+                settings.model = "offline-preview"; settings.previewOnly = true
+                settings.toolsOnly = false; settings.systemToolsEnabled = false
+                let titles = ["整理旅行计划", "核对待办清单", "汇总收藏内容"]
+                let ids = ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000003"]
+                let fixtures = zip(ids, titles).map { id, title in
+                    QueuedPhoneTask(record: .init(id: UUID(uuidString: id)!, title: title, goal: title,
+                        outcome: .paused, summary: "尚未开始", executionLane: "screen"), settings: settings)
+                }
+                do { try model.taskQueue.transaction { values in values.append(contentsOf: fixtures) } }
+                catch { model.notice = error.localizedDescription }
+            }
+    }
+}
+
+/// Explicit offline display route. No credentials, model, tools or App handoff.
+private struct CtripFlightReview: View {
+    struct Fixture: Decodable {
+        var text: String?
+        var query: String?
+        var offers: [CtripFlightOffer]?
+        var date: Date?
+        var width: Double?
+        var accessibilitySize: Bool?
+    }
+    private let fixture: Fixture?
+    private let offers: [CtripFlightOffer]
+    private let summary: CtripFlightRecommendation
+    @State private var lastSelection = ""
+
+    init() {
+        let arguments = ProcessInfo.processInfo.arguments
+        let selected = arguments.firstIndex(of: "--ctrip-case").flatMap { index in
+            arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+        } ?? "actual16"
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SelaCtripReview/fixtures.json")
+        let fixtures = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([String: Fixture].self, from: $0) } ?? [:]
+        fixture = fixtures[selected]
+        let item = fixtures[selected]
+        let text = item?.text ?? ""
+        offers = item?.offers ?? CtripFlightParser.offers(text, query: item?.query ?? "", at: item?.date ?? Date(timeIntervalSince1970: 0))
+        summary = CtripFlightParser.recommendation(text, representedBy: offers)
+    }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("离线界面回放").font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("ctrip.review")
+                if fixture == nil { Text("未加载离线测试资料").accessibilityIdentifier("ctrip.fixtureMissing") }
+                CtripFlightCards(offers: offers, recommendation: summary) { offer in lastSelection = offer.cardTitle }
+                if !lastSelection.isEmpty {
+                    Text("测试点击：" + lastSelection + "；未打开其他 App。")
+                        .accessibilityIdentifier("ctrip.review.selection")
+                }
+            }.padding(16).frame(maxWidth: fixture?.width.map { CGFloat($0) } ?? .infinity)
+                .frame(maxWidth: .infinity)
+        }.environment(\.dynamicTypeSize, fixture?.accessibilitySize == true ? .accessibility3 : .large)
+    }
+}
+
 #endif

@@ -1,0 +1,22 @@
+Sela app icon — autonomy v2 refinement
+Created: 2026-10-24 (Asia/Shanghai)
+Mode: built-in image_gen, reference-based edit
+User direction: likes v1's feeling of breaking out of the app; refine this direction.
+Reference: sela-app-icon-autonomy-v1-1024.png (same design as the attached screenshot, without screenshot UI).
+Deliverable: sela-app-icon-autonomy-v2-1024.png
+Original: sela-app-icon-autonomy-v2-original.png
+Status: design proposal; existing app icon asset has not been replaced.
+
+Use case: precise-object-edit / logo-brand.
+Asset type: refined v2 of the supplied Sela "breaking out of the app" app-icon symbol.
+Input image 1 is the EDIT TARGET and exact identity reference. The user LIKES this concept: a thick open rounded-square app boundary with a detached rounded diamond escaping toward the upper right. Preserve this concept, its distinctive silhouette, near-black on warm ivory palette, and extreme simplicity. This is careful refinement of this SAME logo, not a new concept.
+Primary edit: make the escape feel more intentional and the geometry more unified. Treat the detached core as a piece that belongs to the app boundary and has just moved through its upper-right opening.
+Refinements:
+- Keep the open rounded-square loop large and confident, but reduce its band thickness slightly, about 8 percent, to open the counterform and give it more air. Give its inner and outer corner curves a consistent, deliberate relationship.
+- Make the two diagonal cut ends of the boundary exactly parallel at 45 degrees, precisely aligned to form one broad clean outward passage.
+- Make the detached rounded diamond about 10 percent smaller than in the reference and move it very slightly farther out along the same 45-degree upper-right axis. Center it precisely on the opening's diagonal. Its clear separation from the boundary must remain visible at 32px, but keep it close enough to read as ONE integrated symbol. Its corner rounding should match the quiet geometry of the loop.
+- Tune the overall optical balance and app-icon margins; the combined silhouette should occupy about 66–68 percent of the square canvas and feel centered, with safe margins around the upper-right escaping piece.
+Style: immaculate flat graphic identity. Exact solid near-black fill, uniform solid warm ivory background, crisp clean edges. Eliminate all surface texture, tonal variation, shading and paper grain. The composition should feel like one intelligent decisive movement.
+Text: none.
+Keep unchanged: one loop and one detached rounded diamond only; same lower-left loop / upper-right core arrangement; overall openness and direction; one-color viability.
+Strictly avoid: adding arrows, arrowheads, speed lines, orbit lines, trail dots, stars, sparkles, eyes, faces, mascots, phone hardware, typography, borders, additional objects, 3D, lighting, gradients, shadow, a fake icon tile, pre-rounded outside canvas corners, mockups, multiple alternatives or a presentation sheet. Produce ONE final square full-bleed app-icon artwork.

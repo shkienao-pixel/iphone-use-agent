@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TaskDetailView: View {
     @EnvironmentObject private var model: PhoneAgentViewModel
@@ -9,6 +10,9 @@ struct TaskDetailView: View {
     @State private var renaming = false
     @State private var title = ""
     @State private var deleting = false
+    @State private var exporting = false
+    @State private var exportDocument: ArtifactDocument?
+    @State private var exportError = ""
     let id: UUID
     private var current: Bool { model.engine.currentRecord?.id == id }
     private var record: PhoneTaskRecord? { model.history.records.first { $0.id == id } ?? (current ? model.engine.currentRecord : nil) }
@@ -22,6 +26,7 @@ struct TaskDetailView: View {
                             .font(.subheadline).padding(.horizontal, 14).padding(.vertical, 10)
                             .agentGlass(in: Capsule())
                         Text(record.createdAt, format: .dateTime.month().day().hour().minute()).font(.caption).foregroundStyle(.secondary)
+                        if !exportError.isEmpty { AgentNotice(text: exportError, error: true) }
                         AgentCard {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("任务内容").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -48,7 +53,13 @@ struct TaskDetailView: View {
                                 }
                             }.agentPanel()
                         }
+                        if let approval = model.tools.pending, approval.taskID == id {
+                            NavigationLink { ToolApprovalView(approval: approval) } label: {
+                                Label("核对待确认的工具操作", systemImage: "checkmark.shield")
+                            }.buttonStyle(AgentButtonStyle())
+                        }
                         if current, !model.engine.error.isEmpty { AgentNotice(text: model.engine.error, error: true) }
+                        if !model.notice.isEmpty { AgentNotice(text: model.notice) }
                         DisclosureGroup("行动记录 · \(record.logs.count) 条", isExpanded: $showActions) {
                             LazyVStack(alignment: .leading, spacing: 18) {
                                 ForEach(record.logs) { log in
@@ -69,7 +80,21 @@ struct TaskDetailView: View {
             .safeAreaBar(edge: .bottom, spacing: 0) {
                 if let record {
                     VStack(spacing: 12) {
-                        if current && (model.engine.running || model.engine.canResume || model.engine.releasing) { controls }
+                        if current && (model.engine.running || model.engine.releasing) { controls }
+                        else if model.backgroundTasks.running(id) || model.backgroundTasks.busy(id) {
+                            HStack {
+                                Button("暂停") { model.pauseTask(id) }.buttonStyle(AgentButtonStyle(primary: false))
+                                Button("停止", role: .destructive) { model.stopTask(id) }.buttonStyle(AgentButtonStyle(primary: false))
+                            }
+                        }
+                        else if model.recoverableTask(id) != nil {
+                            HStack(spacing: 12) {
+                                Button("重试") { _ = model.retryTask(id) }.buttonStyle(AgentButtonStyle(primary: false)).accessibilityIdentifier("task.retry")
+                                Button("继续任务") { _ = model.continueTask(id) }.buttonStyle(AgentButtonStyle()).accessibilityIdentifier("task.continue")
+                            }.disabled(model.taskRecoveryBusy(id))
+                            Text("重试重新规划，继续保留进度；已确认回执保留，未知结果先核验。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         else if !model.engine.running && !model.engine.releasing {
                             Button("用作新任务") {
                                 if !model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.goal != record.effectiveGoal { model.notice = "输入框里还有未提交的任务，请先处理草稿。" }
@@ -85,6 +110,8 @@ struct TaskDetailView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
+                        Button("导出任务记录", action: exportTaskRecord)
+                            .accessibilityIdentifier("task.export").disabled(record == nil)
                         Button("重命名") { title = record?.title ?? ""; renaming = true }
                         Button("删除任务", role: .destructive) { deleting = true }.disabled(model.engine.running || model.engine.releasing)
                     } label: { Image(systemName: "ellipsis") }.accessibilityLabel("任务选项")
@@ -102,6 +129,18 @@ struct TaskDetailView: View {
                 Button("删除任务", role: .destructive) { model.removeTask(id); dismiss() }
             }
         }.tint(AgentPalette.accent).agentSheetStyle()
+            .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .json,
+                          defaultFilename: "Sela 任务-" + id.uuidString + ".json") { result in
+                if case .failure(let failure) = result { exportError = failure.localizedDescription }
+                exportDocument = nil
+            }
+    }
+    private func exportTaskRecord() {
+        guard let snapshot = current ? model.engine.currentRecord : record else { return }
+        do {
+            exportDocument = ArtifactDocument(data: try TaskRecordExport.data(record: snapshot))
+            exportError = ""; exporting = true
+        } catch { exportError = error.localizedDescription }
     }
     private var controls: some View {
         GlassEffectContainer(spacing: 8) {
@@ -121,7 +160,7 @@ struct TaskDetailView: View {
                     Button("接管并补充") { model.beginVoice(.supplement) }.buttonStyle(AgentButtonStyle(primary: false))
                 } else if model.engine.canResume {
                     Button("补充要求") { model.beginVoice(.supplement) }.buttonStyle(AgentButtonStyle(primary: false))
-                    Button(model.engine.phase == .needsUser ? "我已处理，继续任务" : "继续任务") { model.resumeAgent() }.buttonStyle(AgentButtonStyle())
+                    Button(model.engine.phase == .needsUser ? "我已处理，继续任务" : "继续任务") { _ = model.continueTask(id) }.buttonStyle(AgentButtonStyle())
                         .glassEffectID("continue", in: controlGlass)
                         .glassEffectTransition(reduceMotion ? .identity : .matchedGeometry)
                     Button("结束任务", role: .destructive) { model.stop() }.buttonStyle(AgentButtonStyle(primary: false))

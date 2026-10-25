@@ -380,7 +380,7 @@ import Foundation
                 memoryURL: directory.appendingPathComponent(changeStream ? "engine-changed.json" : "engine.json"), recognize: engineTape.recognize)
             let engine = AgentEngine(capture: capture, executor: engineExecutor)
             engine.phoneHarness = engineRuntime
-            var config = AgentSettings(); config.startDelay = 0; config.stepInterval = 0.4; config.maxSteps = 1
+            var config = AgentSettings(); config.startDelay = 0; config.stepInterval = 0.4; config.maxSteps = 1; config.continuousExecution = false
             PrivacyConsent.grant(config)
             defer { PrivacyConsent.revoke() }
             ModelProbe.calls = 0; ModelProbe.delay = 0
@@ -401,6 +401,67 @@ import Foundation
         }
         try await engineCheck(changeStream: false)
         try await engineCheck(changeStream: true)
+        func profileOCR(_ id: String, _ text: String, _ x: Double, _ y: Double, _ width: Double, _ height: Double) -> PhoneUIElement {
+            .init(id: id, label: text, rect: .init(x: x, y: y, width: width, height: height), source: "ocr")
+        }
+        let profileCandidate = PhoneUISnapshot(deviceKey: "offline-roi-candidate", scene: "unknown", elements: [
+            profileOCR("account", "Weixin ID: filehelper", 0.214, 0.170, 0.347, 0.016),
+            profileOCR("description-1", "Transfer text, images, audio and video files", 0.217, 0.263, 0.738, 0.020),
+            profileOCR("description-2", "between your device and your PC", 0.217, 0.283, 0.581, 0.020),
+            profileOCR("messages", "• Messages", 0.378, 0.347, 0.247, 0.021)
+        ], capturedAt: Date())
+        expect(WeChatBuiltinWorkflowTitleOCR.isCandidate(profileCandidate), "Only a complete actual reserved-account profile candidate requests title ROI OCR")
+        var recordingIndicator = profileCandidate
+        recordingIndicator.elements.append(profileOCR("status-recording", "•", 0.3186, 0.0281, 0.0305, 0.0125))
+        expect(WeChatBuiltinWorkflowTitleOCR.isCandidate(recordingIndicator),
+            "The real status-bar recording indicator is outside the navigation-title exclusion area")
+        let roiBox = CGRect(x: 0.025, y: 0.55, width: 0.52, height: 0.29)
+        let fullBox = WeChatBuiltinWorkflowTitleOCR.fullFrameRect(roiBox)
+        expect(abs(fullBox.x - 0.21375) < 0.000001 && abs(fullBox.y - 0.1328) < 0.000001 &&
+               abs(fullBox.width - 0.286) < 0.000001 && abs(fullBox.height - 0.0232) < 0.000001,
+            "ROI-relative coordinates map both axes and sizes into the exact original full-frame coordinate system")
+        let actualTitle = PhoneUIElement(id: "actual-roi-result", label: "文件传输助手", rect: fullBox, source: "ocr")
+        let additions = WeChatBuiltinWorkflowTitleOCR.uniqueAddition([actualTitle], to: profileCandidate)
+        expect(additions == [actualTitle], "The supplemental element preserves the actual recognized label, rectangle and source")
+        expect(WeChatBuiltinWorkflowTitleOCR.uniqueAddition([actualTitle, actualTitle], to: profileCandidate).isEmpty,
+            "Duplicate title recognition cannot select an arbitrary ROI result")
+        expect(WeChatBuiltinWorkflowTitleOCR.uniqueAddition([], to: profileCandidate).isEmpty,
+            "Missing title OCR creates no preset or fallback title")
+        var unknownTitle = actualTitle; unknownTitle.label = "another profile"
+        expect(WeChatBuiltinWorkflowTitleOCR.uniqueAddition([unknownTitle], to: profileCandidate).isEmpty,
+            "An unrelated actual ROI label is not corrected into the expected helper name")
+        var modelTitle = actualTitle; modelTitle.source = "model"
+        expect(WeChatBuiltinWorkflowTitleOCR.uniqueAddition([modelTitle], to: profileCandidate).isEmpty,
+            "Model text is never accepted as actual ROI OCR")
+        var existingTitle = profileCandidate; existingTitle.elements.append(actualTitle)
+        expect(!WeChatBuiltinWorkflowTitleOCR.isCandidate(existingTitle) &&
+               WeChatBuiltinWorkflowTitleOCR.uniqueAddition([actualTitle], to: existingTitle).isEmpty,
+            "An already-observed exact title is neither re-recognized nor duplicated")
+        for id in ["account", "description-1", "description-2", "messages"] {
+            var missing = profileCandidate; missing.elements.removeAll { $0.id == id }
+            expect(!WeChatBuiltinWorkflowTitleOCR.isCandidate(missing), "Missing candidate field does not trigger supplementary recognition: " + id)
+        }
+        for account in ["Weixin ID: tilehelper", "Weixin ID: FileHelper", "Weixin ID: wxid_someone"] {
+            var wrong = profileCandidate; wrong.elements[0].label = account
+            expect(!WeChatBuiltinWorkflowTitleOCR.isCandidate(wrong), "Candidate account is never repaired or case-normalized: " + account)
+        }
+        var duplicateAccount = profileCandidate
+        var otherAccount = profileCandidate.elements[0]; otherAccount.id = "other-account"
+        duplicateAccount.elements.append(otherAccount)
+        expect(!WeChatBuiltinWorkflowTitleOCR.isCandidate(duplicateAccount), "Duplicate reserved fields stop the second OCR pass")
+        var modelCandidate = profileCandidate; modelCandidate.elements[0].source = "model"
+        expect(!WeChatBuiltinWorkflowTitleOCR.isCandidate(modelCandidate), "Candidate gating uses original OCR source only")
+        var blockedCandidate = profileCandidate; blockedCandidate.blockingOverlay = true
+        expect(!WeChatBuiltinWorkflowTitleOCR.isCandidate(blockedCandidate), "A blocking overlay prevents supplementary profile recognition")
+        var chatCopy = profileCandidate; chatCopy.elements.append(profileOCR("chat-title", "文件传输助手", 0.35, 0.065, 0.3, 0.03))
+        expect(!WeChatBuiltinWorkflowTitleOCR.isCandidate(chatCopy), "A conversation copying account and About text cannot request profile title recognition")
+        var composerCopy = profileCandidate
+        composerCopy.elements.append(.init(id: "actual-plus", label: "视觉:添加", rect: .init(x: 0.87, y: 0.88, width: 0.05, height: 0.025), source: "local_visual"))
+        expect(!WeChatBuiltinWorkflowTitleOCR.isCandidate(composerCopy), "A current composer symbol excludes a chat from the profile-only second pass")
+        let cacheReport = ProcessInfo.processInfo.environment["HARNESS_RUNTIME_CACHE_REPORT"].map { URL(fileURLWithPath: $0) }
+        checks += try await HarnessRuntimeCacheChecks.run(directory: directory, reportURL: cacheReport)
+        let metricsReport = ProcessInfo.processInfo.environment["HARNESS_RUNTIME_METRICS_REPORT"].map { URL(fileURLWithPath: $0) }
+        checks += try await HarnessRuntimeMetricsChecks.run(directory: directory, reportURL: metricsReport)
         print("\(checks) production phone-harness runtime checks passed. Injected OCR and offline input/model probes only; no device or network actions.")
     }
 }

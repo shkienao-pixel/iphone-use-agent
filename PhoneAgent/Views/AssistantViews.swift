@@ -13,6 +13,7 @@ struct InlineVoiceBar: View {
     let onCancel: () -> Void
     let onFinish: () -> Void
     let onRetry: () -> Void
+    var onSend: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var working: Bool { phase == .preparing || phase == .finalizing }
     private var retry: Bool { phase == .idle && transcript.isEmpty }
@@ -61,12 +62,18 @@ struct InlineVoiceBar: View {
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }.accessibilityHidden(true)
                 }
-                Button(action: retry ? onRetry : onFinish) {
-                    Image(systemName: retry ? "mic.fill" : "checkmark")
+                if !retry {
+                    Button(action: onFinish) {
+                        Image(systemName: "pause.fill").frame(width: 44, height: 44)
+                    }.buttonStyle(.plain).disabled(working)
+                        .accessibilityLabel("暂停并转成文字")
+                }
+                Button(action: retry ? onRetry : (onSend ?? onFinish)) {
+                    Image(systemName: retry ? "mic.fill" : "arrow.up")
                         .font(.system(size: 17, weight: .semibold)).foregroundStyle(AgentPalette.onContrast)
                         .frame(width: 44, height: 44).background(AgentPalette.ink, in: Circle())
                 }.buttonStyle(AgentPressStyle()).disabled(working).opacity(working ? 0.4 : 1)
-                    .accessibilityLabel(retry ? "重新开始听写" : "完成听写并放入输入框")
+                    .accessibilityLabel(retry ? "重新开始听写" : "发送语音文字")
             }
             .foregroundStyle(.primary).padding(.horizontal, 10).padding(.vertical, 6)
             .frame(minHeight: AgentInputMetrics.height)
@@ -82,6 +89,7 @@ struct InlineDictationComposer: View {
     let isCurrent: () -> Bool
     let isVisible: Bool
     let onEnd: (String?) -> Void
+    let onSend: (() -> Void)?
     @Environment(\.scenePhase) private var appPhase
     @State private var originalDraft: String
     @State private var awaitingStart = true
@@ -90,10 +98,10 @@ struct InlineDictationComposer: View {
     @State private var resolved = false
     @State private var active = true
     @State private var finishTask: Task<Void, Never>?
-    init(speech: VoiceController, draft: Binding<String>, isVisible: Bool, isCurrent: @escaping () -> Bool, onEnd: @escaping (String?) -> Void) {
+    init(speech: VoiceController, draft: Binding<String>, isVisible: Bool, isCurrent: @escaping () -> Bool, onSend: (() -> Void)? = nil, onEnd: @escaping (String?) -> Void) {
         _speech = ObservedObject(wrappedValue: speech); _draft = draft
         _originalDraft = State(initialValue: draft.wrappedValue)
-        self.isVisible = isVisible; self.isCurrent = isCurrent; self.onEnd = onEnd
+        self.isVisible = isVisible; self.isCurrent = isCurrent; self.onEnd = onEnd; self.onSend = onSend
     }
     private var phase: DictationPhase {
         if awaitingStart { return .preparing }
@@ -105,7 +113,7 @@ struct InlineDictationComposer: View {
     var body: some View {
         InlineVoiceBar(phase: phase, transcript: awaitingStart ? "" : speech.transcript, status: awaitingStart ? "本机语音识别" : speech.status,
                        error: awaitingStart ? "" : speech.error, startedAt: startedAt,
-                       onCancel: cancel, onFinish: finish, onRetry: retry)
+                       onCancel: cancel, onFinish: { finish(send: false) }, onRetry: retry, onSend: { finish(send: true) })
             .task(id: isVisible && appPhase == .active) {
                 guard isVisible, appPhase == .active, awaitingStart else { return }
                 hasBeenVisible = true
@@ -141,14 +149,16 @@ struct InlineDictationComposer: View {
         resolved = true; finishTask?.cancel(); finishTask = nil
         speech.onSilence = nil; speech.cancel(); onEnd(nil)
     }
-    private func finish() {
+    private func finish(send: Bool) {
         guard finishTask == nil, !awaitingStart, !speech.preparing, !speech.finalizing, isCurrent() else { return }
         finishTask = Task {
             await speech.finish()
             guard !Task.isCancelled, active, isCurrent() else { return }
             let value = Self.appending(speech.transcript, to: originalDraft)
             resolved = true; draft = value; finishTask = nil
+            let hasTranscript = !speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             speech.onSilence = nil; speech.cancel(); onEnd(value)
+            if send && hasTranscript { onSend?() }
         }
     }
     private func retainPartialAndClose() {
@@ -165,7 +175,6 @@ struct InlineDictationComposer: View {
 }
 
 struct AssistantView: View {
-    let newConversationRequest: UUID
     let reviewDictation: DictationPhase?
     let allowsDictation: Bool
     @EnvironmentObject private var model: PhoneAgentViewModel
@@ -173,19 +182,26 @@ struct AssistantView: View {
     let onModelSetup: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var followingConversation = true
+    @State private var conversationUserScrolling = false
     @State private var lastSpokenMessage: UUID?
     @State private var useCamera = false
     @State private var memoryEditor: MemoryEditorSeed?
     @State private var continuous = false
     @State private var dictating = false
     @State private var dictationID = UUID()
+    @State private var dictationConversationID: UUID?
     @State private var videoMode = false
     @State private var observationFocus = ""
     @State private var observationInterval: Double = 15
     @State private var speakObservations = false
     @State private var videoQuestionTask: Task<Void, Never>?
     @State private var videoQuestionID = UUID()
+    @State private var mediaConversationID: UUID?
     @State private var clear = false
+    @StateObject private var attachmentDraft = ComposerAttachmentStore()
+    @State private var attachmentConversationID: UUID?
+    @State private var showAttachmentPhotos = false
+    @State private var showAttachmentFiles = false
     @State private var realtime = false
     @State private var webSearch = false
     @State private var transcriptTask: Task<Void, Never>?
@@ -194,6 +210,9 @@ struct AssistantView: View {
         ScrollViewReader { reader in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    if !model.conversation.messages.isEmpty || composing || dictating {
+                        SelaConversationAvatar(motion: model.conversation.loading ? "thinking" : dictating && model.speech.listening ? "listening" : "idle")
+                    }
                     if useCamera {
                         if let frame = model.camera.frame { Image(uiImage: frame.image).resizable().scaledToFit().frame(maxHeight: 260).clipShape(RoundedRectangle(cornerRadius: 18)) }
                         else if model.camera.preparing { ProgressView("正在准备相机") }
@@ -215,70 +234,126 @@ struct AssistantView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }.agentPanel()
                     }
-                    if model.conversation.messages.isEmpty {
-                        VStack(spacing: 16) {
-                            AgentOrb(size: 72)
-                            Text("有什么想问的？").font(.title2.weight(.bold))
-                            Text("向助手提问，或附上一张画面与相机观察。")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity).padding(.vertical, 80)
+                    if model.conversation.messages.isEmpty && !composing && !dictating {
+                        conversationEmptyState
                     }
                     ForEach(model.conversation.messages) { message in
                         HStack(alignment: .top) {
                             if message.role == "user" { Spacer(minLength: 36) }
                             VStack(alignment: .leading, spacing: 10) {
-                                if message.role != "user" {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "sparkles")
-                                            .font(.system(size: 13))
-                                            .foregroundStyle(AgentPalette.ink)
-                                        Text("助手")
-                                            .font(.caption2.weight(.semibold))
-                                            .foregroundStyle(.secondary)
+                                if message.role == "assistant" {
+                                    if let card = message.paotuiCard {
+                                        if message.text.trimmingCharacters(in: .whitespacesAndNewlines) != card.title.trimmingCharacters(in: .whitespacesAndNewlines) {
+                                            SelaMarkdownText(text: message.text)
+                                        }
+                                        PaotuiConversationCards(card: card,
+                                            active: model.conversation.isCurrentPaotuiCard(card) && MeituanPaotuiConversation.shared.isCurrent(card),
+                                            onSelect: { model.conversation.selectPaotui(card, $0) })
+                                    } else {
+                                    let offers = model.conversation.flightOffers(for: message)
+                                    if !offers.isEmpty {
+                                        CtripFlightCards(offers: offers,
+                                            recommendation: model.conversation.flightRecommendation(for: message), onBook: model.bookFlight)
+                                    } else { SelaMarkdownText(text: message.text) }
                                     }
                                 }
-                                Text(message.text).font(.body).lineSpacing(4).textSelection(.enabled)
+                                else { Text(message.text).font(.body).lineSpacing(4).textSelection(.enabled) }
+                                if let taskID = message.taskID { ConversationTaskCard(taskID: taskID) }
+                                if let attachments = message.attachments, !attachments.isEmpty {
+                                    ComposerAttachmentList(attachments: attachments)
+                                }
                                 if let frames = message.cameraFrames {
                                     Text("相机序列 · \(frames) 帧 · \(Int((message.cameraDuration ?? 0).rounded())) 秒")
                                         .font(.caption2).foregroundStyle(.secondary)
                                 }
                                 if message.role == "assistant" {
-                                    HStack(spacing: 16) {
-                                        Button { model.speech.speak(message.text) } label: { Label("朗读", systemImage: "speaker.wave.2") }
-                                        Button {
-                                            UIPasteboard.general.string = message.text
-                                            model.notice = "已复制回答"
-                                        } label: { Label("复制", systemImage: "doc.on.doc") }
-                                        Button { memoryEditor = MemoryEditorSeed(value: AssistantMemory(title: String(message.text.prefix(30)), text: message.text, source: "对话回答 · " + message.createdAt.formatted())) } label: { Label("存为记忆", systemImage: "bookmark") }
-                                        ShareLink(item: message.text) { Label("分享", systemImage: "square.and.arrow.up") }
-                                    }.font(.caption).foregroundStyle(.secondary).labelStyle(.iconOnly).frame(minHeight: 44).buttonStyle(AgentPressStyle())
+                                    let references = model.conversation.references(for: message)
+                                    if !references.isEmpty {
+                                        conversationReferences(references)
+                                    }
+                                    messageActions(message)
                                 }
                             }
-                            .padding(message.role == "user" ? 14 : 16)
+                            .frame(maxWidth: message.role == "assistant" ? .infinity : nil, alignment: .leading)
+                            .padding(.horizontal, message.role == "user" ? 14 : 0)
+                            .padding(.vertical, message.role == "user" ? 12 : 0)
                             .background(message.role == "user" ? AgentPalette.userBubble : Color.clear, in: RoundedRectangle(cornerRadius: 20))
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier((message.role == "assistant" ? "conversation.message.body." : "conversation.user.bubble.") + message.id.uuidString)
 
                             if message.role != "user" { Spacer(minLength: 0) }
-                        }.frame(maxWidth: .infinity, alignment: message.role == "user" ? .trailing : .leading).id(message.id)
+                        }.frame(maxWidth: .infinity, alignment: message.role == "user" ? .trailing : .leading)
+                            .contentShape(Rectangle())
+                            .simultaneousGesture(TapGesture().onEnded { composing = false })
+                            .id(message.id)
                     }
-                    if model.conversation.loading { HStack { ProgressView(); Text("正在思考…").foregroundStyle(.secondary); Spacer(); Button("取消") { stopVoice(); model.liveCamera.stop(); model.conversation.cancel() } }.font(.subheadline) }
+                    if model.conversation.loading, !model.conversation.contextReferences.isEmpty {
+                        conversationReferences(model.conversation.contextReferences, pending: true)
+                    }
+                    if model.conversation.loading {
+                        HStack {
+                            ProgressView(); Text("正在思考…").foregroundStyle(.secondary); Spacer()
+                            Button("新任务") { stopVoice(); stopVideo(); model.conversation.newConversation(); composing = true }
+                                .accessibilityIdentifier("conversation.newTaskWhileWaiting")
+                            Button("取消") { stopVoice(); model.liveCamera.stop(); model.conversation.cancel() }
+                        }.font(.subheadline)
+                    }
+                    if model.conversation.backgroundRequestCount > 0 {
+                        Text("另有 \(model.conversation.backgroundRequestCount) 个对话正在处理，可以继续开始新任务。")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("conversation.backgroundWork")
+                    }
                     if !model.conversation.error.isEmpty { AgentNotice(text: model.conversation.error, error: true) }
+                    if !model.conversation.storageError.isEmpty { AgentNotice(text: model.conversation.storageError, error: true) }
                     if !model.notice.isEmpty { AgentNotice(text: model.notice) }
                     if model.speech.usingAudio && !dictating { Text(model.speech.status).font(.footnote).foregroundStyle(.secondary) }
                     if !model.speech.error.isEmpty && !dictating { AgentNotice(text: model.speech.error, error: true) }
                     if continuous { Text("点按麦克风开始。停顿后自动发送识别文字，播报结束再听下一句；离开此页或 App 后停止。")
                         .font(.caption).foregroundStyle(.secondary) }
                     Color.clear.frame(height: 1).id("bottom")
-                }.padding(20)
+                }.padding(.horizontal, 16).padding(.vertical, 16)
             }.scrollDismissesKeyboard(.interactively)
+                .scrollEdgeEffectHidden(for: .top)
+                .onScrollPhaseChange { _, phase in
+                    conversationUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+                }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.visibleRect.maxY >= geometry.contentSize.height - 80
-                } action: { _, nearBottom in followingConversation = nearBottom }
+                } action: { _, nearBottom in
+                    // Growing task cards and keyboard dismissal are not a user
+                    // choosing to leave the latest message.
+                    if nearBottom { followingConversation = true }
+                    else if conversationUserScrolling { followingConversation = false }
+                }
+                .overlay(alignment: .bottom) {
+                    if !followingConversation && !model.conversation.messages.isEmpty {
+                        SelaScrollLatestButton {
+                            followingConversation = true
+                            withAnimation(.easeOut(duration: 0.2)) { reader.scrollTo("bottom", anchor: .bottom) }
+                        }.padding(.bottom, 12)
+                    }
+                }
                 .onChange(of: model.conversation.messages.count) { _, _ in
+                    if model.conversation.messages.last?.role == "user" { followingConversation = true }
                     if followingConversation { reader.scrollTo("bottom", anchor: .bottom) }
                 }
+                .onChange(of: model.engine.state) { _, _ in
+                    if followingConversation { reader.scrollTo("bottom", anchor: .bottom) }
+                }
+                .onChange(of: model.conversation.currentConversationID) { _, _ in
+                    followingConversation = true
+                    reader.scrollTo("bottom", anchor: .bottom)
+                }
+                .onAppear { reader.scrollTo("bottom", anchor: .bottom) }
         }
-        .safeAreaBar(edge: .bottom, spacing: 0) {
+        .onChange(of: composing || dictating) { _, active in model.assistantInputActive = active }
+        .onDisappear { composing = false; model.assistantInputActive = false }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 8) {
+                if !attachmentDraft.items.isEmpty || attachmentDraft.importing || !attachmentDraft.error.isEmpty {
+                    ComposerAttachmentTray(store: attachmentDraft)
+                        .disabled(model.conversation.loading || videoQuestionTask != nil)
+                }
                 if continuous {
                     HStack {
                         Spacer()
@@ -299,46 +374,34 @@ struct AssistantView: View {
                                    onCancel: {}, onFinish: {}, onRetry: {})
                 } else if dictating {
                     let token = dictationID
+                    let conversationID = dictationConversationID
                     InlineDictationComposer(speech: model.speech, draft: $model.conversation.draft,
                                             isVisible: allowsDictation && !clear && !realtime && !webSearch && memoryEditor == nil,
-                                            isCurrent: { dictating && dictationID == token }) { _ in
-                        guard dictationID == token else { return }
-                        dictating = false
+                                            isCurrent: { dictating && dictationID == token && model.conversation.currentConversationID == conversationID },
+                                            onSend: { send() }) { _ in
+                        guard dictationID == token, model.conversation.currentConversationID == conversationID else { return }
+                        transcriptTask?.cancel(); transcriptTask = nil
+                        dictationID = UUID(); dictating = false; dictationConversationID = nil
                         if model.voiceMode == .question { model.voiceMode = nil }
                     }.id(token).transition(.opacity)
                 } else {
-                    HStack(alignment: .center, spacing: 8) {
-                        Menu {
-                            Button { selectScreen() } label: { Label("附上共享画面", systemImage: "viewfinder") }
-                            Toggle(isOn: $useCamera) { Label("相机对话", systemImage: "camera") }
-                            Toggle(isOn: $continuous) { Label("连续语音对话", systemImage: "waveform") }
-                            Divider()
-                            Button {
-                                composing = false; stopVoice(); stopVideo(); model.camera.stop(); useCamera = false; continuous = false
-                                model.conversation.cancel(); webSearch = true
-                            } label: { Label("联网检索", systemImage: "globe") }
-                            Button {
-                                composing = false; stopVoice(); stopVideo(); model.camera.stop(); useCamera = false; continuous = false
-                                model.conversation.cancel(); realtime = true
-                            } label: { Label("实时语音与相机", systemImage: "waveform") }
-                            Divider()
-                            Button(role: .destructive) { clear = true } label: { Label("清空对话", systemImage: "trash") }
-                                .disabled(model.conversation.messages.isEmpty)
-                        } label: {
-                            AgentComposerLeadingSlot()
-                        }
-                        .tint(.primary).accessibilityLabel("对话工具")
+                    SelaComposerLayout(expanded: composing) {
+                        SelaAttachmentMenu(onPhotos: { composing = false; stopVoice(); showAttachmentPhotos = true },
+                                           onFiles: { composing = false; stopVoice(); showAttachmentFiles = true })
+                            .disabled(attachmentDraft.importing || model.conversation.loading || videoQuestionTask != nil)
 
-                        TextField("输入问题…", text: $model.conversation.draft, prompt: Text("输入问题…").foregroundStyle(AgentPalette.placeholder), axis: .vertical)
+                        TextField("Ask Sela", text: $model.conversation.draft, prompt: Text("Ask Sela").foregroundStyle(AgentPalette.placeholder), axis: .vertical)
                             .lineLimit(1...5)
                             .font(.body)
                             .focused($composing)
                             .padding(.vertical, 8)
                             .frame(minHeight: 44)
                             .disabled(model.conversation.loading || videoQuestionTask != nil || model.speech.preparing || model.speech.finalizing || model.speech.listening)
-                            .accessibilityLabel("向助手提问")
+                            .accessibilityLabel("和 Sela 聊天")
+                            .accessibilityIdentifier("composer.text")
 
-                        if model.conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.conversation.loading && videoQuestionTask == nil {
+                        HStack(spacing: 8) {
+                        if composing || (model.conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachmentDraft.items.isEmpty && !model.conversation.loading && videoQuestionTask == nil) {
                             Button {
                                 if model.speech.usingAudio { stopVoice() } else { startListening() }
                             } label: {
@@ -350,8 +413,11 @@ struct AssistantView: View {
                             }
                             .buttonStyle(AgentPressStyle())
                             .accessibilityLabel(model.speech.usingAudio ? "结束语音" : "语音提问")
+                            .accessibilityIdentifier("composer.mic")
+                            .disabled(model.conversation.loading || videoQuestionTask != nil || attachmentDraft.importing)
                             .transition(.opacity)
-                        } else {
+                        }
+                        if !model.conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachmentDraft.items.isEmpty || model.conversation.loading || videoQuestionTask != nil {
                             Button {
                                 if model.conversation.loading || videoQuestionTask != nil { stopVoice(); stopVideo(); model.conversation.cancel() }
                                 else { send() }
@@ -363,31 +429,57 @@ struct AssistantView: View {
                                     .background(AgentPalette.accent, in: Circle())
                             }
                             .buttonStyle(AgentPressStyle())
+                            .disabled(attachmentDraft.importing && !model.conversation.loading && videoQuestionTask == nil)
                             .accessibilityLabel(model.conversation.loading || videoQuestionTask != nil ? "停止生成回答" : "发送问题")
+                            .accessibilityIdentifier("composer.send")
                             .transition(.opacity)
                         }
+                        }.accessibilityElement(children: .contain).accessibilityIdentifier("composer.actions")
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .frame(minHeight: AgentInputMetrics.height)
-                    .agentGlass(in: AgentInputMetrics.shape)
+                    .modifier(SelaHomeComposerSurface(active: model.conversation.messages.isEmpty))
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("composer.container")
+                    .accessibilityValue(composing ? "两行输入" : "单行输入")
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.conversation.draft.isEmpty)
                 }
             }
             .agentComposerLeadingGlyph(recording: reviewDictation != nil || dictating)
             .padding(.horizontal, 16)
-            .padding(.top, 4)
+            .padding(.top, model.conversation.messages.isEmpty ? 12 : 4)
             .padding(.bottom, 8)
+            .background(AgentPalette.background)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: dictating)
         }
+        .composerAttachmentPicker(store: attachmentDraft, showPhotos: $showAttachmentPhotos, showFiles: $showAttachmentFiles,
+                                  selectionID: model.conversation.currentConversationID)
         .sheet(item: $memoryEditor) { MemoryEditor(seed: $0) }
         .sheet(isPresented: $realtime) { RealtimeView() }
         .sheet(isPresented: $webSearch) { WebSearchView() }
         .confirmationDialog("清空本次对话？", isPresented: $clear, titleVisibility: .visible) {
             Button("清空", role: .destructive) { resetConversation() }
         }
-        .onChange(of: newConversationRequest) { _, _ in requestNewConversation() }
-        .onAppear { if model.voiceMode == .question { startListening() } }
+        .onChange(of: model.conversation.currentConversationID) { _, conversationID in
+            attachmentDraft.clear(); showAttachmentPhotos = false; showAttachmentFiles = false
+            attachmentConversationID = conversationID
+            stopConversationMedia()
+            followingConversation = true
+            lastSpokenMessage = model.conversation.messages.last?.id
+        }
+        .onChange(of: model.conversation.retryAttachments, initial: true) { _, attachments in
+            if !attachments.isEmpty, attachmentDraft.items.isEmpty { attachmentDraft.replace(attachments) }
+        }
+        .onChange(of: attachmentDraft.items) { _, attachments in
+            if let conversationID = attachmentConversationID {
+                model.conversation.retainDraftAttachments(attachments, conversationID: conversationID)
+            }
+        }
+        .onAppear {
+            attachmentConversationID = model.conversation.currentConversationID
+            if model.voiceMode == .question { startListening() }
+        }
         .onChange(of: model.voiceMode) { _, mode in if mode == .question { startListening() } }
         .onChange(of: model.conversation.messages.last?.id) { _, _ in
             guard let last = model.conversation.messages.last, last.role == "assistant", !model.conversation.loading, lastSpokenMessage != last.id, model.voiceMode == nil else { return }
@@ -397,12 +489,26 @@ struct AssistantView: View {
             }
         }
         .onChange(of: useCamera) { _, enabled in
-            stopVideo(); model.conversation.cancel(); model.conversation.selectFrame(nil)
-            if enabled { model.camera.start(); model.camera.setSequenceEnabled(videoMode) } else { videoMode = false; model.camera.stop() }
+            stopVideo()
+            if enabled || mediaConversationID == model.conversation.currentConversationID { model.conversation.cancel() }
+            model.conversation.selectFrame(nil)
+            if enabled {
+                mediaConversationID = model.conversation.currentConversationID
+                model.camera.start(); model.camera.setSequenceEnabled(videoMode)
+            } else {
+                mediaConversationID = nil; videoMode = false; model.camera.stop()
+            }
         }
-        .onChange(of: videoMode) { _, enabled in stopVideo(); model.conversation.cancel(); model.conversation.selectFrame(nil); model.camera.setSequenceEnabled(enabled && useCamera) }
+        .onChange(of: videoMode) { _, enabled in
+            stopVideo()
+            if useCamera && mediaConversationID == model.conversation.currentConversationID { model.conversation.cancel() }
+            model.conversation.selectFrame(nil); model.camera.setSequenceEnabled(enabled && useCamera)
+        }
         .onChange(of: model.camera.running) { _, running in if !running { stopVideo() } }
-        .onChange(of: model.conversation.loading) { _, loading in
+        .onChange(of: model.conversation.loading) { wasLoading, loading in
+            if wasLoading, !loading, model.conversation.error.isEmpty, model.conversation.draft.isEmpty {
+                attachmentDraft.clear()
+            }
             if !loading, model.liveCamera.running, model.liveCamera.suspended {
                 if model.conversation.error.isEmpty && phase == .active && videoMode && useCamera { startVideo() }
                 else { model.liveCamera.stop() }
@@ -412,8 +518,70 @@ struct AssistantView: View {
             if speakObservations, phase == .active, !model.speech.usingAudio, !model.conversation.loading, let result = model.liveCamera.results.last { model.speech.speak(result.text) }
         }
         .onChange(of: continuous) { _, enabled in if !enabled { stopVoice() } }
-        .onChange(of: phase) { _, value in if value == .background { continuous = false; useCamera = false; stopVideo(); model.camera.stop(); model.conversation.cancel(); model.conversation.selectFrame(nil); stopVoice() } }
-        .onDisappear { continuous = false; useCamera = false; stopVideo(); model.camera.stop(); stopVoice(); model.conversation.cancel(); model.conversation.selectFrame(nil) }
+        .onChange(of: phase) { _, value in if value == .background { continuous = false; useCamera = false; stopVideo(); model.camera.stop(); stopVoice(); model.conversation.cancelScreenBoundRequest(); model.conversation.selectFrame(nil) } }
+        .onDisappear {
+            if let conversationID = attachmentConversationID {
+                model.conversation.retainDraftAttachments(attachmentDraft.items, conversationID: conversationID)
+            }
+            attachmentDraft.cancelImport(); showAttachmentPhotos = false; showAttachmentFiles = false; continuous = false; useCamera = false; stopVideo(); model.camera.stop(); stopVoice(); model.conversation.cancelScreenBoundRequest(); model.conversation.selectFrame(nil)
+        }
+    }
+    private var conversationEmptyState: some View {
+        VStack(spacing: 18) {
+            Image("SelaMascot")
+                .resizable().scaledToFit().frame(width: 136, height: 136)
+                .accessibilityHidden(true)
+            Text("想聊点什么？").font(.largeTitle.weight(.semibold)).tracking(-0.8)
+            Text("聊天、查资料、操作手机，\n都可以在这里接着说。")
+                .font(.subheadline).foregroundStyle(AgentPalette.secondaryText)
+                .multilineTextAlignment(.center).lineSpacing(5)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { conversationSuggestions }
+                VStack(spacing: 8) { conversationSuggestions }
+            }
+            Text("需要操作手机时，选择「新任务」。")
+                .font(.caption).foregroundStyle(AgentPalette.secondaryText)
+                .padding(.top, 4)
+        }.frame(maxWidth: .infinity).padding(.top, 24).padding(.bottom, 24)
+    }
+    @ViewBuilder private var conversationSuggestions: some View {
+        conversationSuggestion("周末去哪儿玩", icon: "sun.max")
+        conversationSuggestion("今天吃点什么", icon: "fork.knife")
+    }
+    private func conversationSuggestion(_ text: String, icon: String) -> some View {
+        Button {
+            model.conversation.draft = text
+            composing = true
+        } label: {
+            Label(text, systemImage: icon)
+                .font(.caption).foregroundStyle(AgentPalette.ink)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+    private func conversationReferences(_ references: [AssistantConversationContextHit], pending: Bool = false) -> some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(references) { reference in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
+                            Image(systemName: reference.sourceKind == .task ? "checklist" : "bubble.left")
+                                .font(.caption2)
+                            Text(reference.title).font(.caption.weight(.medium)).lineLimit(2)
+                        }
+                        Text(reference.excerpt).font(.caption).foregroundStyle(AgentPalette.secondaryText)
+                            .lineLimit(4).textSelection(.enabled)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }.padding(.top, 8)
+        } label: {
+            Label("\(pending ? "正在参考" : "已参考") \(references.count) 条记录", systemImage: "text.bubble")
+                .font(.caption)
+        }
+        .tint(AgentPalette.secondaryText)
+        .foregroundStyle(AgentPalette.secondaryText)
+        .padding(12)
+        .background(AgentPalette.surface, in: RoundedRectangle(cornerRadius: 14))
     }
     private var videoObservationPanel: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -440,16 +608,22 @@ struct AssistantView: View {
             Text("需要模型接口支持多张图片。语音提问使用本机转写，不发送音频；此模式下说“暂停”“停止”“继续”控制连续观察。关闭模式会清除抽样缓存。") .font(.caption).foregroundStyle(.secondary)
         }
     }
-    private func requestNewConversation() {
-        let conversation = model.conversation
-        let hasContent = dictating || !conversation.messages.isEmpty || !conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || conversation.selectedFrame != nil || useCamera || model.liveCamera.running
-        if hasContent { clear = true }
-        else { resetConversation(); composing = true }
-    }
     private func resetConversation() {
+        attachmentDraft.clear(); showAttachmentPhotos = false; showAttachmentFiles = false
         stopVoice(); stopVideo(); model.liveCamera.stop(clearResults: true); model.camera.stop()
         useCamera = false; continuous = false
         model.conversation.clear()
+    }
+    private func stopConversationMedia() {
+        mediaConversationID = nil
+        // An old dictation must never write into the newly opened conversation.
+        dictationID = UUID(); dictating = false; dictationConversationID = nil
+        transcriptTask?.cancel(); transcriptTask = nil
+        model.speech.onSilence = nil; model.speech.cancel()
+        if model.voiceMode == .question { model.voiceMode = nil }
+        stopVideo(); model.liveCamera.stop(clearResults: true); model.camera.stop()
+        useCamera = false; continuous = false
+        model.conversation.selectFrame(nil)
     }
     private func startVideo() {
         guard model.modelReady else { model.notice = "请先连接支持多图的模型服务"; onModelSetup(); return }
@@ -467,40 +641,79 @@ struct AssistantView: View {
     private func startListening() {
         guard !dictating, model.recordingAudioOwner == nil, !model.conversation.loading, videoQuestionTask == nil else { return }
         composing = false; model.speech.cancel()
-        model.speech.onSilence = continuous ? { finishAndSend() } : nil
-        dictationID = UUID(); dictating = true
+        let token = UUID()
+        let conversationID = model.conversation.currentConversationID
+        dictationID = token; dictating = true; dictationConversationID = conversationID
+        model.speech.onSilence = continuous ? {
+            guard dictating, dictationID == token, model.conversation.currentConversationID == conversationID else { return }
+            finishAndSend()
+        } : nil
     }
     private func stopVoice() {
-        if dictating && (model.speech.listening || model.speech.finalizing) {
+        if dictating && dictationConversationID == model.conversation.currentConversationID && (model.speech.listening || model.speech.finalizing) {
             model.conversation.draft = InlineDictationComposer.appending(model.speech.transcript, to: model.conversation.draft)
         }
-        dictationID = UUID(); dictating = false
+        dictationID = UUID(); dictating = false; dictationConversationID = nil
         transcriptTask?.cancel(); transcriptTask = nil; model.speech.onSilence = nil; model.speech.cancel()
         if model.voiceMode == .question { model.voiceMode = nil }
     }
     private func finishAndSend() {
-        guard transcriptTask == nil else { return }
+        guard transcriptTask == nil, dictating, let conversationID = dictationConversationID,
+              conversationID == model.conversation.currentConversationID else { return }
+        let token = dictationID
         transcriptTask = Task {
             await model.speech.finish()
-            guard !Task.isCancelled, phase == .active else { transcriptTask = nil; return }
+            guard dictationID == token, model.conversation.currentConversationID == conversationID else { return }
+            guard !Task.isCancelled, dictating, phase == .active else { transcriptTask = nil; return }
             model.conversation.draft = model.speech.transcript
-            dictationID = UUID(); dictating = false
+            dictationID = UUID(); dictating = false; dictationConversationID = nil
             if model.voiceMode == .question { model.voiceMode = nil }
             transcriptTask = nil; send()
         }
     }
+    private func messageActions(_ message: AssistantMessage) -> some View {
+        let taskRetry = message.taskID.map { model.recoverableTask($0) != nil && !model.taskRecoveryBusy } ?? false
+        let available = !dictating && !useCamera && !model.speech.usingAudio && videoQuestionTask == nil && !attachmentDraft.importing &&
+            (message.taskID == nil ? model.conversation.canRetry(message) : taskRetry)
+        return HStack(spacing: 6) {
+            Button {
+                UIPasteboard.general.string = message.text
+                model.notice = "已复制回答"
+            } label: { Label("复制", systemImage: "doc.on.doc").frame(width: 44, height: 44) }
+                .accessibilityIdentifier("response.copy")
+            Button {
+                composing = false
+                if let taskID = message.taskID { _ = model.retryTask(taskID) }
+                else {
+                    _ = model.conversation.retry(message, settings: model.settings,
+                        apiKey: SettingsStore.apiKey(for: model.settings.endpoint), memories: model.memories,
+                        taskRecords: model.history.records)
+                }
+            } label: { Label("重试", systemImage: "arrow.clockwise").frame(width: 44, height: 44) }
+                .disabled(!available).accessibilityIdentifier("response.retry")
+                .accessibilityHint(available ? "重新生成回答，保留原回答" : "仅最新且保留原始输入的回答可重试；任务可在任务卡中继续")
+        }.font(.caption).foregroundStyle(.secondary).labelStyle(.iconOnly).buttonStyle(AgentPressStyle())
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("conversation.response.actions." + message.id.uuidString)
+    }
     private func send() {
         composing = false
         if model.speech.listening { finishAndSend(); return }
-        let value = model.conversation.draft
-        if let command = VoiceCommand.parse(value) {
-            stopVoice(); model.conversation.draft = ""
-            if videoMode && useCamera {
-                if [.pause, .stop, .handoff].contains(command) { stopVideo(); model.notice = "连续观察已停止"; if command == .stop { useCamera = false; model.camera.stop() }; return }
-                if command == .resume { startVideo(); return }
+        guard !attachmentDraft.importing, !showAttachmentPhotos, !showAttachmentFiles else { return }
+        let originalDraft = model.conversation.draft
+        let attachments = attachmentDraft.items
+        let value = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !attachments.isEmpty ? "请帮我看看这些附件" : originalDraft
+        let conversationID = model.conversation.currentConversationID
+        if videoMode && useCamera, let command = VoiceCommand.parse(value) {
+            // These controls apply only to the explicitly enabled camera observation.
+            // Plain conversation text never routes to the phone task executor.
+            if [.pause, .stop, .handoff].contains(command) {
+                stopVoice(); model.conversation.draft = ""
+                stopVideo(); model.notice = "连续观察已停止"
+                if command == .stop { useCamera = false; model.camera.stop() }
+                return
             }
-            Task { model.notice = await model.handleVoiceCommand(command) }
-            return
+            if command == .resume { stopVoice(); model.conversation.draft = ""; startVideo(); return }
         }
         guard model.modelReady else { stopVoice(); model.notice = "请先连接模型服务"; onModelSetup(); return }
         guard model.consentReady else { stopVoice(); model.requestConsent(); return }
@@ -513,8 +726,8 @@ struct AssistantView: View {
                     defer { if videoQuestionID == token { videoQuestionTask = nil } }
                     await model.liveCamera.suspendForQuestion()
                     guard !Task.isCancelled, videoQuestionID == token, phase == .active, videoMode, useCamera,
-                          model.camera.running else { return }
-                    guard model.conversation.draft == value else { model.notice = "问题已变化，请重新发送"; model.liveCamera.stop(); return }
+                          model.camera.running, model.conversation.currentConversationID == conversationID else { return }
+                    guard model.conversation.draft == originalDraft, attachmentDraft.items == attachments else { model.notice = "问题已变化，请重新发送"; model.liveCamera.stop(); return }
                     guard model.settings.endpoint == configuration.endpoint, model.settings.model == configuration.model,
                           PrivacyConsent.recipient(model.settings) == PrivacyConsent.recipient(configuration),
                           PrivacyConsent.allowed(model.settings) else { model.notice = "模型或授权已变化，请重新提问"; model.liveCamera.stop(); return }
@@ -522,14 +735,19 @@ struct AssistantView: View {
                     do { _ = try CameraObservationWindow.content(question: value, frames: frames, now: ProcessInfo.processInfo.systemUptime) }
                     catch { model.notice = error.localizedDescription; model.liveCamera.stop(); return }
                     model.conversation.selectSequence(frames)
+                    model.conversation.draft = value
                     if !model.conversation.send(settings: configuration, apiKey: SettingsStore.apiKey(for: configuration.endpoint), memories: model.memories,
-                                                observationContext: model.liveCamera.results.last?.text ?? "") { model.liveCamera.stop() }
+                                                observationContext: model.liveCamera.results.last?.text ?? "", taskRecords: model.history.records, attachments: attachments) {
+                        model.liveCamera.stop()
+                    }
                 }
                 return
             }
             guard let frame = model.camera.frame, Date().timeIntervalSince(frame.capturedAt) < 2 else { model.notice = "相机没有新画面，请检查权限或关闭相机模式后重试"; return }
             model.conversation.selectFrame(frame)
         }
-        model.conversation.send(settings: model.settings, apiKey: SettingsStore.apiKey(for: model.settings.endpoint), memories: model.memories)
+        model.conversation.draft = value
+        model.conversation.send(settings: model.settings, apiKey: SettingsStore.apiKey(for: model.settings.endpoint), memories: model.memories,
+                                taskRecords: model.history.records, attachments: attachments)
     }
 }

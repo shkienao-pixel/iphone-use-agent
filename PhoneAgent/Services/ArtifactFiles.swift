@@ -114,7 +114,7 @@ enum ArtifactFiles {
     }
     static func filename(_ title: String) -> String {
         let name = title.filter { !$0.isNewline && !"/:\\?%*|\"<>".contains($0) }.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? "Phone Agent" : String(name.prefix(80))
+        return name.isEmpty ? "Sela" : String(name.prefix(80))
     }
     static let header = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
     static let relations = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -225,7 +225,7 @@ enum ArtifactFiles {
         let colors = [("dk1", "171717"), ("lt1", "FFFFFF"), ("dk2", "353535"), ("lt2", "EEEEEE"), ("accent1", "246BFD"), ("accent2", "33AA88"), ("accent3", "AA55CC"), ("accent4", "CC9933"), ("accent5", "DD5566"), ("accent6", "4499AA"), ("hlink", "246BFD"), ("folHlink", "7755AA")].map { "<a:\($0.0)><a:srgbClr val=\"\($0.1)\"/></a:\($0.0)>" }.joined()
         let fill = "<a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill>"
         let line = "<a:ln w=\"12700\">\(fill)<a:prstDash val=\"solid\"/></a:ln>"
-        body["ppt/theme/theme1.xml"] = header + "<a:theme xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" name=\"Phone Agent\"><a:themeElements><a:clrScheme name=\"Phone Agent\">\(colors)</a:clrScheme><a:fontScheme name=\"Phone Agent\"><a:majorFont><a:latin typeface=\"Aptos\"/><a:ea typeface=\"PingFang SC\"/><a:cs typeface=\"\"/></a:majorFont><a:minorFont><a:latin typeface=\"Aptos\"/><a:ea typeface=\"PingFang SC\"/><a:cs typeface=\"\"/></a:minorFont></a:fontScheme><a:fmtScheme name=\"Phone Agent\"><a:fillStyleLst>\(fill)\(fill)\(fill)</a:fillStyleLst><a:lnStyleLst>\(line)\(line)\(line)</a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst>\(fill)\(fill)\(fill)</a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>"
+        body["ppt/theme/theme1.xml"] = header + "<a:theme xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" name=\"Sela\"><a:themeElements><a:clrScheme name=\"Sela\">\(colors)</a:clrScheme><a:fontScheme name=\"Sela\"><a:majorFont><a:latin typeface=\"Aptos\"/><a:ea typeface=\"PingFang SC\"/><a:cs typeface=\"\"/></a:majorFont><a:minorFont><a:latin typeface=\"Aptos\"/><a:ea typeface=\"PingFang SC\"/><a:cs typeface=\"\"/></a:minorFont></a:fontScheme><a:fmtScheme name=\"Sela\"><a:fillStyleLst>\(fill)\(fill)\(fill)</a:fillStyleLst><a:lnStyleLst>\(line)\(line)\(line)</a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst>\(fill)\(fill)\(fill)</a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>"
         extras["ppt/slideLayouts/slideLayout1.xml"] = "presentationml.slideLayout"; extras["ppt/slideMasters/slideMaster1.xml"] = "presentationml.slideMaster"; extras["ppt/theme/theme1.xml"] = "theme"
         return try package(main: "ppt/presentation.xml", type: "presentationml.presentation.main", extras: extras, body: body)
     }

@@ -10,6 +10,30 @@ func rejects(_ raw: String, _ label: String) {
     catch { checks += 1 }
 }
 
+// Existing saved settings enter long-task mode without losing their finite limit.
+let defaultSettings = AgentSettings()
+try check(defaultSettings.runsContinuously, "new tasks default to continuous execution")
+try check(defaultSettings.validStepConfiguration, "default finite step limit remains valid")
+try check(defaultSettings.allowsNextStep(after: 25), "continuous mode crosses the saved step limit")
+try check(defaultSettings.allowsNextStep(after: 100_000), "continuous mode supports long checkpoints")
+try check(!defaultSettings.allowsNextStep(after: -1), "negative checkpoints cannot run")
+try check(!defaultSettings.allowsNextStep(after: Int.max), "step counter cannot overflow")
+var legacySettingsObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(defaultSettings)) as! [String: Any]
+legacySettingsObject.removeValue(forKey: "continuousExecution")
+let legacySettings = try JSONDecoder().decode(AgentSettings.self, from: JSONSerialization.data(withJSONObject: legacySettingsObject))
+try check(legacySettings.runsContinuously && legacySettings.maxSteps == 25, "legacy settings migrate to long-task mode")
+var finiteSettings = defaultSettings
+finiteSettings.continuousExecution = false
+finiteSettings.maxSteps = 30
+try check(finiteSettings.allowsNextStep(after: 29), "finite mode allows its last configured action")
+try check(!finiteSettings.allowsNextStep(after: 30), "finite mode stops at the configured limit")
+let restoredFiniteSettings = try JSONDecoder().decode(AgentSettings.self, from: JSONEncoder().encode(finiteSettings))
+try check(!restoredFiniteSettings.runsContinuously && restoredFiniteSettings.maxSteps == 30, "finite preference survives save and restore")
+finiteSettings.maxSteps = 0
+try check(!finiteSettings.validStepConfiguration, "zero finite limit remains invalid")
+finiteSettings.maxSteps = 101
+try check(!finiteSettings.validStepConfiguration, "unsupported finite limit remains invalid")
+
 try check(Array(MouseProtocol.packet(.report, sequence: 1, x: 20, y: 10)) == [1,1,1,0,0,20,10,0,0,0], "mouse vector")
 try check(Array(MouseProtocol.packet(.click, sequence: 3, buttons: 1, delay: 3000)) == [1,2,3,0,1,0,0,0,184,11], "delay endian")
 try check(Array(MouseProtocol.packet(.report, sequence: 65535, x: -127, y: 127))[2...6] == [255,255,0,129,127], "signed and sequence")
@@ -21,14 +45,31 @@ try check(MouseProtocol.Status(Data([1,23,0,0,1,0,0,0]))?.ready == false, "suspe
 try check(MouseProtocol.Status(Data([1,15,1,0,1,0,0,0]))?.busy == true, "busy click")
 try check(MouseProtocol.Status(Data([1,7])) == nil, "truncated status")
 try check(MouseProtocol.Status(Data([2,7,0,0,1,0,0,0])) == nil, "unknown version")
+try check(MouseProtocol.Status(Data([1,7,0,0,9,0,0,0]))?.released(after: 9) == true, "matching released command")
+try check(MouseProtocol.Status(Data([1,7,0,0,8,0,0,0]))?.released(after: 9) == false, "old idle is not new click completion")
+try check(MouseProtocol.Status(Data([1,15,1,0,9,0,0,0]))?.released(after: 9) == false, "busy click not released")
+try check(MouseProtocol.Status(Data([1,7,1,0,9,0,0,0]))?.released(after: 9) == false, "held button not released")
+try check(MouseProtocol.Status(Data([1,7,0,2,9,0,0,0]))?.released(after: 9) == false, "error is not completion")
+try check(MouseProtocol.Status(Data([1,23,0,0,9,0,0,0]))?.released(after: 9) == false, "suspension invalidates completion")
 let tap = try AgentAction.decodeResponse("{\"kind\":\"tap\",\"x\":0.5,\"y\":0.7,\"reason\":\"点击\"}")
 try check(tap.kind == .tap && tap.x == 0.5, "valid tap")
 try check(try AgentAction.decodeResponse("```json\n{\"kind\":\"finish\",\"reason\":\"完成\"}\n```").kind == .finish, "markdown envelope")
+try check(AgentAction(kind: .finish, reason: "旧版结果").completionSummary == "旧版结果", "legacy completion remains readable")
+try check(AgentAction(kind: .finish, text: "  \n ", reason: "空报告回退").completionSummary == "空报告回退", "blank report uses caption")
+let detailedResult = String(repeating: "可见结果与覆盖限制。", count: 90)
+try check(try AgentAction.decodeResponse(String(data: JSONEncoder().encode(AgentAction(kind: .finish, text: detailedResult, reason: "完成")), encoding: .utf8)!).completionSummary == detailedResult, "bounded detailed report survives actual action decoding")
+rejects(String(data: try JSONEncoder().encode(AgentAction(kind: .finish, text: String(repeating: "a", count: 8001), reason: "完成")), encoding: .utf8)!, "oversized final report rejected")
 rejects("{\"kind\":\"tap\",\"x\":-0.1,\"y\":0.5,\"reason\":\"bad\"}", "negative target")
 rejects("{\"kind\":\"tap\",\"x\":1.01,\"y\":0.5,\"reason\":\"bad\"}", "outside image")
 rejects("{\"kind\":\"tap\",\"reason\":\"bad\"}", "missing target")
 rejects("{\"kind\":\"drag\",\"x\":0.1,\"y\":0.1,\"reason\":\"bad\"}", "missing endpoint")
 rejects("{\"kind\":\"scroll\",\"amount\":50,\"reason\":\"bad\"}", "excessive wheel")
+rejects("{\"kind\":\"scroll\",\"x\":0.5,\"amount\":-3,\"reason\":\"bad\"}", "partial scroll anchor x")
+rejects("{\"kind\":\"scroll\",\"y\":0.5,\"amount\":-3,\"reason\":\"bad\"}", "partial scroll anchor y")
+rejects("{\"kind\":\"scroll\",\"x\":1.1,\"y\":0.5,\"amount\":-3,\"reason\":\"bad\"}", "outside scroll anchor")
+let targetedScroll = try AgentAction.decodeResponse("{\"kind\":\"scroll\",\"x\":0.4,\"y\":0.6,\"amount\":-3,\"reason\":\"滚动评论\"}")
+try check(targetedScroll.x == 0.4 && targetedScroll.y == 0.6 && targetedScroll.amount == -3, "targeted wheel preserves anchor")
+try check(try AgentAction.decodeResponse("{\"kind\":\"scroll\",\"amount\":3,\"reason\":\"旧动作\"}").x == nil, "legacy wheel remains valid")
 rejects("{\"kind\":\"type\",\"text\":\"\",\"reason\":\"bad\"}", "empty text")
 rejects("{\"kind\":\"erase_all\",\"reason\":\"bad\"}", "unknown action")
 rejects("{\"kind\":\"wait\",\"seconds\":999,\"reason\":\"bad\"}", "excessive delay")

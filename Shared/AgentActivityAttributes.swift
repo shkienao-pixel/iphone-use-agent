@@ -11,6 +11,9 @@ struct AgentActivityAttributes: ActivityAttributes {
         var controlSessionID: UUID? = nil
         var canPause: Bool? = nil
         var canStop: Bool? = nil
+        var completed: Bool? = nil
+        var phase: String? = nil
+        var taskTitle: String? = nil
     }
     var taskID: UUID
 }

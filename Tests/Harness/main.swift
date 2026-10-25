@@ -36,6 +36,24 @@ for (json, expected) in [
 }
 let optionalFields = try request(#"{"operation":"home","target":null,"text":null}"#)
 check(optionalFields.operation == .home, "unused null fields are accepted")
+let savedID = UUID().uuidString
+for op in [PhoneHarnessRequest.Operation.xhs_collect, .chat_read, .chat_read_newer, .chat_summarize, .file_status, .file_send] {
+    let value = PhoneHarnessRequest(operation: op, target: savedID, operationID: "saved-workflow-001")
+    let decoded = try PhoneHarnessRequest.decode(String(decoding: JSONEncoder().encode(value), as: UTF8.self))
+    check(decoded == value, "saved workflow survives strict outer envelope")
+    rejects("saved workflow cannot invent a named scope") {
+        try PhoneHarnessRequest(operation: op, target: "unapproved chat", operationID: "saved-workflow-001").validate()
+    }
+    rejects("saved workflow cannot widen scope with text") {
+        try PhoneHarnessRequest(operation: op, target: savedID, text: "read all", operationID: "saved-workflow-001").validate()
+    }
+    rejects("saved workflow requires stable operation ID") {
+        try PhoneHarnessRequest(operation: op, target: savedID).validate()
+    }
+    rejects("saved workflow rejects control characters in operation ID") {
+        try PhoneHarnessRequest(operation: op, target: savedID, operationID: "workflow\n001").validate()
+    }
+}
 let ascii = String((32...126).compactMap(UnicodeScalar.init).map(Character.init)) + "\t\n\r"
 try PhoneHarnessRequest(operation: .type_text, text: ascii).validate()
 check(true, "all supported ASCII characters survive validation")
@@ -200,3 +218,19 @@ rejectsRecord("navigation cannot learn an unrelated destination", control: "navi
               destination: snapshot("search", at: now.addingTimeInterval(-1)))
 
 print("\(checks) phone-harness checks passed. Synthetic pages only; no network, model, Bluetooth, phone actions or performance claims.")
+
+// Model IDs belong to the observed frame; fresh frames require strict re-identification.
+do {
+    let old = PhoneUIElement(id: "ocr.old", label: "主屏幕", rect: PhoneUIRect(x: 0.4, y: 0.5, width: 0.1, height: 0.03), source: "ocr")
+    let previous = PhoneUISnapshot(deviceKey: "device", scene: "assistive-menu", elements: [old], capturedAt: Date())
+    var fresh = previous
+    fresh.elements[0].id = "ocr.new"
+    precondition(fresh.reidentifiedElement("ocr.old", from: previous)?.id == "ocr.new")
+    fresh.blockingOverlay = true; precondition(fresh.reidentifiedElement("ocr.old", from: previous) == nil)
+    fresh.blockingOverlay = false; fresh.scene = "other"; precondition(fresh.reidentifiedElement("ocr.old", from: previous) == nil)
+    fresh = previous; fresh.deviceKey = "different"; precondition(fresh.reidentifiedElement("ocr.old", from: previous) == nil)
+    fresh = previous; fresh.elements[0].rect.x += 0.1; precondition(fresh.reidentifiedElement("ocr.old", from: previous) == nil)
+    fresh = previous; fresh.elements.append(PhoneUIElement(id: "duplicate", label: old.label, rect: old.rect, source: "ocr")); precondition(fresh.reidentifiedElement("ocr.old", from: previous) == nil)
+    fresh = previous; fresh.elements[0].label = "锁定屏幕"; precondition(fresh.reidentifiedElement("ocr.old", from: previous) == nil)
+    print("7 fresh-frame target re-identification checks passed")
+}

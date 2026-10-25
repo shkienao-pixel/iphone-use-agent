@@ -84,30 +84,30 @@ struct MemoryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Text("保存你的偏好").font(.title2.weight(.semibold))
+                    Text("记忆与上下文").font(.title2.weight(.semibold))
                     Spacer()
                     Menu {
                         Button("导出记忆文字与索引") {
-                            do { exportDocument = ArtifactDocument(data: try model.memories.exportText()); exporting = true }
-                            catch { self.error = error.localizedDescription }
+                            Task {
+                                do { exportDocument = ArtifactDocument(data: try await model.memories.exportAllMemories()); exporting = true }
+                                catch { self.error = error.localizedDescription }
+                            }
                         }
                         Button("清空所有记忆", role: .destructive) { clear = true }
-                            .disabled(model.memories.records.isEmpty && model.memories.error.isEmpty)
                     } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("记忆管理")
                     Button { editor = MemoryEditorSeed(value: AssistantMemory(title: "", text: "")) } label: {
                         Image(systemName: "plus").frame(width: 44, height: 44).agentGlass(in: Circle(), interactive: true)
                     }.accessibilityLabel("新增记忆")
                 }
                 Toggle("使用本机记忆", isOn: Binding(get: { model.settings.useMemories == true }, set: { model.settings.useMemories = $0 })).tint(AgentPalette.accent)
-                Text("开启后，每次问题或任务最多引用 3 条相关记忆的文字，发送给你配置并授权的 AI 服务。关闭后仍可本机搜索。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                AssistantMemorySection(service: model.memories.intelligence, settings: model.settings, query: query)
                 TextField("搜索内容或意思", text: $query).agentField()
                 if searching { ProgressView() }
                 else if !query.isEmpty { Text(result.semantic ? "使用本机语义与关键词检索" : "此设备使用关键词检索").font(.caption).foregroundStyle(.secondary) }
                 if !model.memories.error.isEmpty { AgentNotice(text: model.memories.error, error: true) }
                 if !error.isEmpty { AgentNotice(text: error, error: true) }
                 let items = query.isEmpty ? model.memories.records : result.hits.map(\.memory)
-                if items.isEmpty { AgentEmptyState(title: query.isEmpty ? "还没有记忆" : "没有匹配内容", detail: "记下偏好，或从对话中保存回答。", icon: "bookmark") }
+                if !items.isEmpty { Text("手动保存").font(.subheadline).foregroundStyle(.secondary) }
                 ForEach(items) { memory in
                     VStack(alignment: .leading, spacing: 10) {
                         HStack { Text(memory.title).font(.headline); Spacer(); if !memory.enabled { Image(systemName: "eye.slash").accessibilityLabel("不引用") } }
@@ -131,15 +131,18 @@ struct MemoryView: View {
             let value = await model.memories.search(query)
             guard !Task.isCancelled else { return }; result = value; searching = false
         }
-        .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .json, defaultFilename: "Phone Agent 记忆.json") { result in
+        .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .json, defaultFilename: "Sela 记忆.json") { result in
             if case .failure(let failure) = result { error = failure.localizedDescription }; exportDocument = nil
         }
-        .sheet(item: $editor) { MemoryEditor(seed: $0) }
+        .sheet(item: $editor) { MemoryEditor(seed: $0).environmentObject(model) }
+        .onChange(of: model.settings.useMemories) { _, _ in Task { await model.memories.intelligence.settingsChanged(model.settings) } }
         .confirmationDialog("删除这条记忆？", isPresented: Binding(get: { delete != nil }, set: { if !$0 { delete = nil } }), titleVisibility: .visible) {
             Button("删除", role: .destructive) { if let delete { do { try model.memories.remove(delete.id) } catch { self.error = error.localizedDescription } }; delete = nil }
         }
         .confirmationDialog("清空本机记忆和保存的画面？", isPresented: $clear, titleVisibility: .visible) {
-            Button("清空", role: .destructive) { do { try model.memories.clear() } catch { self.error = error.localizedDescription } }
+            Button("清空", role: .destructive) {
+                Task { do { try await model.memories.intelligence.clearPersonalMemory(); try model.memories.clear() } catch { self.error = error.localizedDescription } }
+            }
         } message: { Text("此操作无法撤销，也不会删除 AI 服务已接收的数据。") }
     }
 }

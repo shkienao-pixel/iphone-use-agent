@@ -2,11 +2,12 @@ import Foundation
 import Combine
 
 enum QueueTaskState: String, Codable {
-    case waiting, running, suspended, completed, stopped, preview
+    case waiting, running, paused, suspended, completed, stopped, preview
     var label: String {
         switch self {
         case .waiting: return "等待执行"
         case .running: return "正在执行"
+        case .paused: return "已暂停"
         case .suspended: return "等待你确认"
         case .completed: return "已完成"
         case .stopped: return "已停止"
@@ -50,7 +51,7 @@ final class TaskQueueStore: ObservableObject {
             items = document.items.map { item in
                 var value = item
                 // Execution authority is never restored after a process restart.
-                if value.resumable {
+                if value.resumable, value.state != .paused {
                     value.state = .suspended
                     value.note = value.started ? "上次执行已中断；先核对实际结果，再继续。" : "重新打开 App 后需手动确认运行。"
                     if value.started { value.record.outcome = .interrupted }
@@ -64,11 +65,13 @@ final class TaskQueueStore: ObservableObject {
     private static func validate(_ items: [QueuedPhoneTask]) throws {
         guard items.count <= 20, Set(items.map(\.id)).count == items.count else { throw AgentError.message("队列最多保留 20 项，任务 ID 不能重复") }
         for item in items {
+            try ComposerAttachmentPolicy.validate(item.record.attachments ?? [])
             guard !item.record.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  (item.record.conversationReference?.utf8.count ?? 0) <= 64_000,
                   item.record.effectiveGoal.count <= 12000, item.record.title.count <= 80,
                   item.record.logs.count <= 150, (item.record.amendments ?? []).count <= 20,
-                  (0...100).contains(item.step), item.note.count <= 1000,
-                  (1...100).contains(item.settings.maxSteps),
+                  item.step >= 0, item.step < Int.max, item.note.count <= 1000,
+                  item.settings.validStepConfiguration,
                   item.settings.startDelay.isFinite, (0...30).contains(item.settings.startDelay),
                   item.settings.stepInterval.isFinite, (0...5).contains(item.settings.stepInterval),
                   (256...4096).contains(item.settings.imageMaxSide),
@@ -107,7 +110,23 @@ final class TaskQueueStore: ObservableObject {
         }
     }
     func append(_ item: QueuedPhoneTask) throws { try transaction { $0.append(item) } }
-    func remove(_ id: UUID) throws { try transaction { $0.removeAll { $0.id == id } } }
+    func remove(_ id: UUID) throws {
+        try transaction { values in
+            guard values.first(where: { $0.id == id })?.state != .running else { throw AgentError.message("请先终止正在执行的任务，再删除") }
+            values.removeAll { $0.id == id }
+        }
+    }
+    func reorder(_ orderedIDs: [UUID], excluding fixedID: UUID?, screenOnly: Bool = false) throws {
+        try transaction { values in
+            let indices = values.indices.filter { values[$0].id != fixedID && values[$0].resumable && values[$0].state != .running && (!screenOnly || (values[$0].settings.toolsOnly != true && values[$0].record.executionLane != "native")) }
+            let expected = indices.map { values[$0].id }
+            guard orderedIDs.count == expected.count, Set(orderedIDs) == Set(expected), Set(orderedIDs).count == orderedIDs.count else {
+                throw AgentError.message("队列已改变，请按最新任务列表重新排序")
+            }
+            let byID = Dictionary(uniqueKeysWithValues: indices.map { (values[$0].id, values[$0]) })
+            for (index, id) in zip(indices, orderedIDs) { values[index] = byID[id]! }
+        }
+    }
     func move(_ id: UUID, by offset: Int) throws {
         try transaction { values in
             guard let index = values.firstIndex(where: { $0.id == id }), values[index].state != .running else { return }
