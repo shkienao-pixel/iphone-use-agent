@@ -304,7 +304,7 @@ struct SettingsView: View {
                     Divider()
                     Toggle("启用系统工具", isOn: Binding(get: { model.settings.systemToolsEnabled == true }, set: { model.settings.systemToolsEnabled = $0; if !$0 { model.settings.toolsOnly = false } })).tint(AgentPalette.accent)
                     Toggle("仅使用系统工具", isOn: Binding(get: { model.settings.toolsOnly == true }, set: { model.settings.toolsOnly = $0 })).tint(AgentPalette.accent).disabled(model.settings.systemToolsEnabled != true)
-                    Text("日历、提醒、联系人、照片元数据与本 App 闹钟。每次读取或创建均需确认与系统授权。仅工具模式无需配件和屏幕共享，无法点击其他 App。混合模式仍需鼠标与整屏共享。")
+                    Text("日历、提醒、联系人、照片元数据与本 App 闹钟。自动模式下收到明确请求即执行；首次使用需系统授权。仅工具模式无需配件和屏幕共享，无法点击其他 App。混合模式仍需鼠标与整屏共享。")
                         .font(.caption).foregroundStyle(AgentPalette.secondaryText)
                 }.padding(.top, 16)
             }.font(.subheadline).agentPanel()
