@@ -107,7 +107,7 @@ enum ModelEndpointPolicy { static func url(_ endpoint: String) throws -> URL { U
     var metrics: RunMetricsRecorder? = nil
     func nextAction(task: String, jpeg: Data, width: Int, height: Int, history: [AgentLogEntry],
                     keyboardAvailable: Bool, mappedHomeAvailable: Bool,
-                    tokenLimit: Int? = nil, formatRetry: Bool = false, memoryContext: String = "", harnessContext: String = "", taskContext: String = "", attachments: [ComposerAttachment] = [], skillReference: String = "") async throws -> AgentAction {
+                    tokenLimit: Int? = nil, formatRetry: Bool = false, memoryContext: String = "", harnessContext: String = "", taskContext: String = "", attachments: [ComposerAttachment] = [], skillReference: String = "", nativeExecutionContext: String = "") async throws -> AgentAction {
         let timer = metrics?.begin(.model, label: "offline model fake")
         defer { if let timer { metrics?.end(timer, outcome: Task.isCancelled ? .cancelled : .completed) } }
         ModelProbe.calls += 1

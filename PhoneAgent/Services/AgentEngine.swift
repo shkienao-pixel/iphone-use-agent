@@ -614,7 +614,7 @@ final class AgentEngine: ObservableObject {
             }
         }
     }
-    private func executeTool(_ action: AgentAction, settings: AgentSettings, token: UUID) async throws {
+    @discardableResult private func executeTool(_ action: AgentAction, settings: AgentSettings, token: UUID) async throws -> String {
         guard settings.systemToolsEnabled == true, let systemTool, let id = currentRecord?.id else { throw AgentError.message("系统工具未启用") }
         let request = try SystemToolRequest.decode(action.text)
         transition(settings.confirmEachStep ? .awaitingApproval : .acting,
@@ -630,6 +630,7 @@ final class AgentEngine: ObservableObject {
             currentRecord?.nativeResults = NativeTaskResult.retained(currentRecord?.nativeResults ?? [], adding: card)
         }
         log("工具回执", result); transition(.observing, "工具已完成，正在核对后续任务")
+        return result
     }
     private func pauseAtStepLimit(_ settings: AgentSettings) {
         running = false; taskIndicator = .idle
@@ -641,6 +642,7 @@ final class AgentEngine: ObservableObject {
         do {
             var recoveries = 3
             var limit = settings.responseTokenLimit
+            var readProgress = NativeReadProgress()
             while currentStep < Int.max && settings.allowsNextStep(after: attemptSteps) {
                 let step = currentStep + 1
                 try stillCurrent(token); currentStep = step; transition(.observing, "第 \(step) 步：规划系统工具")
@@ -651,7 +653,7 @@ final class AgentEngine: ObservableObject {
                 do {
                     action = try await NativePlanningRecovery.nextAction(
                         stillCurrent: { try self.stillCurrent(token) },
-                        request: { try await client.nextAction(task: self.planningGoal(goal), jpeg: Data(), width: 0, height: 0, history: self.logs, keyboardAvailable: false, mappedHomeAvailable: false, tokenLimit: limit, memoryContext: context, taskContext: self.taskContext, attachments: self.currentRecord?.attachments ?? [], skillReference: self.currentRecord?.conversationReference ?? "") },
+                        request: { try await client.nextAction(task: self.planningGoal(goal), jpeg: Data(), width: 0, height: 0, history: self.logs, keyboardAvailable: false, mappedHomeAvailable: false, tokenLimit: limit, memoryContext: context, taskContext: self.taskContext, attachments: self.currentRecord?.attachments ?? [], skillReference: self.currentRecord?.conversationReference ?? "", nativeExecutionContext: readProgress.context(for: self.planningGoal(goal))) },
                         wait: { try await self.measuredWait(nanoseconds: $0) },
                         onRetry: { attempt, interval in
                             let text = "\(interval / 1_000_000_000) 秒后自动继续（\(attempt)/\(NativePlanningRecovery.delays.count)），已完成结果保留，可随时停止"
@@ -669,12 +671,30 @@ final class AgentEngine: ObservableObject {
                 case .finish: try finishAllowed(); running = false; taskIndicator = .completed; transition(.completed, action.completionSummary); savedSettings = nil
                 case .complete_subtask:
                     if settings.previewOnly { pendingAction = action; running = false; transition(.preview, action.reason); savedSettings = nil }
-                    else { try await completeSubtask(action, token: token, requiresConfirmation: settings.confirmEachStep) }
+                    else { readProgress.reset(); try await completeSubtask(action, token: token, requiresConfirmation: settings.confirmEachStep) }
                 case .ask_user: pendingAction = action; running = false; taskIndicator = .idle; transition(.needsUser, action.reason)
                 case .system_tool:
                     if settings.previewOnly { pendingAction = action; running = false; transition(.preview, action.reason); savedSettings = nil }
-                    else { executingAction = action; try await executeTool(action, settings: settings, token: token); executingAction = nil }
-                case .wait: try await measuredWait(nanoseconds: UInt64(max(0.4, min(10, action.seconds ?? 1)) * 1_000_000_000))
+                    else {
+                        let request = try SystemToolRequest.decode(action.text)
+                        switch readProgress.beforeDispatch(request, goal: planningGoal(goal)) {
+                        case .correctWithReceipt:
+                            log("重复只读规划已拦截", "本轮相同alarm_list已成功返回，没有再次派发SDK；已把真实回执和完成条件反馈给下一步。")
+                            continue
+                        case .pauseRepeatedPlan:
+                            running = false; taskIndicator = .idle
+                            log("重复只读规划已暂停", "已收到同条件真实回执并做过一次规划纠偏；没有再次调用SDK，也没有自动完成其它子任务。")
+                            transition(.needsUser, "本次只读结果已返回，但规划仍要求重复读取，已暂停以避免循环。请核对已有回执或明确新的查询条件。")
+                        case .execute:
+                            executingAction = action
+                            let result = try await executeTool(action, settings: settings, token: token)
+                            readProgress.succeeded(request, result: result, goal: planningGoal(goal), step: step)
+                            executingAction = nil
+                        }
+                    }
+                case .wait:
+                    readProgress.reset()
+                    try await measuredWait(nanoseconds: UInt64(max(0.4, min(10, action.seconds ?? 1)) * 1_000_000_000))
                 default: throw AgentError.message("当前为仅系统工具模式，不能执行鼠标动作。请在设置中切换模式")
                 }
                 if !running { break }

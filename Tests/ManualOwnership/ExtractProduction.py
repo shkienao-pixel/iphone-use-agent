@@ -23,6 +23,8 @@ def main():
     destination.mkdir(parents=True)
     vm = (root / "PhoneAgent/PhoneAgentViewModel.swift").read_text()
     ble = (root / "PhoneAgent/Services/BLETransport.swift").read_text()
+    shared = (root / "Shared/AssistantConversationContext.swift").read_text()
+    submission = member(shared, "struct ConversationTaskSubmission:")
     signatures = ["    func manualAction(allowsBackgroundScreen:",
                   "    @discardableResult\n    func pauseTask(", "    func stop()",
                   "    private func cancelVoicePreparation("]
@@ -33,15 +35,17 @@ def main():
     template = (target / "Environment.swift").read_text()
     assert template.count("// EXACT_PRODUCTION_VM_MEMBERS") == 1
     assert template.count("// EXACT_PRODUCTION_BLE_MEMBERS") == 1
+    assert template.count("// EXACT_PRODUCTION_SUBMISSION_TYPE") == 1
     environment = template.replace("// EXACT_PRODUCTION_VM_MEMBERS", "\n".join(members))
     environment = environment.replace("// EXACT_PRODUCTION_BLE_MEMBERS", "\n".join(ble_members))
+    environment = environment.replace("// EXACT_PRODUCTION_SUBMISSION_TYPE", submission)
     (destination / "Environment.swift").write_text(environment)
     names = ["manualAction", "pauseTask", "stop", "cancelVoicePreparation", "releaseController", "release"]
     for name, text in zip(names, members + ble_members):
         (destination / (name + ".swift.txt")).write_text(text)
     # Fresh whole source copies are per-run evidence, never embedded test inputs.
     originals = ["PhoneAgent/PhoneAgentViewModel.swift", "PhoneAgent/Services/BLETransport.swift",
-                 "Shared/InputReleaseController.swift"]
+                 "Shared/InputReleaseController.swift", "Shared/AssistantConversationContext.swift"]
     for name in originals:
         snapshot = destination / "current-source" / name
         snapshot.parent.mkdir(parents=True, exist_ok=True)

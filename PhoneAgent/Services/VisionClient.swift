@@ -183,7 +183,7 @@ struct VisionClient {
 
     func nextAction(task: String, jpeg: Data, width: Int, height: Int,
                     history: [AgentLogEntry], keyboardAvailable: Bool, mappedHomeAvailable: Bool,
-                    tokenLimit: Int? = nil, formatRetry: Bool = false, memoryContext: String = "", harnessContext: String = "", taskContext: String = "", attachments: [ComposerAttachment] = [], skillReference: String = "") async throws -> AgentAction {
+                    tokenLimit: Int? = nil, formatRetry: Bool = false, memoryContext: String = "", harnessContext: String = "", taskContext: String = "", attachments: [ComposerAttachment] = [], skillReference: String = "", nativeExecutionContext: String = "") async throws -> AgentAction {
         try ComposerAttachmentPolicy.validate(attachments)
         let modelTimer = metrics?.begin(.model, label: "visual action model request (including failed attempts)")
         var modelCompleted = false
@@ -195,13 +195,13 @@ struct VisionClient {
         let url = try ModelEndpointPolicy.url(settings.endpoint)
         guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AgentError.message("请先配置 API Key") }
         guard !settings.model.isEmpty else { throw AgentError.message("请配置支持图像的模型名称") }
-        let phoneControlSkill = try PhoneControlSkill.instructions()
+        let phoneControlSkill = settings.toolsOnly == true ? "" : (try PhoneControlSkill.instructions())
         let skillQuery = task + "\n" + skillReference
         let phoneAppSkills = try PhoneAppSkillCatalog.selection(for: skillQuery, visualMode: settings.toolsOnly != true)
         if !phoneAppSkills.names.isEmpty { metrics?.note("Bundled visual app skills loaded: " + phoneAppSkills.receipt) }
         let meituanAvailability = MeituanConnectionStore.verified ? "Meituan travel is connected; meituan_query follows the host execution policy. Announce a possible 1–2 minute wait." : "Meituan is not configured; do not call meituan_query."
 
-        let appleSupportSkill = try AppleSupportSkill.instructions(for: task)
+        let appleSupportSkill = settings.toolsOnly == true ? "" : (try AppleSupportSkill.instructions(for: task))
         let nativeSkills = settings.systemToolsEnabled == true ? try NativeSkillCatalog.selection(for: skillQuery) : nil
         if let nativeSkills { nativeSkills.runtimeReceipts.forEach { metrics?.note($0) } }
         let travelGuide = CtripStore.enabled && CtripStore.hasCredential
@@ -211,7 +211,7 @@ struct VisionClient {
         let paotuiGuide = paotuiConfigured ? "Meituan errands is configured. meituan_paotui reads addresses, searches POIs and previews real fees. Only native review UI can submit an order; this tool cannot submit or pay." : "Meituan errands is not authorized. Do not call meituan_paotui; direct the user to Tools & Connections > Meituan."
         let toolGuide = settings.systemToolsEnabled == true ? SystemToolRequest.instructions + "\n" + travelGuide + "\n" + paotuiGuide : "System tools are disabled. Never return kind=system_tool."
         let modeGuide = settings.toolsOnly == true ? "Tools-only mode: no screenshot is supplied. Choose only system_tool, complete_subtask, wait, finish, ask_user. Never infer live screen content. Unsupported GUI tasks require ask_user. Only finish when tool receipts establish the requested result." : "Visual mode: use the current screenshot and confirmed tool receipts."
-        let system = """
+        let visualSystem = """
         \(toolGuide)
         \(settings.executionPolicyInstructions)
         \(modeGuide)
@@ -268,8 +268,9 @@ struct VisionClient {
         \(appleSupportSkill)
         \(harnessContext.isEmpty ? "No local phone harness is available; do not return phone_tool." : PhoneHarnessManifest.instructions)
         """
+        let system = settings.toolsOnly == true ? NativeReadProgress.systemGuide(tools: toolGuide, policy: settings.executionPolicyInstructions, skills: [nativeSkills?.instructions ?? "", phoneAppSkills.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")) : visualSystem
         let instruction = ModelHistoryContext.instruction(task: task, width: width, height: height, history: history,
-            formatRetry: formatRetry, memoryContext: memoryContext, harnessContext: harnessContext, taskContext: taskContext)
+            formatRetry: formatRetry, memoryContext: memoryContext, harnessContext: harnessContext, taskContext: taskContext, toolsOnly: settings.toolsOnly == true, nativeExecutionContext: nativeExecutionContext)
         var content: [[String: Any]] = [["type": "text", "text": instruction]]
         content += try attachmentParts(attachments)
         if !jpeg.isEmpty {

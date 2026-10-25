@@ -76,12 +76,12 @@ def main():
  let capture: CaptureService, executor: MouseExecutor
  var phoneHarness: PhoneHarnessDriving?
  var runMetrics: RunMetricsRecorder?
- var memoryContext: ((String) async -> String)?
+ var memoryContext: ((String, AgentSettings) async -> String)?
  var logs: [AgentLogEntry] = []
  var taskContext = ""
  // This observation-only fixture has no submitted attachments; retain the
  // same optional checkpoint boundary as a full production task record.
- struct AttachmentCheckpoint { var attachments: [ComposerAttachment]? }
+ struct AttachmentCheckpoint { var attachments: [ComposerAttachment]?; var conversationReference: String? = nil }
  var currentRecord: AttachmentCheckpoint?
  var taskAttachments: [ComposerAttachment] { currentRecord?.attachments ?? [] }
  let operation = UUID()

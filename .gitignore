@@ -8,6 +8,10 @@ DerivedData/
 *.ipa
 *.dSYM/
 
+# Swift Package Manager generated files
+**/.build/
+**/.swiftpm/
+
 # Personal configuration and credentials
 .env
 .env.*

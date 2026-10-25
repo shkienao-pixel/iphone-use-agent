@@ -302,6 +302,32 @@ enum ScaffoldError: LocalizedError {
         }
     }
 
+    @MainActor static func pendingOwnership(_ log: Log) async throws {
+        for stopping in [false, true] {
+            for consent in [false, true] {
+                for engineState in 0..<3 {
+                    try await withCase(log, "pending submission ownership") { scope in
+                        let owner = scope.owner
+                        let pending = ConversationTaskSubmission(conversationID: UUID(), messageID: UUID(), goal: "synthetic pending task")
+                        if consent { owner.pendingConsentConversationTask = pending; owner.pendingConsentStart = true }
+                        else { owner.pendingConversationTask = pending }
+                        owner.engine.running = engineState > 0
+                        owner.engine.hasCurrentTask = engineState > 0
+                        owner.engine.currentRecord = engineState == 0 ? nil : .init(id: engineState == 1 ? pending.taskID : UUID())
+                        if stopping { owner.stop() } else { _ = owner.pauseTask() }
+                        let reports = owner.conversation.handoffReports
+                        log.expect(reports.count == 1 && reports.first?.messageID == pending.messageID && reports.first?.conversationID == pending.conversationID,
+                                   "pending stop/pause reports only to the owning chat and message")
+                        log.expect(owner.pendingConversationTask == nil && owner.pendingConsentConversationTask == nil && !owner.pendingConsentStart,
+                                   "pending and consent authority is revoked after stop/pause")
+                        let unstarted = reports.first?.text.contains("\u{4efb}\u{52a1}\u{672a}\u{542f}\u{52a8}") ?? false
+                        log.expect(unstarted == (engineState != 1), "only the same running task is reported as handed to an executor")
+                    }
+                }
+            }
+        }
+    }
+
     @MainActor static func main() async {
         var log: Log?
         do {
@@ -314,6 +340,7 @@ enum ScaffoldError: LocalizedError {
             try await oldWriter(created)
             try await reconnect(created)
             try await guards(created)
+            try await pendingOwnership(created)
             try created.save(complete: true)
             guard created.failures.isEmpty else { throw ScaffoldError.failedChecks }
             print("Extracted-method/scaffold ownership: \(created.checks) checks passed")

@@ -85,8 +85,10 @@ enum AgentError: LocalizedError {
 }
 
 @MainActor final class SyntheticExecutor { var calibrationInProgress = false }
+struct SyntheticRunningRecord { let id: UUID }
 @MainActor final class SyntheticEngine {
     var running = false, releasing = false, hasCurrentTask = false
+    var currentRecord: SyntheticRunningRecord?
     var pauseCalls = 0, handoffCalls = 0, stopCalls = 0
     func pause() { pauseCalls += 1; running = false }
     func handoff() { handoffCalls += 1; running = false }
@@ -98,10 +100,17 @@ enum AgentError: LocalizedError {
     func invalidatePreparations() { calls += 1 }
 }
 @MainActor final class SyntheticStopper {
+    struct HandoffReport { let text: String; let messageID: UUID; let conversationID: UUID }
+    var handoffReports: [HandoffReport] = []
     var stopCalls = 0, cancelCalls = 0
     func stop() { stopCalls += 1 }
     func cancel() { cancelCalls += 1 }
+    func reportTaskHandoff(text: String, to messageID: UUID, in conversationID: UUID) {
+        handoffReports.append(.init(text: text, messageID: messageID, conversationID: conversationID))
+    }
 }
+
+// EXACT_PRODUCTION_SUBMISSION_TYPE
 
 /// Complete extracted methods with explicit opaque dependency doubles.
 /// This is not PhoneAgentViewModel and does not construct any app services.
@@ -120,7 +129,7 @@ enum AgentError: LocalizedError {
     var manual: Task<Void, Never>?, voicePreparation: Task<Void, Never>?
     var recordingAudioOwner: UUID?, voiceMode: String?
     var pendingConsentStart = false
-    var pendingConversationTask: UUID?, pendingConsentConversationTask: UUID?
+    var pendingConversationTask: ConversationTaskSubmission?, pendingConsentConversationTask: ConversationTaskSubmission?
     var pendingConsentAttachments: [String] = []
     var voiceGeneration = UUID()
     var cancelCalibration: (() -> Void)?

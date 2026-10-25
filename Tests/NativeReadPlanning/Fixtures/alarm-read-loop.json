@@ -1,0 +1,156 @@
+{
+  "scope": "Actual stopped read-only task; no other tasks included",
+  "record": {
+    "attemptStartStep": 0,
+    "logs": [
+      {
+        "id": "0DF5FD62-0920-4910-A209-49539D5B84E7",
+        "step": 1,
+        "title": "本 App 的闹钟",
+        "date": 814633076.953925,
+        "detail": "只读查询 Sela 闹钟，核对指定 ID 和时间"
+      },
+      {
+        "id": "9DF61809-64E2-4D8C-ABBE-EE28A550F646",
+        "step": 1,
+        "title": "工具回执",
+        "date": 814633076.977267,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "7A6A4264-BE03-4ED9-A437-C39D327F5ADB",
+        "step": 2,
+        "title": "本 App 的闹钟",
+        "date": 814633083.862935,
+        "detail": "重新只读查询 Sela 闹钟，核对指定 ID 和时间"
+      },
+      {
+        "id": "FAA1FDD7-C134-4640-B925-1A0CFB623B44",
+        "step": 2,
+        "title": "工具回执",
+        "date": 814633083.879668,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "39A8C624-04B0-4543-960F-22ABA1B39119",
+        "step": 3,
+        "title": "本 App 的闹钟",
+        "date": 814633090.39584,
+        "detail": "执行新的只读查询，核对指定 Sela 闹钟"
+      },
+      {
+        "id": "CFDA2BA9-8ADA-462B-849D-109D33F82A38",
+        "step": 3,
+        "title": "工具回执",
+        "date": 814633090.416422,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "EE02D5BE-E3CC-4111-B887-C27092DD17D4",
+        "step": 4,
+        "title": "本 App 的闹钟",
+        "date": 814633097.94375,
+        "detail": "执行新的只读查询，核对指定 Sela 闹钟"
+      },
+      {
+        "id": "FEAD600C-4D46-4F02-8AFC-449B64CA2757",
+        "step": 4,
+        "title": "工具回执",
+        "date": 814633097.960392,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "F7343889-5E51-442B-87E7-604840A269A6",
+        "step": 5,
+        "title": "本 App 的闹钟",
+        "date": 814633104.43966,
+        "detail": "执行新的只读查询，核对指定 Sela 闹钟"
+      },
+      {
+        "id": "AE8903C9-CFB4-4AC2-AD0B-921689AC2FC9",
+        "step": 5,
+        "title": "工具回执",
+        "date": 814633104.457169,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "9EE3A6AA-41CD-496B-8944-006C4DB6AE11",
+        "step": 6,
+        "title": "本 App 的闹钟",
+        "date": 814633110.666119,
+        "detail": "执行新的只读查询，核对指定 Sela 闹钟"
+      },
+      {
+        "id": "C0F36640-2D02-4A36-B9EF-6126980075C2",
+        "step": 6,
+        "title": "工具回执",
+        "date": 814633110.688214,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "588AF768-2D1F-423B-B4BA-76AB26177238",
+        "step": 7,
+        "title": "本 App 的闹钟",
+        "date": 814633117.657071,
+        "detail": "执行新的只读查询，核对指定 Sela 闹钟"
+      },
+      {
+        "id": "7ABDC847-05E3-4563-812A-91FC57070AF2",
+        "step": 7,
+        "title": "工具回执",
+        "date": 814633117.674729,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "101A6ED9-4EF0-4709-8715-901C20203220",
+        "step": 8,
+        "title": "本 App 的闹钟",
+        "date": 814633123.64213,
+        "detail": "执行新的只读查询，核对指定 Sela 闹钟"
+      },
+      {
+        "id": "423D48AB-400F-4090-9EAF-2E21EF9E3B90",
+        "step": 8,
+        "title": "工具回执",
+        "date": 814633123.660013,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "32B3CB03-6C46-4A77-9B75-4302098C8B7F",
+        "step": 9,
+        "title": "本 App 的闹钟",
+        "date": 814633128.936945,
+        "detail": "执行新的只读查询，核对指定 Sela 闹钟"
+      },
+      {
+        "id": "C1C60D6C-1F53-4883-8CF2-BFFF6A3B6B71",
+        "step": 9,
+        "title": "工具回执",
+        "date": 814633128.956924,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      },
+      {
+        "id": "8016512D-B6EB-4775-B665-DC2E2547C019",
+        "step": 10,
+        "title": "本 App 的闹钟",
+        "date": 814633136.225022,
+        "detail": "实际执行新的只读查询，核对 Sela 闹钟"
+      },
+      {
+        "id": "D85AFA31-4290-470B-9C9A-D7BFB7327DF6",
+        "step": 10,
+        "title": "工具回执",
+        "date": 814633136.240693,
+        "detail": "[{\"id\":\"870AC655-5D25-48DA-974C-C4E4FA94AB5C\",\"schedule\":{\"fixed\":{\"_0\":814669800}},\"state\":{\"scheduled\":{}}}]\n本 App 闹钟总数：1，返回前 20 项"
+      }
+    ],
+    "goal": "执行一次新的只读核对：实际调用 alarm_list 查询 Sela 自己的闹钟，核对 ID 870AC655-5D25-48DA-974C-C4E4FA94AB5C 是否仍安排在2026年10月26日09:10（Asia/Shanghai）。不要创建、修改或取消任何闹钟，不用查询其他App。",
+    "id": "C695181A-344E-4115-810A-8914F6BC699A",
+    "summary": "已停止",
+    "createdAt": 814633069.849642,
+    "checkpointStep": 11,
+    "updatedAt": 814633138.637915,
+    "title": "执行一次新的只读核对：实际调用 alarm_list 查询 Sela 自",
+    "outcome": "stopped"
+  }
+}

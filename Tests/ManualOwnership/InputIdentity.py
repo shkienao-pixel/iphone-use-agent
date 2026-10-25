@@ -6,7 +6,7 @@ import json
 import sys
 
 PRODUCTION = ["PhoneAgent/PhoneAgentViewModel.swift", "PhoneAgent/Services/BLETransport.swift",
-              "Shared/InputReleaseController.swift"]
+              "Shared/InputReleaseController.swift", "Shared/AssistantConversationContext.swift"]
 
 
 def digest(files):
