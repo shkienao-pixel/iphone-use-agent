@@ -67,11 +67,17 @@ import Foundation
         }
         parallel.backgroundTasks.records = nativeRecords
         parallel.backgroundTasks.activeIDs = Set(nativeRecords.map(\.id))
-        let parallelMessages = history(linked, offers: (0..<24).map { offer("MU\(4000 + $0) " + String(repeating: "\\\"航班条件", count: 1000)) }, text: "候选")
+        let screenMessages = history(linked, offers: (0..<24).map { offer("MU\(4000 + $0) " + String(repeating: "\\\"航班条件", count: 1000)) }, text: "候选")
+        let isolatedParallelPayload = try payload(parallel.unifiedTaskContext(history: screenMessages))
+        expect(!isolatedParallelPayload.tasks.contains { $0["execution"] == "native" },
+               "Active native tasks from other conversations cannot enter the current chat context")
+        let parallelMessages = screenMessages + nativeRecords.map {
+            AssistantMessage(role: "assistant", text: "本对话原生任务", taskID: $0.id)
+        }
         let parallelContext = parallel.unifiedTaskContext(history: parallelMessages)
         let parallelPayload = try payload(parallelContext)
         expect(Set(nativeRecords.map { $0.id.uuidString }).isSubset(of: Set(parallelPayload.tasks.map { $0["id"]! })),
-               "Every active or queued native task keeps its actual ID even beside long flight references")
+               "Every linked active native task keeps its actual ID even beside long flight references")
         expect(parallelPayload.offers.count == 24 && parallelContext.count <= 64_000 && parallelContext.utf8.count <= 250_000,
                "Twenty native tasks, screen task and twenty-four flight cards share a bounded wire context")
         expect(parallelPayload.tasks.filter { $0["execution"] == "native" }.count == 20,

@@ -18,9 +18,15 @@ struct ReferenceRecord: Equatable {
     var activeIDs = Set<UUID>()
     func token(_ id: UUID) -> UUID? { activeIDs.contains(id) ? id : nil }
 }
+@MainActor final class ReferenceConversation {
+    let currentConversationID = UUID()
+    var focusedTaskID: UUID?
+}
 @MainActor final class PhoneAgentViewModel {
     let history = ReferenceHistory(), engine = ReferenceEngine()
     let backgroundTasks = ReferenceBackgroundTasks()
+    let conversation = ReferenceConversation()
+    var pendingConversationTask: ConversationTaskSubmission?
     var unifiedFocusedTaskID: UUID?
     // EXACT_PRODUCTION_CONTEXT
 }
