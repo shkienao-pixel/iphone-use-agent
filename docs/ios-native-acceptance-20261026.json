@@ -1,18 +1,19 @@
 {
   "schemaVersion": 1,
-  "asOfLocal": "2026-10-26 05:18 +08:00",
+  "asOfLocal": "2026-10-26 05:44 +08:00",
   "targetDevice": "iPhone 13 Pro",
   "esp32Used": false,
   "microphoneTested": false,
   "atomicSkills": 10,
   "atomicSteps": 61,
-  "currentInstalledBuild": 203,
-  "actualRuntimeSourceRevision": "e80151bcf335c91a9651f2ed9cef98f813143b15+sha256:f836887f93a9655d034965388684a4ee5973b1f83e356b7fe9639401ab500053",
+  "currentInstalledBuild": 205,
+  "actualRuntimeSourceRevision": "972b11849a544a13f4a74c5ac5ab7ef3cda843fd+sha256:fc6df806787dc5a3e1c822fa5754d7e99becebc8af999ccadb4328a35cc1ed5a",
   "latestFrozenFullChecks": {
     "inputFileCount": 678,
     "passed": true,
-    "commit": "d526c134816a8276fada80e3cdf10ee080bdb11b",
-    "build": 204
+    "commit": "972b11849a544a13f4a74c5ac5ab7ef3cda843fd",
+    "build": 205,
+    "checkInputSHA256": "d0443edadb7bfa03d02d0135d6af754582314d2bdb02e122830777ff7539b6fd"
   },
   "additionalOwnedHarnessCommit": "6d414d9",
   "additionalHarnessGuardsPhysicalAcceptancePending": true,
@@ -24,26 +25,30 @@
     "H21": "203 normal Agent seededthrough existing debug3actualreads,sourcecards/report IDs/source revision; no physicalUI acceptance",
     "H22": "203actualmain Stop backend after2reads;36.565s stable;realcold6stores unchanged; no physicalStopbutton acceptance",
     "H20": "203 normal Agent840real reads280distinctranges,5633.0135s841models;all sources/metadata/report/snapshots/cold6stores pass;120min targetnotreached,physicalUIpending",
-    "H24": "203newemptychat stop-control hasno taskauthority/newtask;originaltask continues21realreads125.9185s22models;allsource/report/snapshots/cold6stores pass;physicalUIpending"
+    "H24": "203newemptychat stop-control hasno taskauthority/newtask;originaltask continues21realreads125.9185s22models;allsource/report/snapshots/cold6stores pass;physicalUIpending",
+    "A25": "205one realalarm_list,2models11.57751s,0writes;all10runtimeguidebytes/full signedsourceidentity matched;actualfullClockcard/currentconversation/fullsnapshotverified;physicalSend/reportexpansionpending"
   },
   "remaining": [
-    "Mac unlock required for native Mac interface inspection; XCTest19/20 automation init failed",
-    "203 exact duplicate-draft marker cold regression pending",
-    "Independent120minute duration target not reached;203new physical input/card/rendering/Stop-button checks pending",
-    "positive actual asleep duration/workout accuracy and Music positive playback pending",
-    "new controlled60-120s radio-off case not executed; current control transport network"
+    "Mac native interface locked; XCTest19/20 automation initialization failed; no fresh physical operator ready",
+    "Exact known duplicate-draft marker cold regression still pending",
+    "Independent120minute target not reached; final physicalSend/Stop/report-expansion pending",
+    "Positive actual asleep duration/workout accuracy and Music positive playback pending",
+    "New controlled60-120s radio-off case not executed; current control transport network"
   ],
   "privateEvidencePolicy": "Raw health values, phone containers, auth, env, screenshots and output remain local and are excluded from GitHub",
   "githubPublication": {
     "deadlineLocal": "2026-10-26 08:30 +08:00",
     "repository": "shkienao-pixel/iphone-use-agent",
-    "status": "prepared_not_pushed"
+    "status": "verified_code_prepared_for_scheduled_0830_publication_not_pushed"
   },
   "finalBuildPreparation": {
     "targetBuild": 205,
-    "fullFrozenChecksAndSignInstallStillPending": true,
+    "fullFrozenChecksAndSignInstallStillPending": false,
     "settingsCopyAlignedWithAutomaticExecution": true,
-    "previous204FullFrozenChecksPassed": true
+    "previous204FullFrozenChecksPassed": true,
+    "first205FullChecksCancelledNotPassed": true,
+    "second205FullFrozenChecksPassed": true,
+    "actualFinalNativeRuntimeAndGuidesVerified": true
   },
   "savedTaskLinkCardRegression": {
     "beforeBuild": 203,
@@ -52,7 +57,20 @@
     "sameSourceBoundNativeCardRendererUsed": true,
     "completedReportExpandable": true,
     "retainedLogCountNoLongerLabelledActions": true,
-    "postFixPhysicalScreenshotAcceptancePending": true,
-    "physicalTapAcceptance": false
-  }
+    "postFixPhysicalScreenshotAcceptancePending": false,
+    "physicalTapAcceptance": false,
+    "actualCompleteVisibleHealthCards": 2,
+    "anotherCardPartlyVisible": true,
+    "threePersistedSourceCardsExact": true,
+    "normalLinkNavigationFourStoresByteEqual": true
+  },
+  "finalInstallRetention": {
+    "sixCriticalStoresByteEqual": true,
+    "allEightOriginalMemoryFilesRetained": true,
+    "originalPreferencesSemanticEqual": true,
+    "officialPlanGrantRetained": true,
+    "noKeychainExport": true,
+    "noReplay": true
+  },
+  "sourceAndDocsIdentity": "Runtime/tested source frozen at the stated commit; subsequent changes are release documentation only"
 }
