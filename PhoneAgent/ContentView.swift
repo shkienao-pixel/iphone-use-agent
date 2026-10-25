@@ -982,7 +982,6 @@ struct ContentView: View {
             }
             if !nativeResults.isEmpty {
                 NativeTaskResultCards(results: nativeResults)
-                    .accessibilityIdentifier("task.nativeResults." + record.id.uuidString)
             }
             let response = !nativeResults.isEmpty && record.outcome == .completed ? record.summary
                 : isCurrentConversation && model.engine.running ? "正在处理当前步骤" : isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
