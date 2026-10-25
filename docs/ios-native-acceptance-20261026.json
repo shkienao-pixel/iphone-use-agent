@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "asOfLocal": "2026-10-26 05:44 +08:00",
+  "asOfLocal": "2026-10-26 05:50 +08:00",
   "targetDevice": "iPhone 13 Pro",
   "esp32Used": false,
   "microphoneTested": false,
@@ -29,7 +29,7 @@
     "A25": "205one realalarm_list,2models11.57751s,0writes;all10runtimeguidebytes/full signedsourceidentity matched;actualfullClockcard/currentconversation/fullsnapshotverified;physicalSend/reportexpansionpending"
   },
   "remaining": [
-    "Mac native interface locked; XCTest19/20 automation initialization failed; no fresh physical operator ready",
+    "Mac was still locked at05:45; XCTest19/20 automation init failed; no fresh physical operator ready",
     "Exact known duplicate-draft marker cold regression still pending",
     "Independent120minute target not reached; final physicalSend/Stop/report-expansion pending",
     "Positive actual asleep duration/workout accuracy and Music positive playback pending",
@@ -72,5 +72,16 @@
     "noKeychainExport": true,
     "noReplay": true
   },
-  "sourceAndDocsIdentity": "Runtime/tested source frozen at the stated commit; subsequent changes are release documentation only"
+  "sourceAndDocsIdentity": "Runtime/tested source frozen at the stated commit; subsequent changes are release documentation only",
+  "macUIReadinessLastCheckedLocal": "2026-10-26 05:45 +08:00",
+  "normalAppCleanup": {
+    "freshNormalLaunchWithNoDebugArguments": true,
+    "optedInDebugControlStopped": true,
+    "debugStateNoLongerUpdating": true,
+    "sixStoresByteEqual": true,
+    "eightOriginalMemoryFilesAndPreferencesRetained": true,
+    "noReplay": true,
+    "actualA25CardVisibleAfterNormalColdLaunch": true,
+    "noHistoryOrUnknownReceiptCleanup": true
+  }
 }
