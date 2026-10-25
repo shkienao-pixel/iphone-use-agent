@@ -23,7 +23,7 @@ final class NativePanelUITests: XCTestCase {
         var errorDescription: String? { if case let .invalid(message) = self { return message }; return nil }
     }
     let files = FileManager.default
-    var lastFrame: (UUID, Date)?
+    var lastFrame: (UUID, Date, String)?
     var session: UUID!
     var selaSession: String!
     var selaBundle: String!
@@ -80,11 +80,18 @@ final class NativePanelUITests: XCTestCase {
             line.contains("SecureTextField") || line.contains("API Key") ? "[credential field omitted]" : line
         }.joined(separator: "\n")
         try safeTree.write(to: root.appendingPathComponent(tree), atomically: true, encoding: .utf8)
-        lastFrame = (id, date)
+        lastFrame = (id, date, bundle)
         return ["frameID": id.uuidString, "capturedAt": date.timeIntervalSince1970, "image": png, "tree": tree]
     }
     @MainActor func perform(_ command: Command) throws -> [String: Any] {
         let target = try app(command.bundle)
+        let foregroundOperations: Set<String> = ["tap", "type_text", "replace_composer", "swipe_up", "swipe_down",
+                                                "read_fixture_note", "replace_observed_field", "tap_screen", "long_press_screen"]
+        if foregroundOperations.contains(command.operation) {
+            guard command.bundle == "com.apple.springboard" || target.state == .runningForeground else {
+                throw TransportError.invalid("Activate the target App before interaction; background UI queries are excluded")
+            }
+        }
         switch command.operation {
         case "ping": return ["ready": true]
         case "snapshot": return try snapshot(target, bundle: command.bundle ?? selaBundle!)
@@ -190,6 +197,7 @@ final class NativePanelUITests: XCTestCase {
             return ["inputMatched": true, "inputCharacters": text.count]
         case "tap_screen", "long_press_screen":
             guard let frame = lastFrame, command.frameID == frame.0, Date().timeIntervalSince(frame.1) <= 60,
+                  frame.2 == (command.bundle ?? selaBundle!),
                   let x = command.x, let y = command.y, (0...1).contains(x), (0...1).contains(y) else {
                 throw TransportError.invalid("A recent, explicitly inspected snapshot is required for a screen tap")
             }
