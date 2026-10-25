@@ -94,6 +94,10 @@ def audit(task_id, snapshots, receipts, expected=None, before_receipts=None, fin
     by_hash, ranges, counts = {}, collections.defaultdict(set), collections.Counter()
     bounds = []
     for entry in raw:
+        if not integer(entry['step']) or entry['step'] < 1 or not number(entry['date']):
+            raise ValueError('Invalid actual action step or log timestamp')
+        if str(uuid.UUID(entry['id'])).upper() != entry['id']:
+            raise ValueError('Invalid original log identity')
         text = entry['detail']
         if len(text.encode()) > 48_000:
             raise ValueError('Native Health result exceeds its completion identity bound')

@@ -95,6 +95,11 @@ class EvidenceTests(unittest.TestCase):
         other = str(uuid.uuid4()).upper(); _, rows = fixture(other)
         self.assertEqual(self.audit({**self.receipts, **rows})['actualCompletedReadsAudited'], 1)
 
+    def test_invalid_action_step_timestamp_or_log_identity_is_rejected(self):
+        for field, value in [('step', True), ('date', float('inf')), ('id', 'not-a-source-identity')]:
+            entry = copy.deepcopy(self.entry); entry[field] = value
+            with self.assertRaises(ValueError): self.audit(entries=[entry])
+
     def test_pruned_snapshots_are_unioned_without_recreating_logs(self):
         other, rows = fixture(self.task, step=2, day=2)
         result = module.audit(self.task, [snapshot(self.task, [self.entry]), snapshot(self.task, [other])], {**self.receipts, **rows})
