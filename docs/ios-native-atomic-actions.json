@@ -55,8 +55,8 @@
     {
       "skill": "ios-calendar",
       "path": "Skills/ios-calendar/SKILL.md",
-      "bodySHA256": "9fb67c363735aa2fcb25355c05f278b90adeb9c3f89c34fa1e6ecee704c8ee41",
-      "utf8Bytes": 4610,
+      "bodySHA256": "f8d3937be850cf85b6c0a372a20c1614b208c04ea1e8f7c875e53f27869accd8",
+      "utf8Bytes": 5113,
       "atomicSteps": [
         {
           "id": "C01",
@@ -407,8 +407,8 @@
     {
       "skill": "ios-reminders",
       "path": "Skills/ios-reminders/SKILL.md",
-      "bodySHA256": "e0b90c7790025177d69a991f0e5a7bda9f9405d610321f44f291b4084c18d77f",
-      "utf8Bytes": 5049,
+      "bodySHA256": "6a3f8e4ada16d95b8d02cb390a4303d8fe2bc341358f7bc853d44ee5c212c91e",
+      "utf8Bytes": 5544,
       "atomicSteps": [
         {
           "id": "R01",
@@ -438,7 +438,7 @@
           "id": "R05",
           "responsibility": "回读实际状态",
           "inputAndCompletionEvidence": "任务要求核对或恢复旧提交时查询；使用实际到期字段",
-          "failureOrUnknownHandling": "未返回时间不能编造时间，返回号码不冒充系统对象ID"
+          "failureOrUnknownHandling": "未返回时间不能编造时间，本地回执ID不能冒充系统对象ID"
         },
         {
           "id": "R06",
@@ -458,5 +458,9 @@
   "actualFullyVisibleRuntimeReceipts": 6,
   "allTenPackagedGuidesExactSourceMatched": true,
   "scopeProbeBusinessAcceptance": true,
-  "scopeProbeEvidence": "output/ios-native-longrun-20261025/ATOMIC-GUIDES-A12/verification.json"
+  "scopeProbeEvidence": "output/ios-native-longrun-20261025/ATOMIC-GUIDES-A12/verification.json",
+  "nextCandidateGuideVersion": 137,
+  "perGuideRuntimeEvidenceRepairInstalled": false,
+  "structuredEventWriteReceiptsInstalled": false,
+  "sourceFieldsRefreshedAt": "2026-10-25T14:51:30.678960+00:00"
 }

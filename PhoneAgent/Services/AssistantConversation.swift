@@ -294,9 +294,9 @@ final class AssistantConversation: ObservableObject {
     func selectSequence(_ frames: [CameraObservationFrame]) { selectedFrame = nil; selectedSequence = frames }
     func retainDraftAttachments(_ attachments: [ComposerAttachment], conversationID: UUID) {
         guard conversationID == currentConversationID, !loading,
-              (try? ComposerAttachmentPolicy.validate(attachments)) != nil,
-              retryAttachments != attachments else { return }
-        retryAttachments = attachments
+              (try? ComposerAttachmentPolicy.validate(attachments)) != nil else { return }
+        if retryAttachments != attachments { retryAttachments = attachments }
+        saveCurrent()
     }
     func cancel() {
         if let live = liveRequests.removeValue(forKey: currentConversationID) {
@@ -313,6 +313,27 @@ final class AssistantConversation: ObservableObject {
         loading = false
         saveCurrent()
         transientStates[currentConversationID] = .init(error: error, attachments: retryAttachments, route: lastRoute, replyID: lastRoutedReplyID)
+    }
+
+    /// Keep unmatched legacy input reachable without asserting it was never executed.
+    @discardableResult
+    func preserveLegacyInput(_ text: String, attachments: [ComposerAttachment]) -> Bool {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty else { return true }
+        guard text.count <= 4000, (try? ComposerAttachmentPolicy.validate(attachments)) != nil else {
+            storageError = "遗留输入未能存入对话记录，原任务文字和附件仍保留，请先核对输入范围。"
+            return false
+        }
+        if conversations.contains(where: { $0.messages.isEmpty && $0.draft == text && ($0.draftAttachments ?? []) == attachments }) { return true }
+        let sourceTitle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = sourceTitle.isEmpty ? "遗留附件" : String(("遗留输入 · " + sourceTitle).prefix(80))
+        let record = AssistantConversationRecord(id: UUID(), title: title,
+            messages: [], createdAt: Date(), updatedAt: Date(), recipient: "", draft: text,
+            draftAttachments: attachments.isEmpty ? nil : attachments)
+        do {
+            try store.upsert(record, currentConversationID: currentConversationID)
+            conversations = store.records; storageError = ""
+            return true
+        } catch { storageError = error.localizedDescription; return false }
     }
 
     /// Starts a separate chat while preserving the previous messages and draft.
@@ -479,7 +500,7 @@ final class AssistantConversation: ObservableObject {
         createdAt = record.createdAt
         contextReferences = messages.last(where: { $0.role == "assistant" }).map { references(for: $0) } ?? []
         let transient = transientStates[record.id]
-        error = transient?.error ?? ""; retryAttachments = transient?.attachments ?? []
+        error = transient?.error ?? ""; retryAttachments = transient?.attachments ?? record.draftAttachments ?? []
         lastRoute = transient?.route; lastRoutedReplyID = transient?.replyID
         if let live = liveRequests[record.id] {
             generation = live.token; request = live.task; pendingMessageID = live.userMessageID
@@ -492,7 +513,7 @@ final class AssistantConversation: ObservableObject {
         let previous = conversations.first(where: { $0.id == currentConversationID })
         let title = String((messages.first(where: { $0.role == "user" })?.text ?? draft)
             .trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
-        guard !messages.isEmpty || !draft.isEmpty else {
+        guard !messages.isEmpty || !draft.isEmpty || !retryAttachments.isEmpty else {
             if previous != nil {
                 conversations.removeAll { $0.id == currentConversationID }
                 persist()
@@ -501,7 +522,8 @@ final class AssistantConversation: ObservableObject {
         }
         var record = AssistantConversationRecord(id: currentConversationID, title: title.isEmpty ? "新对话" : title,
             messages: messages, createdAt: createdAt, updatedAt: previous?.updatedAt ?? Date(), recipient: recipient,
-            draft: String(draft.prefix(4000)), contextReferences: contextReferences)
+            draft: String(draft.prefix(4000)), draftAttachments: retryAttachments.isEmpty ? nil : retryAttachments,
+            contextReferences: contextReferences)
         // Reference disclosure is derived from stored messages. Filtering a
         // legacy disclosure on open/cancel must not rewrite history or recency.
         var comparablePrevious = previous

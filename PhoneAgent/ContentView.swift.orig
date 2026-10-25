@@ -1,0 +1,1357 @@
+import SwiftUI
+
+struct ContentView: View {
+    @EnvironmentObject private var model: PhoneAgentViewModel
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var selectedDestination: WorkspaceDestination = .tasks
+    @State private var toolsOrigin: WorkspaceDestination = .tasks
+    @State private var toolsPath: [WorkspaceDestination] = []
+    @State private var settingsPageOpen = false
+    @State private var navigationForward = true
+    @State private var calibration: CalibrationModel?
+    @State private var showCalibration = false
+    @State private var calibrationAutoStart = false
+    @State private var pendingCalibration: Bool?
+    @State private var sheet: WorkspaceSheet?
+    @State private var pendingSheet: WorkspaceSheet?
+    @State private var dismissingSheet = false
+    @State private var confirmingWorkbenchExit = false
+    @State private var pendingDestination: WorkspaceDestination?
+    @State private var pendingDestinationSheet: WorkspaceSheet?
+    @State private var pendingAssistantAction: AssistantNavigationAction?
+    @State private var pendingTaskAction: TaskNavigationAction?
+    @State private var screen: TaskScreen = .draft
+    @State private var sidebarOpen = false
+    @State private var modeSwitcherOpen = false
+    private enum AssistantNavigationAction {
+        case create, open(UUID)
+    }
+    private enum TaskNavigationAction {
+        case open(UUID)
+    }
+    @State private var reviewVoicePhase: DictationPhase?
+    private let reviewVoiceError: String
+    @State private var dictatedDraft: String?
+    @State private var voiceCommandTask: Task<Void, Never>?
+    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.28, dampingFraction: 1))) private var sidebarDrag: CGFloat = 0
+    @State private var viewportWidth: CGFloat = 393
+    @State private var preparationExpanded = false
+    @State private var configurationCompletionPending = false
+    @State private var showingConfigurationComplete = false
+    @State private var expandedSteps = false
+    @State private var followLatest = true
+    @State private var appeared = false
+    @State private var amendmentDrafts: [UUID: String] = [:]
+    @State private var searchText = ""
+    @State private var sidebarSearchExpanded = false
+    @StateObject private var attachmentDraft = ComposerAttachmentStore()
+    @State private var attachmentSnapshots: [TaskScreen: [ComposerAttachment]] = [:]
+    @State private var attachmentSelectionID = UUID()
+    @State private var showAttachmentPhotos = false
+    @State private var showAttachmentFiles = false
+    @FocusState private var composing: Bool
+    @Namespace private var glassNamespace
+    private var calibrated: Bool { model.calibrationReady }
+    private var sidebarWidth: CGFloat {
+        min(viewportWidth * (typeSize.isAccessibilitySize ? 0.92 : 0.84), typeSize.isAccessibilitySize ? 440 : 360)
+    }
+    private var sidebarScrimColor: Color {
+        colorScheme == .light ? Color.white.opacity(0.4) : Color.black.opacity(0.4)
+    }
+    private var busy: Bool { model.interactionBusy }
+    private var displayedRecord: PhoneTaskRecord? {
+        guard case .conversation(let id) = screen else { return nil }
+        if model.engine.currentRecord?.id == id { return model.engine.currentRecord }
+        return model.history.records.first { $0.id == id }
+    }
+    private var isCurrentConversation: Bool {
+        guard let record = displayedRecord else { return false }
+        return record.id == model.engine.currentRecord?.id
+    }
+    private var composingSupplement: Bool {
+        guard let record = displayedRecord, isCurrentConversation else { return false }
+        return model.engine.hasCurrentTask || !(amendmentDrafts[record.id] ?? "").isEmpty
+    }
+    private var composerText: Binding<String> {
+        if composingSupplement, let id = displayedRecord?.id {
+            return Binding(get: { amendmentDrafts[id] ?? "" }, set: { amendmentDrafts[id] = $0 })
+        }
+        return $model.goal
+    }
+    private var isTaskHome: Bool { selectedDestination == .tasks && displayedRecord == nil }
+    private var homeInputActive: Bool { composing || model.voiceMode != nil || reviewVoicePhase != nil }
+    private var inputBlocked: Bool {
+        attachmentDraft.importing || model.preparingAutomatically || model.recordingAudioOwner != nil || model.queueSwitching || model.calibrating || model.manualBusy || model.voicePending || model.engine.releasing
+    }
+    init(reviewDestination: WorkspaceDestination = .tasks, reviewConversation: UUID? = nil, reviewVoice: DictationPhase? = nil, reviewVoiceError: String = "", reviewSidebarOpen: Bool = false) {
+        _selectedDestination = State(initialValue: reviewDestination == .settings ? .tasks : reviewDestination)
+        #if DEBUG
+        // A directly opened review page keeps the same back path as normal navigation.
+        switch reviewDestination {
+        case .appConnections, .phoneConnections, .modelMemory:
+            _toolsPath = State(initialValue: [reviewDestination])
+        case .appConnection(_), .nativeAppConnection(_):
+            _toolsPath = State(initialValue: [.appConnections, reviewDestination])
+        case .connectionBridge:
+            _toolsPath = State(initialValue: [.appConnections, .connectionBridge])
+        default: break
+        }
+        #endif
+        _settingsPageOpen = State(initialValue: reviewDestination == .settings)
+        _reviewVoicePhase = State(initialValue: reviewVoice)
+        self.reviewVoiceError = reviewVoiceError
+        _screen = State(initialValue: reviewConversation.map { .conversation($0) } ?? .draft)
+        _sidebarOpen = State(initialValue: reviewSidebarOpen)
+    }
+    var body: some View {
+        lifecycleWorkspace
+    }
+
+    private var workspace: some View {
+        ZStack {
+            // The shifted main page is the raised surface; the sidebar stays flat.
+            (sidebarOpen ? AgentPalette.surface : isTaskHome ? SelaHomePalette.background : AgentPalette.background)
+                .ignoresSafeArea().accessibilityHidden(true)
+            Group {
+                switch selectedDestination {
+                case .screenShare: CaptureView()
+                case .device: DeviceView(onCalibration: { beginCalibration() })
+                case .settings: SettingsView(onBack: { navigate(.tasks) })
+                case .assistant: unifiedConversation
+                case .memory: MemoryView()
+                case .workbench: WorkbenchView()
+                case .tools: ToolsConnectionsView(onNavigate: openToolDestination)
+                case .phoneConnections: DeviceView(onCalibration: { beginCalibration() },
+                    onScreenShare: { openToolDestination(.screenShare) })
+                case .appConnections: AppConnectionsView(onNavigate: openToolDestination,
+                    onConfiguration: { present(.connection($0)) })
+                case .modelMemory: ModelMemoryConnectionsView(onNavigate: openToolDestination,
+                    onConfiguration: { present(.connection($0)) })
+                case .appConnection(let service): ExternalAppConnectionDetailView(service: service,
+                    onConfiguration: { present(.connection($0)) }, onNavigate: openToolDestination)
+                case .nativeAppConnection(let app): NativeConnectionDetailView(app: app)
+                case .connectionBridge: ConnectionBridgeSettingsView()
+                case .tasks: taskPage
+                }
+            }.id(selectedDestination).transition(pageTransition)
+        }
+        .animation(pageAnimation, value: selectedDestination).tint(AgentPalette.accent)
+        .modifier(SelaTopChrome(conversation: selectedDestination.isConversation) {
+            VStack(spacing: 0) {
+                if selectedDestination != .settings { topBar }
+                AgentPiPPanel(controller: model.pip)
+            }
+        })
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
+        .modifier(SidebarMainSurface(open: sidebarOpen))
+        .offset(x: sidebarOpen && !reduceMotion ? max(0, sidebarWidth + sidebarDrag) : 0)
+        .accessibilityHidden(sidebarOpen)
+        .overlay { sidebarOverlay }
+    }
+
+    private var settingsWorkspace: some View {
+        ZStack {
+            workspace
+                .allowsHitTesting(!settingsPageOpen)
+                .accessibilityHidden(settingsPageOpen)
+            if settingsPageOpen {
+                SettingsView(onBack: closeSettingsPage)
+                    .environmentObject(model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(AgentPalette.background)
+                    .transition(pageTransition)
+                    .zIndex(1)
+                    .onDisappear {
+                        model.configurationSettingsDismissed()
+                        consumeModalRequests()
+                        presentConfigurationCompletion()
+                    }
+            }
+        }
+        .animation(pageAnimation, value: settingsPageOpen)
+    }
+
+    private var presentedWorkspace: some View {
+        settingsWorkspace
+        .sheet(item: $sheet, onDismiss: {
+            dismissingSheet = false
+            consumeModalRequests()
+            presentConfigurationCompletion()
+        }) { route in
+            Group { switch route {
+            case .task(let id): TaskDetailView(id: id)
+            case .taskQueue: TaskQueueView()
+            case .plan: TaskPlanView()
+            case .preparation:
+                PreparationView(navigate: { destination in
+                    sheet = nil; model.showPreparation = false
+                    if (selectedDestination == .tools || toolsPath.contains(selectedDestination)) && destination != .tasks && destination != .settings {
+                        openToolDestination(destination)
+                    } else { navigate(destination) }
+                }, onModelSetup: { present(.connection(.model)) })
+            case .consent: DataConsentView(onDecision: dismissCurrentSheet)
+            case .policy: DataPolicyView()
+            case .connection(let page):
+                SettingsView(focusedPage: page, onBack: dismissCurrentSheet)
+                    .onDisappear { model.configurationSettingsDismissed() }
+            case .tool(let value): ToolApprovalView(approval: value)
+            } }
+            .environmentObject(model)
+            .agentSheetStyle()
+        }
+        .fullScreenCover(isPresented: $showCalibration, onDismiss: calibrationDismissed) {
+            if let calibration {
+                CalibrationView(model: calibration, autoStart: calibrationAutoStart,
+                    allowsAutomaticStart: { model.preparingAutomatically },
+                    onAutomaticCancel: { model.cancelAutomaticPreparation() })
+                    .environmentObject(model)
+            }
+        }
+    }
+
+    private var modalLifecycleWorkspace: some View {
+        presentedWorkspace
+        .onAppear {
+            if model.engine.hasCurrentTask, let record = model.engine.currentRecord { screen = .conversation(record.id) }
+            preserveLegacyTaskDraft()
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) { appeared = true }
+            configureAutomaticPiP(model.settings.autoPiPOnExit ?? false)
+            consumeModalRequests()
+            if let mode = model.voiceMode { routeInlineVoice(mode) }
+        }
+        .onOpenURL(perform: openActivityTask)
+        .onReceive(model.taskNotifications.$openRequest.compactMap { $0 }.receive(on: RunLoop.main)) { request in
+            openActivityTask(TaskActivityLink.url(taskID: request.taskID))
+            model.taskNotifications.consumeOpenRequest(request.id)
+        }
+        .onChange(of: model.engine.currentRecord?.id) { _, id in
+            if let id {
+                if screen == .draft, model.goal == model.engine.currentRecord?.goal,
+                   (model.engine.currentRecord?.attachments ?? []) == attachmentDraft.items {
+                    model.goal = ""; attachmentDraft.clear()
+                }
+                screen = .conversation(id); expandedSteps = false; followLatest = true
+            }
+        }
+        .onChange(of: screen) { old, new in
+            attachmentSnapshots[old] = attachmentDraft.items
+            attachmentDraft.cancelImport()
+            attachmentDraft.replace(attachmentSnapshots[new] ?? [])
+            attachmentSelectionID = UUID()
+        }
+        .onChange(of: model.deviceDebugDestination) { _, destination in
+            #if DEBUG
+            if let destination, ProcessInfo.processInfo.arguments.contains("--sela-device-debug") { navigate(destination) }
+            #endif
+        }
+        .onChange(of: selectedDestination) { _, _ in
+            attachmentDraft.cancelImport(); attachmentSelectionID = UUID()
+        }
+        .onChange(of: model.engine.running) { _, running in
+            if running {
+                model.showPreparation = false
+                if pendingSheet?.id == "preparation" { pendingSheet = nil }
+                if sheet?.id == "preparation" { dismissCurrentSheet() }
+            }
+        }
+        .onChange(of: model.history.records.map(\.id)) { _, ids in
+            if case .conversation(let id) = screen, !ids.contains(id), model.engine.currentRecord?.id != id { screen = .draft }
+        }
+        .onChange(of: model.showPrivacyConsent) { _, show in
+            if show { consumeModalRequests() }
+        }
+        .onChange(of: model.showPreparation) { _, show in if show { consumeModalRequests() } }
+        .onChange(of: model.showConfigurationSettings) { _, show in if show { consumeModalRequests() } }
+        .onChange(of: model.configurationCompletionID) { _, id in
+            if id != nil { configurationCompletionPending = true; presentConfigurationCompletion() }
+        }
+        .onChange(of: model.preparingAutomatically) { _, preparing in
+            if preparing {
+                if !isTaskHome { preparationExpanded = true }
+                composing = false; modeSwitcherOpen = false
+            } else { presentConfigurationCompletion() }
+        }
+        .onChange(of: model.automaticCalibrationRequested) { _, requested in
+            if requested { consumeModalRequests() }
+            else if pendingCalibration == true { pendingCalibration = nil }
+        }
+        .onChange(of: model.showPrivacyPolicy) { _, show in if show { consumeModalRequests() } }
+    }
+    private var lifecycleWorkspaceObservers: some View {
+        modalLifecycleWorkspace
+        .onChange(of: model.voiceRequestID) { _, _ in navigate(model.voiceMode == .question ? .assistant : .tasks); setSidebar(false); composing = false }
+        .onChange(of: model.voiceMode) { _, mode in
+            if let mode { routeInlineVoice(mode) }
+        }
+        .onChange(of: model.tools.pending?.id) { previousID, _ in
+            if let previousID {
+                let previousSheetID = "tool:" + previousID.uuidString
+                if pendingSheet?.id == previousSheetID { pendingSheet = nil }
+                if sheet?.id == previousSheetID { dismissCurrentSheet() }
+            }
+            if let value = model.tools.pending {
+                let background = value.taskID.map { model.backgroundTasks.contains($0) } ?? false
+                if !background { present(.tool(value)) }
+            }
+        }
+        .onChange(of: model.showAssistant) { _, show in if show { model.showAssistant = false; navigate(.assistant) } }
+        .onChange(of: model.settings.autoPiPOnExit) { _, value in
+            configureAutomaticPiP(value ?? false)
+        }
+        .alert("离开记录与文件？", isPresented: $confirmingWorkbenchExit) {
+            Button("继续编辑", role: .cancel) {
+                pendingDestination = nil; pendingDestinationSheet = nil; pendingAssistantAction = nil; pendingTaskAction = nil
+            }
+            Button("离开并清空草稿", role: .destructive) {
+                if let destination = pendingDestination {
+                    let route = pendingDestinationSheet
+                    let assistantAction = pendingAssistantAction
+                    let taskAction = pendingTaskAction
+                    pendingDestination = nil; pendingDestinationSheet = nil; pendingAssistantAction = nil; pendingTaskAction = nil
+                    completeNavigation(destination, showing: route, assistantAction: assistantAction, taskAction: taskAction)
+                }
+            }
+        } message: { Text("原文、文件草稿和纪要仅保留在当前工作台会话。继续编辑后可以保存到记忆或导出；离开会清空此页内容。") }
+        .alert("配置完成", isPresented: $showingConfigurationComplete) {
+            Button("好的", role: .cancel) {}
+        }
+    }
+    private var lifecycleWorkspace: some View {
+        lifecycleWorkspaceObservers
+        .onReceive(NotificationCenter.default.publisher(for: AgentPiPController.restoreTask)) { _ in
+            if let record = model.engine.currentRecord { openConversation(record) } else { navigate(.tasks) }
+        }
+        .onChange(of: phase) { _, new in
+            if new == .active { model.ble.refresh() }
+            if new == .active { consumeModalRequests() }
+            if new == .active { presentConfigurationCompletion() }
+            if new == .active && !model.speech.usingAudio { model.pip.applicationBecameActive() }
+            if new == .background && !model.speech.usingAudio { model.pip.applicationEnteredBackground() }
+            if new == .background {
+                voiceCommandTask?.cancel(); voiceCommandTask = nil
+                // The inline composer retains partial text before releasing audio.
+                if model.voiceMode == nil { model.speech.cancel() }
+            }
+            if new != .active && model.manualBusy && !model.manualScreenWorkflow { model.stop() }
+        }
+    }
+    private func routeInlineVoice(_ mode: VoiceInputMode) {
+        composing = false; setSidebar(false)
+        navigate(mode == .question ? .assistant : .tasks)
+        if mode == .supplement, let record = model.engine.currentRecord {
+            screen = .conversation(record.id)
+        }
+        if sheet != nil { pendingSheet = nil; dismissCurrentSheet() }
+    }
+    private var voiceComposerText: Binding<String> {
+        if model.voiceMode == .supplement, let id = model.engine.currentRecord?.id {
+            return Binding(get: { amendmentDrafts[id] ?? "" }, set: { amendmentDrafts[id] = $0 })
+        }
+        return $model.goal
+    }
+    private func consumeModalRequests() {
+        guard phase == .active, !showCalibration else { return }
+        if model.showPrivacyConsent {
+            model.showPrivacyConsent = false; composing = false; present(.consent)
+        } else if model.automaticCalibrationRequested {
+            beginCalibration(autoStart: true)
+        } else if let autoStart = pendingCalibration {
+            beginCalibration(autoStart: autoStart)
+        } else if model.showConfigurationSettings {
+            model.showConfigurationSettings = false; composing = false; present(.connection(.model))
+        } else if let next = pendingSheet, sheet == nil, !dismissingSheet {
+            pendingSheet = nil; sheet = next
+        } else if model.showPreparation {
+            model.showPreparation = false; composing = false; present(.preparation)
+        } else if model.showPrivacyPolicy {
+            model.showPrivacyPolicy = false; present(.policy)
+        }
+    }
+    private func present(_ route: WorkspaceSheet) {
+        composing = false
+        setSidebar(false)
+        if showCalibration { pendingSheet = route; return }
+        if sheet == nil, !dismissingSheet { sheet = route }
+        else if sheet?.id != route.id {
+            pendingSheet = route; dismissingSheet = true; sheet = nil
+        }
+    }
+    private func dismissCurrentSheet() {
+        // A queued destination opens only after the current presentation has closed.
+        dismissingSheet = true; sheet = nil
+    }
+    private func closeSettingsPage() {
+        settingsPageOpen = false
+    }
+    private var pageAnimation: Animation { reduceMotion ? .easeOut(duration: 0.12) : .spring(duration: 0.28, bounce: 0) }
+    private var pageTransition: AnyTransition {
+        reduceMotion ? .opacity : .asymmetric(
+            insertion: .opacity.combined(with: .offset(x: navigationForward ? 18 : -18)),
+            removal: .opacity.combined(with: .offset(x: navigationForward ? -10 : 10)))
+    }
+    private func navigate(_ destination: WorkspaceDestination, showing route: WorkspaceSheet? = nil, assistantAction: AssistantNavigationAction? = nil, taskAction: TaskNavigationAction? = nil) {
+        setSidebar(false)
+        if destination == .settings {
+            composing = false; modeSwitcherOpen = false
+            navigationForward = true; settingsPageOpen = true
+            return
+        }
+        guard destination != selectedDestination else {
+            if destination == .assistant {
+                if assistantAction != nil { model.notice = "" }
+                applyAssistantAction(assistantAction)
+            }
+            if destination == .tasks { applyTaskAction(taskAction) }
+            if let route { present(route) }
+            return
+        }
+        if selectedDestination == .workbench && model.workbenchHasDraft {
+            pendingDestination = destination; pendingDestinationSheet = route
+            pendingAssistantAction = assistantAction
+            pendingTaskAction = taskAction
+            composing = false; confirmingWorkbenchExit = true; return
+        }
+        completeNavigation(destination, showing: route, assistantAction: assistantAction, taskAction: taskAction)
+    }
+    private func completeNavigation(_ destination: WorkspaceDestination, showing route: WorkspaceSheet? = nil, assistantAction: AssistantNavigationAction? = nil, taskAction: TaskNavigationAction? = nil) {
+        // Notices from a different conversation must not follow its replacement.
+        // Clear before the safety pause so a new pause notice remains truthful.
+        if destination == .assistant, assistantAction != nil { model.notice = "" }
+        if destination.pausesTaskOnEntry && (model.engine.running || model.voicePending) { model.pauseTask() }
+        if destination != .tools && !toolsPath.contains(destination) { toolsPath = [] }
+        navigationForward = destination != .tasks; selectedDestination = destination; composing = false
+        if destination == .assistant { applyAssistantAction(assistantAction) }
+        if destination == .tasks { applyTaskAction(taskAction) }
+        if let route { present(route) }
+    }
+    private func applyAssistantAction(_ action: AssistantNavigationAction?) {
+        guard let action else { return }
+        switch action {
+        case .create:
+            preserveLegacyTaskDraft()
+            model.conversation.newConversation()
+        case .open(let id): model.conversation.openConversation(id)
+        }
+    }
+    private func applyTaskAction(_ action: TaskNavigationAction?) {
+        guard let action else { return }
+        switch action {
+        case .open(let id):
+            screen = .conversation(id); expandedSteps = false; followLatest = true; composing = false
+        }
+    }
+    private var isConversationMode: Bool { selectedDestination.isConversation }
+    private var backDestination: WorkspaceDestination {
+        if selectedDestination == .tools { return toolsOrigin }
+        if let index = toolsPath.lastIndex(of: selectedDestination) {
+            return index == 0 ? .tools : toolsPath[index - 1]
+        }
+        return .tasks
+    }
+    private var backButtonLabel: String {
+        switch backDestination {
+        case .tasks: "返回任务"
+        case .assistant: "返回对话"
+        default: "返回" + backDestination.title
+        }
+    }
+    private func openTools() {
+        toolsOrigin = selectedDestination; toolsPath = []
+        navigate(.tools)
+    }
+    private func openToolDestination(_ destination: WorkspaceDestination) {
+        if destination != .settings {
+            if let index = toolsPath.firstIndex(of: destination) { toolsPath = Array(toolsPath.prefix(index + 1)) }
+            else { toolsPath.append(destination) }
+        }
+        navigate(destination)
+    }
+    private func navigateBack() {
+        let destination = backDestination
+        if destination == .tools || selectedDestination == .tools { toolsPath = [] }
+        else if let index = toolsPath.lastIndex(of: destination) { toolsPath = Array(toolsPath.prefix(index + 1)) }
+        navigate(destination)
+    }
+    @ViewBuilder private var topBar: some View {
+        if selectedDestination.isConversation { homeTopBar }
+        else { standardTopBar }
+    }
+    private var selaMotion: String {
+        if model.voiceMode != nil || reviewVoicePhase != nil { return "listening" }
+        switch model.engine.phase {
+        case .observing: return "thinking"
+        case .acting: return "acting"
+        case .preparing: return "preparing"
+        case .awaitingApproval: return "awaitingApproval"
+        case .completed: return "completed"
+        case .paused: return "paused"
+        case .failed: return "failed"
+        case .stopped: return "stopped"
+        default: return "idle"
+        }
+    }
+    private var homeTopBar: some View {
+        HStack(spacing: 12) {
+            Button { composing = false; setSidebar(true) } label: {
+                SelaMenuGlyph()
+                    .font(.system(size: 19, weight: .medium))
+                    .frame(width: 44, height: 44)
+                    .background(SelaHomePalette.surface, in: Circle())
+                    .overlay { Circle().stroke(SelaHomePalette.line, lineWidth: 0.7) }
+            }
+            .buttonStyle(AgentPressStyle()).tint(.primary)
+            .accessibilityLabel("打开任务与工具侧栏")
+            .accessibilityIdentifier("conversation.menu")
+            Spacer(minLength: 0)
+            taskQueueButton
+        }
+        .padding(.horizontal, 20).padding(.top, 2).padding(.bottom, 6)
+    }
+    private var taskQueueButton: some View {
+        Button {
+            modeSwitcherOpen = false
+            present(.taskQueue)
+        } label: {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.system(size: 19, weight: .medium))
+                .frame(width: 44, height: 44)
+                .background(SelaHomePalette.surface, in: Circle())
+                .overlay { Circle().stroke(SelaHomePalette.line, lineWidth: 0.7) }
+                .overlay(alignment: .topTrailing) {
+                    if model.screenQueueCount > 0 {
+                        Text(model.screenQueueCount > 99 ? "99+" : String(model.screenQueueCount))
+                            .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(SelaHomePalette.surface)
+                            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+                            .background(SelaHomePalette.accent, in: Capsule())
+                            .offset(x: 3, y: -2)
+                            .accessibilityHidden(true)
+                    }
+                }
+        }
+        .buttonStyle(AgentPressStyle()).tint(.primary)
+        .accessibilityLabel("任务队列")
+        .accessibilityValue("\(model.screenQueueCount) 个屏幕任务")
+        .accessibilityHint("查看执行进度，调整等待任务的顺序")
+        .accessibilityIdentifier("conversation.queue")
+    }
+    private var standardTopBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                if isConversationMode { composing = false; setSidebar(true) } else { navigateBack() }
+            } label: {
+                Group { if isConversationMode { SelaMenuGlyph() } else { Image(systemName: "chevron.left") } }
+                    .font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44)
+                    .agentGlass(in: Circle(), interactive: true)
+            }.buttonStyle(AgentPressStyle()).tint(.primary)
+                .accessibilityLabel(isConversationMode ? "打开任务与工具侧栏" : backButtonLabel)
+            if !isConversationMode { Text(pageTitle).font(.headline).lineLimit(1) }
+            Spacer(minLength: 8)
+            if !isConversationMode {
+                Button { navigate(.settings) } label: { Image(systemName: "gearshape").font(.system(size: 19)).frame(width: 44, height: 44) }
+                    .tint(.primary).buttonStyle(AgentPressStyle()).accessibilityLabel("设置")
+            }
+        }
+        .overlay {
+            if selectedDestination == .assistant { modeSwitcher }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    }
+    private var modeSwitcher: some View {
+        Button { composing = false; modeSwitcherOpen.toggle() } label: {
+            Group {
+                if isTaskHome {
+                    modeSwitcherLabel
+                        .foregroundStyle(SelaHomePalette.accent)
+                        .background(homeInputActive ? Color.clear : SelaHomePalette.accentSurface, in: Capsule())
+                } else {
+                    modeSwitcherLabel.agentGlass(in: Capsule(), interactive: true)
+                }
+            }
+        }
+        .tint(.primary).buttonStyle(AgentPressStyle())
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: modeSwitcherOpen)
+        .accessibilityLabel("切换模式，当前" + (selectedDestination == .assistant ? "对话" : "任务"))
+        .popover(isPresented: $modeSwitcherOpen, arrowEdge: .top) {
+            VStack(spacing: 4) {
+                modeOption(title: "任务", detail: "执行任务与操控手机", icon: "computermouse", destination: .tasks)
+                modeOption(title: "对话", detail: model.engine.running || model.voicePending ? "暂停任务，进入对话" : "聊天与参考历史上下文", icon: "bubble.left.and.bubble.right", destination: .assistant)
+            }
+            .padding(10).frame(width: min(320, max(240, viewportWidth - 40)))
+            .presentationCompactAdaptation(.popover)
+
+        }
+    }
+    @ViewBuilder private var modeSwitcherLabel: some View {
+        if isTaskHome && homeInputActive {
+            SelaMotionAvatar(motion: selaMotion, dark: colorScheme == .dark, reduceMotion: reduceMotion).sized()
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.75)))
+        } else {
+        HStack(spacing: 7) {
+            Text(selectedDestination == .assistant ? "对话" : "任务")
+                .font(isTaskHome ? .subheadline.weight(.semibold) : .headline).lineLimit(1).minimumScaleFactor(0.8)
+            Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                .rotationEffect(.degrees(modeSwitcherOpen ? 180 : 0))
+        }
+        .padding(.horizontal, isTaskHome ? 18 : 10).frame(height: 44)
+        .frame(maxWidth: isTaskHome ? max(128, min(184, viewportWidth - 160)) : max(92, min(184, viewportWidth - 216)))
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        }
+    }
+    private func modeOption(title: String, detail: String, icon: String, destination: WorkspaceDestination) -> some View {
+        Button {
+            modeSwitcherOpen = false
+            navigate(destination)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.system(size: 19)).frame(width: 24)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if selectedDestination == destination { Image(systemName: "checkmark").font(.system(size: 17, weight: .semibold)) }
+            }
+            .foregroundStyle(.primary).padding(14).frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
+            .background(selectedDestination == destination ? AgentPalette.ink.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+        }.buttonStyle(AgentPressStyle()).accessibilityLabel(title + "，" + detail)
+            .accessibilityAddTraits(selectedDestination == destination ? .isSelected : [])
+    }
+    private var pageTitle: String { selectedDestination.title }
+    private var unifiedConversation: some View {
+        AssistantView(reviewDictation: reviewVoicePhase,
+            allowsDictation: !model.preparingAutomatically && sheet == nil && !settingsPageOpen && !sidebarOpen && !modeSwitcherOpen,
+            onModelSetup: { present(.connection(.model)) })
+    }
+    @ViewBuilder private var taskPage: some View {
+        if displayedRecord == nil {
+            // Home uses the same conversation composer as both sidebar entries.
+            // The legacy task draft and its materials remain owned by this view.
+            unifiedConversation
+        } else {
+        VStack(spacing: 0) {
+            if let active = model.engine.currentRecord, model.engine.hasCurrentTask, !isCurrentConversation {
+                Button { openConversation(active) } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: model.engine.running ? "circle.dotted" : "pause.circle")
+                        Text(active.title).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(active.outcome.label).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right").font(.caption2)
+                    }.font(.caption).frame(minHeight: 44).padding(.horizontal, 14)
+                        .background(AgentPalette.inset, in: RoundedRectangle(cornerRadius: 14))
+                }.buttonStyle(AgentPressStyle()).padding(.horizontal, 20).padding(.bottom, 8)
+            }
+            if let record = displayedRecord { conversation(record) }
+            else { draftCanvas }
+        }
+        .opacity(appeared ? 1 : 0).offset(y: appeared || reduceMotion ? 0 : 6)
+        .safeAreaInset(edge: .bottom, spacing: 0) { composerArea }
+        .composerAttachmentPicker(store: attachmentDraft, showPhotos: $showAttachmentPhotos, showFiles: $showAttachmentFiles, selectionID: attachmentSelectionID)
+        }
+    }
+    private var draftCanvas: some View {
+        SelaHomeCanvas(compact: homeInputActive, onSuggestion: { text in model.goal = text; composing = true }) {
+            homePreparation
+        }
+        .animation(pageAnimation, value: model.configurationReady)
+    }
+    private var homePreparationDetail: String {
+        switch model.savedPreparationConfiguration.configurationStep {
+        case .model: "先配置模型，再连接手机"
+        case .consent: "确认模型的数据使用授权"
+        case .systemTools: "在设置中开启系统工具"
+        case .device: "连接并保存你的手机配件"
+        case .calibration: "完成配件的定位校准"
+        default: "检查已保存的设置"
+        }
+    }
+    @ViewBuilder private var homePreparation: some View {
+        if model.preparingSavedConfiguration || !model.configurationReady {
+            Group {
+                if model.preparingAutomatically {
+                    HStack(spacing: 12) {
+                        ProgressView().frame(width: 44, height: 44)
+                        Text("配置中…").font(.subheadline.weight(.semibold))
+                        Spacer(minLength: 4)
+                        Button("取消") { model.cancelAutomaticPreparation() }
+                            .font(.caption.weight(.medium)).frame(minWidth: 44, minHeight: 44)
+                            .buttonStyle(AgentPressStyle())
+                    }
+                    .accessibilityIdentifier("home.preparation.progress")
+                } else {
+                    Button(action: configureSavedSettings) {
+                        homeConfigurationLabel
+                    }
+                    .buttonStyle(AgentPressStyle())
+                    .disabled(busy || model.calibrating)
+                    .accessibilityLabel("一键配置，" + homePreparationDetail)
+                    .accessibilityIdentifier("home.preparation.start")
+                }
+            }
+            .padding(16)
+            .background(SelaHomePalette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 22).stroke(SelaHomePalette.line, lineWidth: 0.7) }
+            .tint(SelaHomePalette.accent)
+            .transition(.opacity)
+        }
+    }
+    private var homeConfigurationLabel: some View {
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
+            HStack(spacing: 12) {
+                Image(systemName: "iphone")
+                    .font(.system(size: 19, weight: .medium))
+                    .frame(width: 44, height: 44)
+                    .background(SelaHomePalette.accentSurface, in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("准备好，再出发").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text(homePreparationDetail).font(.caption).foregroundStyle(SelaHomePalette.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("一键配置").font(.caption.weight(.semibold))
+                .padding(.horizontal, 12).frame(minHeight: 44)
+                .background(SelaHomePalette.accentSurface, in: Capsule())
+        }
+        .foregroundStyle(SelaHomePalette.accent)
+        .contentShape(Rectangle())
+    }
+    private func promptCard(title: String, subtitle: String, icon: String, goal: String) -> some View {
+        Button {
+            model.goal = goal
+            composing = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+                    .background(AgentPalette.ink.opacity(0.08), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "arrow.up.left")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(AgentPalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 18))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(AgentPalette.ink.opacity(0.08), lineWidth: 0.5)
+            }
+        }
+        .buttonStyle(AgentPressStyle())
+        .accessibilityHint("填入输入框，确认后才开始任务")
+    }
+    private func conversation(_ record: PhoneTaskRecord) -> some View {
+        ScrollViewReader { reader in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    SelaConversationAvatar(motion: selaMotion)
+                    userMessage(record.goal)
+                    if let attachments = record.attachments, !attachments.isEmpty { ComposerAttachmentList(attachments: attachments) }
+
+                    operationAccordion(record)
+
+                    ForEach(record.amendments ?? []) { addition in
+                        userMessage(addition.text)
+                    }
+
+                    taskResponse(record)
+
+                    if !(record.subtasks ?? []).isEmpty {
+                        DisclosureGroup("任务清单 · \(record.subtasks?.filter(\.completed).count ?? 0)/\(record.subtasks?.count ?? 0)") {
+                            ForEach(record.subtasks ?? []) { item in
+                                Label(item.goal, systemImage: item.completed ? "checkmark.circle.fill" : "circle")
+                                    .font(.subheadline).padding(.vertical, 6)
+                            }
+                        }
+                        .font(.subheadline)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .background(AgentPalette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+                    }
+
+                    Color.clear.frame(height: 1).id("conversationBottom")
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 16)
+                .simultaneousGesture(TapGesture().onEnded { composing = false })
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .scrollEdgeEffectHidden(for: .top)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.visibleRect.maxY >= geometry.contentSize.height - 80
+            } action: { _, nearBottom in followLatest = nearBottom }
+            .overlay(alignment: .bottom) {
+                if !followLatest {
+                    SelaScrollLatestButton {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                            reader.scrollTo("conversationBottom", anchor: .bottom)
+                        }
+                    }.padding(.bottom, 12)
+                }
+            }
+            .onAppear { reader.scrollTo("conversationBottom", anchor: .bottom) }
+            .onChange(of: record.logs.last?.id) { _, _ in
+                if followLatest { reader.scrollTo("conversationBottom", anchor: .bottom) }
+            }
+            .onChange(of: record.amendments?.last?.id) { _, _ in
+                if followLatest { reader.scrollTo("conversationBottom", anchor: .bottom) }
+            }
+        }.id(record.id)
+    }
+
+    private func userMessage(_ text: String) -> some View {
+        HStack {
+            Spacer(minLength: 36)
+            Text(text)
+                .font(.body)
+                .lineSpacing(4)
+                .textSelection(.enabled)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(AgentPalette.userBubble, in: RoundedRectangle(cornerRadius: 20))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(AgentPalette.ink.opacity(0.08), lineWidth: 0.5)
+                }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func operationAccordion(_ record: PhoneTaskRecord) -> some View {
+        let activities = record.logs.filter { $0.title != "补充要求" }
+        guard !activities.isEmpty else { return AnyView(EmptyView()) }
+
+        return AnyView(
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(pageAnimation) { expandedSteps.toggle() }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: isCurrentConversation && model.engine.running ? "gearshape.2.fill" : "list.bullet.rectangle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(isCurrentConversation && model.engine.running ? Color.green : AgentPalette.ink)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("执行步骤")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text("\(isCurrentConversation && model.engine.running ? model.engine.currentStep : activities.count)")
+                                    .font(.caption2.monospacedDigit().weight(.bold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(AgentPalette.ink.opacity(0.08), in: Capsule())
+                            }
+                            if !expandedSteps && !(isCurrentConversation && model.engine.running), let last = activities.last {
+                                Text(last.title + (last.detail.isEmpty ? "" : " · " + last.detail))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        Spacer()
+
+                        if isCurrentConversation && model.engine.running {
+                            HStack(spacing: 5) {
+                                Circle().fill(Color.green).frame(width: 6, height: 6)
+                                Text("运行中").font(.caption2.weight(.medium)).foregroundStyle(.green)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color.green.opacity(0.12), in: Capsule())
+                        } else if record.outcome == .completed {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                                Text("已完成").font(.caption2.weight(.medium))
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(AgentPalette.ink.opacity(0.06), in: Capsule())
+                        }
+
+                        Image(systemName: expandedSteps ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(AgentPressStyle())
+
+                if expandedSteps {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Divider().overlay(AgentPalette.ink.opacity(0.08)).padding(.horizontal, 14)
+
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(Array(activities.enumerated()), id: \.element.id) { index, entry in
+                                HStack(alignment: .top, spacing: 12) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(index == activities.count - 1 && isCurrentConversation && model.engine.running ? AgentPalette.ink : AgentPalette.ink.opacity(0.12))
+                                            .frame(width: 22, height: 22)
+                                        Text("\(entry.step > 0 ? entry.step : index + 1)")
+                                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                                            .foregroundStyle(index == activities.count - 1 && isCurrentConversation && model.engine.running ? AgentPalette.onContrast : AgentPalette.ink.opacity(0.8))
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(entry.title)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(.primary)
+                                        if !entry.detail.isEmpty {
+                                            Text(entry.detail)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .textSelection(.enabled)
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                            }
+                        }
+                        .padding(14)
+                    }
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .background(AgentPalette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 18))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(AgentPalette.ink.opacity(0.09), lineWidth: 0.5)
+            }
+        )
+    }
+
+    private func taskResponse(_ record: PhoneTaskRecord) -> some View {
+        let offers = record.logs.filter { $0.title == "工具回执" && $0.detail.hasPrefix("来源：携程") }
+            .flatMap { CtripFlightParser.offers($0.detail, query: record.goal, at: record.updatedAt) }
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: record.outcome == .completed ? "checkmark.circle.fill" : (record.outcome == .failed ? "exclamationmark.circle.fill" : "sparkles"))
+                    .foregroundStyle(record.outcome == .completed ? Color.green : (record.outcome == .failed ? Color.red : AgentPalette.ink))
+                    .font(.system(size: 16))
+                Text(isCurrentConversation && model.engine.releasing ? "正在停下操作" : record.outcome.label)
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            if !offers.isEmpty { CtripFlightCards(offers: offers, onBook: model.bookFlight) }
+            let response = isCurrentConversation && model.engine.running ? "正在处理当前步骤" : isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
+            let narrative = offers.isEmpty ? response : CtripFlightParser.narrative(response, representedBy: offers)
+            if !narrative.isEmpty {
+                SelaMarkdownText(text: narrative).font(.body).lineSpacing(4).textSelection(.enabled)
+            }
+
+            HStack(spacing: 6) {
+                Button {
+                    let content = isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
+                    UIPasteboard.general.string = content
+                    model.notice = "已复制结果"
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("复制任务结果")
+                .accessibilityIdentifier("response.copy")
+                Button { _ = model.retryTask(record.id) } label: {
+                    Label("重试", systemImage: "arrow.clockwise").frame(width: 44, height: 44)
+                }.disabled(model.recoverableTask(record.id) == nil || model.taskRecoveryBusy)
+                    .accessibilityIdentifier("response.retry")
+            }
+            .font(.caption)
+            .labelStyle(.iconOnly)
+            .foregroundStyle(.secondary)
+            .padding(.top, 4)
+            .buttonStyle(AgentPressStyle())
+            if model.recoverableTask(record.id) != nil {
+                Button("继续任务") { _ = model.continueTask(record.id) }
+                    .buttonStyle(.bordered).disabled(model.taskRecoveryBusy)
+                    .accessibilityIdentifier("task.continue")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
+        .padding(.top, 4)
+    }
+
+    private var taskControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if model.engine.phase == .awaitingApproval, let action = model.engine.pendingAction {
+                Button(action.kind == .complete_subtask ? "确认完成这一步" : "确认执行这一步") { model.engine.approve() }
+                    .buttonStyle(AgentButtonStyle()).disabled(model.engine.releasing || model.preparingAutomatically)
+            }
+            controlButtons
+        }
+    }
+    private var controlButtons: some View {
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            if model.engine.running {
+                taskControl("暂停", icon: "pause.fill") { model.pauseTask() }
+                taskControl("接管", icon: "hand.raised.fill") { model.pauseTask(handoff: true) }
+            } else if model.engine.canResume {
+                taskControl("继续", icon: "play.fill") { model.resumeAgent() }.disabled(model.preparingAutomatically)
+                taskControl("补充", icon: "text.bubble.fill") { composing = true }.disabled(model.preparingAutomatically)
+            }
+            taskControl("停止", icon: "stop.fill", destructive: true) { model.stop() }
+        }.disabled(model.engine.releasing || model.voiceMode != nil).padding(.top, 2)
+    }
+    private func taskControl(_ title: String, icon: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon).font(.subheadline.weight(.medium))
+                .foregroundStyle(destructive ? Color.red : AgentPalette.ink)
+                .padding(.horizontal, 14).frame(minHeight: 44)
+                .background(destructive ? Color.red.opacity(0.12) : AgentPalette.ink.opacity(0.08), in: Capsule())
+                .overlay { Capsule().stroke(destructive ? Color.red.opacity(0.3) : AgentPalette.ink.opacity(0.12), lineWidth: 0.5) }
+        }.buttonStyle(AgentPressStyle())
+    }
+    private var composerArea: some View {
+        VStack(spacing: 8) {
+            if isCurrentConversation && model.engine.hasCurrentTask { taskControls }
+            if !model.notice.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle").font(.caption2)
+                    Text(model.notice).font(.caption).lineLimit(2)
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .accessibilityLabel(model.notice)
+            }
+            if isCurrentConversation, !model.engine.error.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.caption2).foregroundStyle(.red)
+                    Text(model.engine.error).font(.caption).foregroundStyle(.red).lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+            }
+            if !attachmentDraft.items.isEmpty || attachmentDraft.importing || !attachmentDraft.error.isEmpty {
+                ComposerAttachmentTray(store: attachmentDraft)
+                    .disabled(model.preparingAutomatically)
+            }
+            composer
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.voiceMode != nil)
+        }
+        .agentComposerLeadingGlyph(recording: reviewVoicePhase != nil || (model.voiceMode != nil && model.voiceMode != .question))
+        .padding(.horizontal, 16)
+        .padding(.top, isTaskHome ? 12 : 4)
+        .padding(.bottom, 8)
+        .background(isTaskHome ? SelaHomePalette.background : AgentPalette.background)
+        .tint(isTaskHome ? SelaHomePalette.accent : AgentPalette.accent)
+    }
+
+    @ViewBuilder private var composer: some View {
+        if let phase = reviewVoicePhase {
+            InlineVoiceBar(phase: phase, transcript: phase == .preparing ? "" : "打开微信朋友圈，只查看。",
+                           status: "本机语音识别", error: reviewVoiceError, startedAt: Date().addingTimeInterval(-8),
+                           onCancel: { reviewVoicePhase = nil }, onFinish: { reviewVoicePhase = nil }, onRetry: {})
+        } else if let mode = model.voiceMode, mode != .question {
+            let requestID = model.voiceRequestID
+            InlineDictationComposer(speech: model.speech, draft: voiceComposerText,
+                                    isVisible: sheet == nil && !settingsPageOpen && !showCalibration && !sidebarOpen && !modeSwitcherOpen,
+                                    isCurrent: { model.voiceMode == mode && model.voiceRequestID == requestID },
+                                    onSend: { submitComposer() }) { text in
+                guard model.voiceMode == mode, model.voiceRequestID == requestID else { return }
+                dictatedDraft = text; model.voiceMode = nil
+            }.id(requestID).transition(.opacity)
+        } else { textComposer.transition(.opacity) }
+    }
+    private var textComposer: some View {
+        SelaComposerLayout(expanded: composing) {
+            SelaAttachmentMenu(onPhotos: { composing = false; showAttachmentPhotos = true },
+                               onFiles: { composing = false; showAttachmentFiles = true })
+                .disabled(model.preparingAutomatically || attachmentDraft.importing)
+
+            TextField(composingSupplement ? "补充要求…" : "Ask Sela", text: composerText,
+                      prompt: Text(composingSupplement ? "补充要求…" : "Ask Sela").foregroundStyle(AgentPalette.placeholder), axis: .vertical)
+                .lineLimit(1...(typeSize.isAccessibilitySize ? 3 : 5))
+                .font(.body)
+                .focused($composing)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .accessibilityLabel(composingSupplement ? "补充当前任务的要求" : "新任务内容")
+                .accessibilityIdentifier("composer.text")
+
+            HStack(spacing: 8) {
+            if !model.taskPlan.isEmpty && !composingSupplement {
+                Button { present(.plan) } label: {
+                    Text("清单 \(model.taskPlan.count)")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(AgentPalette.ink.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(AgentPressStyle())
+            }
+
+            if composing || (composerText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachmentDraft.items.isEmpty) {
+                Button {
+                    composing = false
+                    model.beginVoice(composingSupplement ? .supplement : .task)
+                } label: {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(isTaskHome ? SelaHomePalette.accent : AgentPalette.ink)
+                        .frame(width: 44, height: 44)
+                        .background(isTaskHome ? SelaHomePalette.accentSurface : AgentPalette.ink.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(AgentPressStyle())
+                .disabled(inputBlocked)
+                .accessibilityLabel(composingSupplement ? "语音补充要求" : "语音输入任务")
+                .accessibilityIdentifier("composer.mic")
+                .transition(.opacity)
+            }
+            if !composerText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachmentDraft.items.isEmpty {
+                Button { submitComposer() } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(isTaskHome ? SelaHomePalette.onSend : Color.white)
+                        .frame(width: 44, height: 44)
+                        .background(isTaskHome ? SelaHomePalette.send : AgentPalette.accent, in: Circle())
+                }
+                .buttonStyle(AgentPressStyle())
+                .disabled(inputBlocked)
+                .accessibilityLabel(composingSupplement ? "发送补充要求" : "开始任务")
+                .accessibilityIdentifier("composer.send")
+                .transition(.opacity)
+            }
+            }.accessibilityElement(children: .contain).accessibilityIdentifier("composer.actions")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(minHeight: AgentInputMetrics.height)
+        .modifier(SelaHomeComposerSurface(active: isTaskHome))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("composer.container")
+        .accessibilityValue(composing ? "两行输入" : "单行输入")
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: composerText.wrappedValue.isEmpty)
+    }
+    private func configureAutomaticPiP(_ enabled: Bool) {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-review") { return }
+        #endif
+        model.pip.setAutomaticOnExit(enabled)
+    }
+    private func submitComposer() {
+        guard !inputBlocked else { return }
+        composing = false
+        if composerText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !attachmentDraft.items.isEmpty {
+            composerText.wrappedValue = composingSupplement ? "请参考这些补充附件。" : "请帮我处理这些附件。"
+        }
+        let draft = composerText.wrappedValue
+        if attachmentDraft.items.isEmpty, dictatedDraft == draft, let command = VoiceCommand.parse(draft) {
+            composerText.wrappedValue = ""; dictatedDraft = nil
+            voiceCommandTask?.cancel()
+            voiceCommandTask = Task {
+                let result = await model.handleVoiceCommand(command)
+                guard !Task.isCancelled else { return }
+                model.notice = result; voiceCommandTask = nil
+            }
+            return
+        }
+        dictatedDraft = nil
+        // Both the home and an existing task feed the same conversation.
+        // Attachments keep their existing explicit selection and data consent.
+        model.unifiedFocusedTaskID = displayedRecord?.id
+        model.conversation.draft = draft
+        if model.conversation.send(settings: model.settings, apiKey: SettingsStore.apiKey(for: model.settings.endpoint), memories: model.memories,
+                                   taskRecords: model.history.records, attachments: attachmentDraft.items) {
+            if composingSupplement, let id = displayedRecord?.id { amendmentDrafts[id] = nil } else { model.goal = "" }
+            attachmentDraft.clear()
+            navigate(.assistant)
+        }
+    }
+
+    private var readiness: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(isTaskHome ? "准备详情" : model.preparingAutomatically ? "正在自动检测与准备" : model.modelReady ? "连接你的手机" : "准备第一项任务").font(.subheadline.weight(.medium))
+                Spacer(minLength: 4)
+                if model.preparingAutomatically { ProgressView().controlSize(.small) }
+                else if !isTaskHome { Button("一键准备", action: prepareAutomatically).font(.caption.weight(.medium)).frame(minHeight: 44).disabled(busy || model.calibrating) }
+                Button("详情") { present(.preparation) }.font(.caption).frame(minHeight: 44)
+            }
+            if !isTaskHome && !model.automaticPreparationStatus.isEmpty {
+                Text(model.automaticPreparationStatus).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: 10) {
+                if model.settings.toolsOnly == true {
+                    setupItem("模型", active: model.modelReady, icon: "sparkles") { present(.connection(.model)) }
+                    setupItem("授权", active: model.consentReady, icon: "hand.raised") { if model.modelReady { model.requestConsent() } else { present(.connection(.model)) } }
+                    setupItem("工具", active: model.settings.systemToolsEnabled == true, icon: "wrench") { navigate(.settings) }
+                } else {
+                    setupItem("画面", active: model.capture.frame?.fullDisplay == true && model.capture.running, icon: "rectangle.on.rectangle") { navigate(.screenShare) }
+                    setupItem("配件", active: model.ble.ready, icon: "computermouse") { navigate(.device) }
+                    setupItem("校准", active: calibrated, icon: "scope") { navigate(.device) }
+                }
+            }.dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        }.padding(.horizontal, 6).padding(.bottom, 4)
+    }
+    private func setupItem(_ title: String, active: Bool, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) { Image(systemName: active ? "checkmark.circle" : icon); Text(title) }
+                .font(.caption).frame(maxWidth: .infinity, minHeight: 64)
+                .agentGlass(in: RoundedRectangle(cornerRadius: 20), interactive: !busy)
+        }.buttonStyle(AgentPressStyle()).disabled(busy).opacity(busy ? 0.4 : 1)
+            .accessibilityLabel("\(title)：\(active ? "已就绪" : "点按准备")")
+    }
+    private var sidebarOverlay: some View {
+        GeometryReader { geometry in
+            if sidebarOpen {
+                ZStack(alignment: .leading) {
+                    Button { setSidebar(false) } label: { Rectangle().fill(sidebarScrimColor).contentShape(Rectangle()) }
+                    .frame(width: max(0, geometry.size.width - sidebarWidth), height: geometry.size.height)
+                    .offset(x: sidebarWidth)
+                    .accessibilityActivationPoint(CGPoint(x: geometry.frame(in: .global).maxX - 20, y: geometry.frame(in: .global).midY))
+                    .buttonStyle(.plain).accessibilityLabel("关闭侧栏")
+                    sidebar.frame(width: sidebarWidth, height: geometry.size.height)
+                        .background(AgentPalette.background.ignoresSafeArea(.container, edges: .vertical))
+                        .transition(reduceMotion ? .opacity : .move(edge: .leading))
+                        .offset(x: reduceMotion ? 0 : sidebarDrag)
+                        .gesture(DragGesture(minimumDistance: 12)
+                            .updating($sidebarDrag) { value, state, _ in
+                                if abs(value.translation.width) > abs(value.translation.height) { state = min(0, value.translation.width) }
+                            }.onEnded { value in
+                                if value.predictedEndTranslation.width < -80 { setSidebar(false) }
+                            })
+                }.transition(.opacity)
+            }
+        }
+    }
+    private var sidebar: some View {
+        SidebarView(
+            selectedDestination: selectedDestination,
+            screen: screen,
+            searchText: $searchText,
+            sidebarSearchExpanded: $sidebarSearchExpanded,
+            onNavigate: { if $0 == .tools { openTools() } else { navigate($0) } },
+            onTaskDetail: { present(.task($0)) },
+            onOpenConversation: openConversation,
+            onOpenAssistantConversation: { navigate(.assistant, assistantAction: .open($0)) },
+            onNewTask: requestNewTask,
+            onNewConversation: requestNewConversation
+        )
+    }
+    private func setSidebar(_ open: Bool) {
+        if open {
+            composing = false
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+        withAnimation(reduceMotion ? .easeOut(duration: 0.12) : .spring(duration: open ? 0.28 : 0.20, bounce: 0)) { sidebarOpen = open }
+    }
+    private func openConversation(_ record: PhoneTaskRecord) {
+        navigate(.tasks, taskAction: .open(record.id))
+    }
+    private func openActivityTask(_ url: URL) {
+        guard url.scheme == "phoneagent", url.host == "task" else { return }
+        guard let id = TaskActivityLink.taskID(from: url) else {
+            model.notice = "此任务链接缺少有效编号，请从侧栏选择任务。"
+            return
+        }
+        let record = model.engine.currentRecord.flatMap { $0.id == id ? $0 : nil }
+            ?? model.history.records.first { $0.id == id }
+        guard let record else {
+            model.notice = "这条任务记录已不在本机，请从侧栏查看现有任务。"
+            return
+        }
+        openConversation(record)
+    }
+    private func preserveLegacyTaskDraft() {
+        guard screen == .draft else { return }
+        let materials = attachmentDraft.items.isEmpty ? (attachmentSnapshots[.draft] ?? []) : attachmentDraft.items
+        let records = model.history.records + model.taskQueue.items.map(\.record) + [model.engine.currentRecord].compactMap { $0 }
+        // agent.currentGoal also retains submitted/completed requests. Exact
+        // recorded work is not evidence of an unsent draft and must not be copied.
+        guard !records.contains(where: {
+            ($0.goal == model.goal || $0.effectiveGoal == model.goal) && ($0.attachments ?? []) == materials
+        }) else { return }
+        if materials.isEmpty, model.pendingConversationTask?.goal == model.goal { return }
+        _ = model.conversation.preserveLegacyInput(model.goal, attachments: materials)
+    }
+    private func requestNewTask() {
+        requestNewConversation()
+    }
+    private func requestNewConversation() {
+        // A new task is a new conversation; sending chooses chat or execution.
+        // Do not clear the separate legacy draft or alter an existing task.
+        navigate(.assistant, assistantAction: .create)
+    }
+    private func reuseTask(_ record: PhoneTaskRecord) {
+        if model.reuseTaskInNewConversation(record) { navigate(.assistant) }
+    }
+    private func prepareAutomatically() {
+        guard !model.preparingAutomatically, !busy, !model.calibrating else { return }
+        composing = false; modeSwitcherOpen = false; setSidebar(false)
+        preparationExpanded = true
+        model.prepareAutomatically()
+    }
+    private func configureSavedSettings() {
+        guard !busy, !model.calibrating else { return }
+        composing = false; modeSwitcherOpen = false; setSidebar(false)
+        model.prepareAutomatically(configurationOnly: true)
+    }
+    private func presentConfigurationCompletion() {
+        guard configurationCompletionPending, !model.preparingAutomatically,
+              phase == .active, sheet == nil, !settingsPageOpen, pendingSheet == nil,
+              !dismissingSheet, !showCalibration else { return }
+        configurationCompletionPending = false
+        showingConfigurationComplete = true
+    }
+    private func beginCalibration(autoStart: Bool = false) {
+        guard !showCalibration else { return }
+        if !autoStart {
+            guard !busy, !model.calibrating, !model.executor.calibrationInProgress else {
+                pendingCalibration = nil
+                model.notice = "请先结束当前操作，再开始校准"
+                return
+            }
+        }
+        composing = false; modeSwitcherOpen = false; setSidebar(false)
+        pendingCalibration = autoStart
+        if sheet != nil {
+            pendingSheet = nil
+            dismissCurrentSheet()
+            return
+        }
+        guard !dismissingSheet, phase == .active else { return }
+        pendingCalibration = nil
+        calibrationAutoStart = autoStart
+        if autoStart { model.automaticCalibrationRequested = false }
+        let next = CalibrationModel(executor: model.executor)
+        model.calibrating = true
+        model.cancelCalibration = { [weak next] in next?.cancel() }
+        next.onSaved = { model.objectWillChange.send() }
+        calibration = next; showCalibration = true
+    }
+    private func calibrationDismissed() {
+        let automatic = calibrationAutoStart
+        let success = calibration?.finished == true && calibration?.busy == false && calibration?.cancelled == false
+        let error = calibration.map { $0.error.isEmpty ? $0.text : $0.error } ?? "校准已取消"
+        model.calibrating = false; model.cancelCalibration = nil
+        calibration = nil; calibrationAutoStart = false
+        if automatic { model.automaticCalibrationFinished(success: success, error: success ? "" : error) }
+        consumeModalRequests()
+    }
+}

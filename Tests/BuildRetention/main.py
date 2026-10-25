@@ -137,6 +137,98 @@ class RetentionChecks(unittest.TestCase):
         self.assertEqual(cleanup.plan_cleanup(self.root, cleanup.discover(self.root), set(),
                                               now=self.now, budget=0)[0], [])
 
+    def activity_fixture(self, opened=(), command=""):
+        ps = subprocess.CompletedProcess([], 0, stdout='999999 1 ' + command + '\n', stderr='')
+        with mock.patch.object(cleanup.subprocess, 'run', return_value=ps), \
+                mock.patch.object(cleanup, 'inspect_open_files', return_value=[(999999, p) for p in opened]):
+            return cleanup.snapshot_activity(self.root)[0]
+
+    def test_open_result_protects_only_its_nested_session(self):
+        old = self.artifact('shared/old', age=60)
+        current = self.artifact('shared/current', age=10)
+        self.artifact('latest-1', age=4)
+        self.artifact('latest-2', age=3)
+        active = self.activity_fixture([current.parent / 'operator-session.xcresult/Staging/log.txt'])
+        self.assertEqual(active, {current.parent})
+        selected, _, _ = cleanup.plan_cleanup(self.root, cleanup.discover(self.root), active,
+                                              now=self.now, budget=0)
+        self.assertEqual([r['path'] for r in selected], [old])
+
+    def test_system_reader_of_unrelated_document_does_not_pin_sibling_builds(self):
+        old = self.artifact('shared/old', age=60)
+        self.artifact('latest-1', age=4)
+        self.artifact('latest-2', age=3)
+        document = self.root / 'shared/observations/state.json'
+        active = self.activity_fixture([document])
+        self.assertEqual(active, {document})
+        selected, _, _ = cleanup.plan_cleanup(self.root, cleanup.discover(self.root), active,
+                                              now=self.now, budget=0)
+        self.assertEqual([r['path'] for r in selected], [old])
+
+    def test_command_paths_with_spaces_protect_current_source_and_build(self):
+        old = self.artifact('shared/old', age=60)
+        current = self.artifact('shared/current session', age=10)
+        self.artifact('latest-1', age=4)
+        self.artifact('latest-2', age=3)
+        active = self.activity_fixture(command='bash ' + str(current.parent / 'source/Tests/run.sh'))
+        self.assertEqual(active, {current.parent})
+        selected, _, _ = cleanup.plan_cleanup(self.root, cleanup.discover(self.root), active,
+                                              now=self.now, budget=0)
+        self.assertEqual([r['path'] for r in selected], [old])
+
+    def test_multiple_command_sessions_and_direct_open_binary_are_protected(self):
+        first = self.artifact('shared/first', age=20)
+        second = self.artifact('shared/second', age=10)
+        active = self.activity_fixture(command='xcodebuild -derivedDataPath ' + str(first)
+                                       + ' -resultBundlePath ' + str(second.parent / 'result.xcresult'))
+        self.assertEqual(active, {first.parent, second.parent})
+        binary = first / 'Build/Products/Debug-iphoneos/PhoneAgent.app/binary'
+        self.assertEqual(self.activity_fixture([binary]), {first.parent})
+
+    def test_open_shared_directory_remains_conservatively_protected(self):
+        old = self.artifact('shared/old', age=60)
+        shared = old.parent.parent
+        active = self.activity_fixture([shared])
+        self.assertEqual(active, {shared})
+        self.assertEqual(cleanup.plan_cleanup(self.root, cleanup.discover(self.root), active,
+                                              now=self.now, budget=0)[0], [])
+
+    def test_direct_derived_root_does_not_make_output_a_session(self):
+        old = self.artifact('old', age=60)
+        old.rename(self.root / 'direct-derived')
+        sessions = cleanup.activity_sessions(self.root)
+        self.assertIn(self.root / 'direct-derived', sessions)
+        self.assertNotIn(self.root, sessions)
+
+    def test_service_script_keeps_its_nested_runner_between_requests(self):
+        build = self.artifact('service/runner', age=60)
+        script = build.parent.parent / 'server.py'
+        script.write_text('# fixture service')
+        active = self.activity_fixture(command='python3 ' + str(script))
+        self.assertEqual(active, {script.parent})
+        self.assertEqual(cleanup.plan_cleanup(self.root, cleanup.discover(self.root), active,
+                                              now=self.now, budget=0)[0], [])
+
+    def test_storage_settings_directory_scan_does_not_protect_whole_output(self):
+        build = self.artifact('old', age=60)
+        active = self.activity_fixture([self.root], command=cleanup.STORAGE_SCANNER)
+        self.assertEqual(active, set())
+        binary = build / 'Build/Products/Debug-iphoneos/PhoneAgent.app/binary'
+        self.assertEqual(self.activity_fixture([binary], command=cleanup.STORAGE_SCANNER),
+                         {build.parent})
+
+    def test_later_candidate_is_rechecked_after_prior_deletion(self):
+        first = self.artifact('first', age=60)
+        later = self.artifact('later', age=50)
+        self.artifact('latest-1', age=4)
+        self.artifact('latest-2', age=3)
+        with mock.patch.object(cleanup, 'snapshot_activity', side_effect=[
+                (set(), []), (set(), []), ({later.parent}, [])]):
+            result = cleanup.run(self.options())
+        self.assertFalse((first / 'Build').exists())
+        self.assertTrue((later / 'Build').exists())
+        self.assertIn(str(later), result['skipped_after_recheck'])
+
     def test_recent_grace_and_age_based_reclamation(self):
         recent = self.artifact("in-grace", age=1)
         old = self.artifact("expired", age=60)

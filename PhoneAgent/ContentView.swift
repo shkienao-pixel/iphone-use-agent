@@ -30,7 +30,7 @@ struct ContentView: View {
         case create, open(UUID)
     }
     private enum TaskNavigationAction {
-        case create, reset, open(UUID)
+        case open(UUID)
     }
     @State private var reviewVoicePhase: DictationPhase?
     private let reviewVoiceError: String
@@ -44,7 +44,6 @@ struct ContentView: View {
     @State private var expandedSteps = false
     @State private var followLatest = true
     @State private var appeared = false
-    @State private var discardingDraft = false
     @State private var amendmentDrafts: [UUID: String] = [:]
     @State private var searchText = ""
     @State private var sidebarSearchExpanded = false
@@ -121,7 +120,7 @@ struct ContentView: View {
                 case .screenShare: CaptureView()
                 case .device: DeviceView(onCalibration: { beginCalibration() })
                 case .settings: SettingsView(onBack: { navigate(.tasks) })
-                case .assistant: AssistantView(reviewDictation: reviewVoicePhase, allowsDictation: !model.preparingAutomatically && sheet == nil && !settingsPageOpen && !sidebarOpen && !modeSwitcherOpen, onModelSetup: { present(.connection(.model)) })
+                case .assistant: unifiedConversation
                 case .memory: MemoryView()
                 case .workbench: WorkbenchView()
                 case .tools: ToolsConnectionsView(onNavigate: openToolDestination)
@@ -217,6 +216,7 @@ struct ContentView: View {
         presentedWorkspace
         .onAppear {
             if model.engine.hasCurrentTask, let record = model.engine.currentRecord { screen = .conversation(record.id) }
+            preserveLegacyTaskDraft()
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) { appeared = true }
             configureAutomaticPiP(model.settings.autoPiPOnExit ?? false)
             consumeModalRequests()
@@ -315,10 +315,6 @@ struct ContentView: View {
                 }
             }
         } message: { Text("原文、文件草稿和纪要仅保留在当前工作台会话。继续编辑后可以保存到记忆或导出；离开会清空此页内容。") }
-        .alert("清空未提交的任务？", isPresented: $discardingDraft) {
-            Button("清空并新建", role: .destructive) { resetDraft() }
-            Button("继续编辑", role: .cancel) {}
-        } message: { Text("清空会移除尚未提交的文字和附件；继续编辑可保留当前草稿。") }
         .alert("配置完成", isPresented: $showingConfigurationComplete) {
             Button("好的", role: .cancel) {}
         }
@@ -404,7 +400,10 @@ struct ContentView: View {
             return
         }
         guard destination != selectedDestination else {
-            if destination == .assistant { applyAssistantAction(assistantAction) }
+            if destination == .assistant {
+                if assistantAction != nil { model.notice = "" }
+                applyAssistantAction(assistantAction)
+            }
             if destination == .tasks { applyTaskAction(taskAction) }
             if let route { present(route) }
             return
@@ -418,6 +417,9 @@ struct ContentView: View {
         completeNavigation(destination, showing: route, assistantAction: assistantAction, taskAction: taskAction)
     }
     private func completeNavigation(_ destination: WorkspaceDestination, showing route: WorkspaceSheet? = nil, assistantAction: AssistantNavigationAction? = nil, taskAction: TaskNavigationAction? = nil) {
+        // Notices from a different conversation must not follow its replacement.
+        // Clear before the safety pause so a new pause notice remains truthful.
+        if destination == .assistant, assistantAction != nil { model.notice = "" }
         if destination.pausesTaskOnEntry && (model.engine.running || model.voicePending) { model.pauseTask() }
         if destination != .tools && !toolsPath.contains(destination) { toolsPath = [] }
         navigationForward = destination != .tasks; selectedDestination = destination; composing = false
@@ -428,7 +430,9 @@ struct ContentView: View {
     private func applyAssistantAction(_ action: AssistantNavigationAction?) {
         guard let action else { return }
         switch action {
-        case .create: model.conversation.newConversation()
+        case .create:
+            preserveLegacyTaskDraft()
+            model.conversation.newConversation()
         case .open(let id): model.conversation.openConversation(id)
         }
     }
@@ -437,15 +441,6 @@ struct ContentView: View {
         switch action {
         case .open(let id):
             screen = .conversation(id); expandedSteps = false; followLatest = true; composing = false
-        case .create:
-            if model.goal == displayedRecord?.goal { model.goal = ""; model.removeTaskPlan() }
-            screen = .draft; model.notice = ""; composing = false
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        case .reset:
-            attachmentSnapshots[.draft] = []
-            if screen == .draft { attachmentDraft.clear() }
-            model.removeTaskPlan(); model.goal = ""; model.notice = ""; screen = .draft; composing = false
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
     }
     private var isConversationMode: Bool { selectedDestination.isConversation }
@@ -628,7 +623,17 @@ struct ContentView: View {
             .accessibilityAddTraits(selectedDestination == destination ? .isSelected : [])
     }
     private var pageTitle: String { selectedDestination.title }
-    private var taskPage: some View {
+    private var unifiedConversation: some View {
+        AssistantView(reviewDictation: reviewVoicePhase,
+            allowsDictation: !model.preparingAutomatically && sheet == nil && !settingsPageOpen && !sidebarOpen && !modeSwitcherOpen,
+            onModelSetup: { present(.connection(.model)) })
+    }
+    @ViewBuilder private var taskPage: some View {
+        if displayedRecord == nil {
+            // Home uses the same conversation composer as both sidebar entries.
+            // The legacy task draft and its materials remain owned by this view.
+            unifiedConversation
+        } else {
         VStack(spacing: 0) {
             if let active = model.engine.currentRecord, model.engine.hasCurrentTask, !isCurrentConversation {
                 Button { openConversation(active) } label: {
@@ -648,6 +653,7 @@ struct ContentView: View {
         .opacity(appeared ? 1 : 0).offset(y: appeared || reduceMotion ? 0 : 6)
         .safeAreaInset(edge: .bottom, spacing: 0) { composerArea }
         .composerAttachmentPicker(store: attachmentDraft, showPhotos: $showAttachmentPhotos, showFiles: $showAttachmentFiles, selectionID: attachmentSelectionID)
+        }
     }
     private var draftCanvas: some View {
         SelaHomeCanvas(compact: homeInputActive, onSuggestion: { text in model.goal = text; composing = true }) {
@@ -942,6 +948,7 @@ struct ContentView: View {
     private func taskResponse(_ record: PhoneTaskRecord) -> some View {
         let offers = record.logs.filter { $0.title == "工具回执" && $0.detail.hasPrefix("来源：携程") }
             .flatMap { CtripFlightParser.offers($0.detail, query: record.goal, at: record.updatedAt) }
+        let handoffConversationID = model.conversation.currentConversationID
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: record.outcome == .completed ? "checkmark.circle.fill" : (record.outcome == .failed ? "exclamationmark.circle.fill" : "sparkles"))
@@ -951,7 +958,12 @@ struct ContentView: View {
                     .font(.subheadline.weight(.semibold))
             }
 
-            if !offers.isEmpty { CtripFlightCards(offers: offers, onBook: model.bookFlight) }
+            if !offers.isEmpty {
+                CtripFlightCards(offers: offers, onBook: { offer in
+                    model.bookFlight(offer, taskID: record.id, conversationID: handoffConversationID,
+                        isVisible: { selectedDestination == .tasks && displayedRecord?.id == record.id })
+                })
+            }
             let response = isCurrentConversation && model.engine.running ? "正在处理当前步骤" : isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
             let narrative = offers.isEmpty ? response : CtripFlightParser.narrative(response, representedBy: offers)
             if !narrative.isEmpty {
@@ -1245,7 +1257,7 @@ struct ContentView: View {
             onOpenConversation: openConversation,
             onOpenAssistantConversation: { navigate(.assistant, assistantAction: .open($0)) },
             onNewTask: requestNewTask,
-            onNewConversation: { navigate(.assistant, assistantAction: .create) }
+            onNewConversation: requestNewConversation
         )
     }
     private func setSidebar(_ open: Bool) {
@@ -1272,26 +1284,28 @@ struct ContentView: View {
         }
         openConversation(record)
     }
-    private func requestNewTask() {
-        setSidebar(false)
-        if screen == .draft && (!model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachmentDraft.items.isEmpty) { discardingDraft = true }
-        else { navigate(.tasks, taskAction: .create) }
+    private func preserveLegacyTaskDraft() {
+        guard screen == .draft else { return }
+        let materials = attachmentDraft.items.isEmpty ? (attachmentSnapshots[.draft] ?? []) : attachmentDraft.items
+        let records = model.history.records + model.taskQueue.items.map(\.record) + [model.engine.currentRecord].compactMap { $0 }
+        // agent.currentGoal also retains submitted/completed requests. Exact
+        // recorded work is not evidence of an unsent draft and must not be copied.
+        guard !records.contains(where: {
+            ($0.goal == model.goal || $0.effectiveGoal == model.goal) && ($0.attachments ?? []) == materials
+        }) else { return }
+        if materials.isEmpty, model.pendingConversationTask?.goal == model.goal { return }
+        _ = model.conversation.preserveLegacyInput(model.goal, attachments: materials)
     }
-    private func resetDraft() {
-        navigate(.tasks, taskAction: .reset)
+    private func requestNewTask() {
+        requestNewConversation()
+    }
+    private func requestNewConversation() {
+        // A new task is a new conversation; sending chooses chat or execution.
+        // Do not clear the separate legacy draft or alter an existing task.
+        navigate(.assistant, assistantAction: .create)
     }
     private func reuseTask(_ record: PhoneTaskRecord) {
-        // Keep an existing unsent task intact; reuse opens only an editable draft.
-        let materials = screen == .draft ? attachmentDraft.items : (attachmentSnapshots[.draft] ?? [])
-        if (!model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.goal != record.effectiveGoal) || (!materials.isEmpty && materials != (record.attachments ?? [])) {
-            screen = .draft; model.notice = "输入框里还有未提交的任务，请先处理草稿。"
-        } else {
-            model.goal = record.effectiveGoal
-            attachmentSnapshots[.draft] = record.attachments ?? []
-            if screen == .draft { attachmentDraft.replace(record.attachments ?? []) }
-            screen = .draft
-        }
-        composing = true
+        if model.reuseTaskInNewConversation(record) { navigate(.assistant) }
     }
     private func prepareAutomatically() {
         guard !model.preparingAutomatically, !busy, !model.calibrating else { return }

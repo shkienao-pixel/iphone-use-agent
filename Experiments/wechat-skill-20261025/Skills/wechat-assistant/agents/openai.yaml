@@ -1,0 +1,3 @@
+interface:
+  display_name: "微信联系人与朋友圈"
+  short_description: "按当前手机画面查找微信联系人、发送文字并核验指定朋友圈的点赞和评论"

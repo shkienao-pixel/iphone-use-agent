@@ -493,11 +493,11 @@ import Combine
         let priorTurns: [AssistantMessage] = [.init(role: "user", text: "此前背景"), .init(role: "assistant", text: "此前说明")]
         let (regenerating, retryURL) = try retryFixture("chat", prior: priorTurns)
         let originalRetryMessages = regenerating.messages, originalReply = regenerating.messages.last!
-        let originalRetryBytes = try Data(contentsOf: retryURL)
         regenerating.draft = "保持我还没发出的草稿"
         regenerating.retainDraftAttachments([attachedImage], conversationID: regenerating.currentConversationID)
         let unrelatedFrameDate = now.addingTimeInterval(500)
         regenerating.selectFrame(ScreenFrame(capturedAt: unrelatedFrameDate))
+        let originalRetryBytes = try Data(contentsOf: retryURL)
         var retryRouteCalls = 0, retryActionCalls = 0
         regenerating.unifiedRoute = { _ in retryRouteCalls += 1; return .init(mode: .task, request: "不得执行", message: "不得执行") }
         regenerating.onAction = { _, _ in retryActionCalls += 1 }

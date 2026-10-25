@@ -50,7 +50,7 @@ final class AssistantConversationStore {
     func upsert(_ record: AssistantConversationRecord, currentConversationID: UUID) throws {
         guard readable else { throw AssistantConversationStoreError.unavailable }
         var updated = records.filter { $0.id != record.id }
-        if !record.messages.isEmpty || !record.draft.isEmpty { updated.append(record) }
+        if !record.messages.isEmpty || !record.draft.isEmpty || !(record.draftAttachments ?? []).isEmpty { updated.append(record) }
         try persist(sorted(updated), currentConversationID: currentConversationID)
     }
 
@@ -71,6 +71,7 @@ final class AssistantConversationStore {
     private func validate(_ records: [AssistantConversationRecord]) throws {
         guard records.count <= 100, Set(records.map(\.id)).count == records.count else { throw AssistantConversationStoreError.limit }
         for record in records {
+            try ComposerAttachmentPolicy.validate(record.draftAttachments ?? [])
             for message in record.messages { try ComposerAttachmentPolicy.validate(message.attachments ?? []) }
             guard !record.title.isEmpty, record.title.count <= 80, record.recipient.count <= 4000,
                   record.draft.count <= 4000, record.messages.count <= 100,

@@ -229,9 +229,12 @@ final class SystemTools: ObservableObject {
             guard let calendar = targetCalendar, calendar.allowsContentModifications else { throw AgentError.message("目标日历已不可写入") }
             let event = EKEvent(eventStore: events); event.calendar = calendar; event.title = canonical.title
             event.startDate = SystemToolRequest.date(request.start); event.endDate = SystemToolRequest.date(request.end)
-            event.notes = request.notes; event.url = URL(string: "phoneagent://receipt/" + id.uuidString)
+            event.notes = request.notes
             try Task.checkCancellation(); try events.save(event, span: .thisEvent, commit: true)
-            result = "已添加日程：\(event.title ?? "") · \(iso(event.startDate)) · 结束：\(iso(event.endDate)) · 所属日历：\(event.calendar.title) · 回执 \(id.uuidString)"
+            result = try NativeEventWriteReceipt(operation: .calendar, receiptID: id,
+                systemItemID: event.calendarItemIdentifier, collectionID: event.calendar.calendarIdentifier,
+                title: event.title ?? "", collectionName: event.calendar.title,
+                start: iso(event.startDate), end: iso(event.endDate)).serialized()
         case .reminder_search:
             let predicate = events.predicateForReminders(in: nil)
             let reminders: [EKReminder] = await withCheckedContinuation { continuation in events.fetchReminders(matching: predicate) { continuation.resume(returning: $0 ?? []) } }
@@ -241,7 +244,6 @@ final class SystemTools: ObservableObject {
         case .reminder_create:
             guard let calendar = targetCalendar, calendar.allowsContentModifications else { throw AgentError.message("目标提醒列表已不可写入") }
             let reminder = EKReminder(eventStore: events); reminder.calendar = calendar; reminder.title = canonical.title; reminder.notes = request.notes
-            reminder.url = URL(string: "phoneagent://receipt/" + id.uuidString)
             if let date = SystemToolRequest.date(request.start) {
                 var components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
                 components.calendar = Calendar.current; components.timeZone = TimeZone.current; reminder.dueDateComponents = components
@@ -249,8 +251,13 @@ final class SystemTools: ObservableObject {
             }
             try Task.checkCancellation(); try events.save(reminder, commit: true)
             let actualDue = reminder.dueDateComponents.flatMap { Calendar.current.date(from: $0) }
-            let dueReceipt = actualDue.map { " · 提醒时间：" + iso($0) } ?? ""
-            result = "已添加提醒：\(reminder.title ?? "")\(dueReceipt) · 所属列表：\(reminder.calendar.title) · 回执 \(id.uuidString)"
+            guard reminder.dueDateComponents == nil || actualDue != nil else {
+                throw AgentError.message("提醒已提交，但实际到期时间无法核对；请先检查提醒事项，没有重复创建")
+            }
+            result = try NativeEventWriteReceipt(operation: .reminder, receiptID: id,
+                systemItemID: reminder.calendarItemIdentifier, collectionID: reminder.calendar.calendarIdentifier,
+                title: reminder.title ?? "", collectionName: reminder.calendar.title,
+                due: actualDue.map(iso)).serialized()
         case .contact_search:
             let keyword = request.query!
             let matches = try await Task.detached(priority: .userInitiated) {

@@ -1,6 +1,66 @@
 import Foundation
 import CoreFoundation
 
+/// Actual post-save EventKit fields. Identifiers are local to this device/store;
+/// neither they nor this creation receipt prove later existence or cloud sync.
+struct NativeEventWriteReceipt: Codable, Equatable {
+    enum Operation: String, Codable { case calendar = "calendar_create", reminder = "reminder_create" }
+    let schema_version: Int
+    let source: String
+    let state: String
+    let operation: Operation
+    let local_receipt_id: UUID
+    let system_item_id: String
+    let collection_id: String
+    let title: String
+    let collection_name: String
+    let start: String?
+    let end: String?
+    let due: String?
+
+    init(operation: Operation, receiptID: UUID, systemItemID: String, collectionID: String,
+         title: String, collectionName: String, start: String? = nil, end: String? = nil, due: String? = nil) {
+        schema_version = 1; source = "EventKit"; state = "completed"
+        self.operation = operation; local_receipt_id = receiptID
+        system_item_id = systemItemID; collection_id = collectionID
+        self.title = title; collection_name = collectionName
+        self.start = start; self.end = end; self.due = due
+    }
+
+    private var valid: Bool {
+        guard schema_version == 1, source == "EventKit", state == "completed",
+              [system_item_id, collection_id, title, collection_name].allSatisfy({
+                  !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf8.count <= 4096
+              }) else { return false }
+        switch operation {
+        case .calendar:
+            guard due == nil, let start, let end,
+                  let first = NativeTaskResult.parseDate(start), let last = NativeTaskResult.parseDate(end) else { return false }
+            return first < last
+        case .reminder:
+            return start == nil && end == nil && (due == nil || NativeTaskResult.parseDate(due!) != nil)
+        }
+    }
+
+    func serialized() throws -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        guard valid, data.count <= 12_000 else { throw InvalidReceipt() }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func decode(_ result: String, operation: String) -> Self? {
+        let data = Data(result.utf8)
+        guard data.count <= 12_000, let receipt = try? JSONDecoder().decode(Self.self, from: data),
+              receipt.operation.rawValue == operation, receipt.valid else { return nil }
+        return receipt
+    }
+
+    private struct InvalidReceipt: LocalizedError {
+        var errorDescription: String? { "系统写入已提交，但实际回执字段不完整；请先核对目标 App，未重复创建" }
+    }
+}
+
 /// Presentation of an actual completed native call, never a model plan.
 struct NativeTaskResult: Codable, Equatable, Identifiable {
     enum App: String, Codable { case alarm, calendar, reminders, notes, health, contacts, photos, music, location, content }
@@ -14,6 +74,8 @@ struct NativeTaskResult: Codable, Equatable, Identifiable {
     let date: Date?
     let endDate: Date?
     let slot: String
+    var systemObjectID: String? = nil
+    var collectionID: String? = nil
 
     static func retained(_ old: [Self], adding result: Self) -> [Self] {
         guard !old.contains(where: { $0.id == result.id }) else { return old }
@@ -32,10 +94,11 @@ struct NativeTaskResult: Codable, Equatable, Identifiable {
                           start requestedStart: String?, eventID: String) -> Self? {
         guard result.utf8.count <= 48_000, !result.hasPrefix("重复请求已跳过") else { return nil }
         func card(_ app: App, _ title: String, _ value: String, _ detail: String = "", _ notice: String = "",
-                  date: Date? = nil, endDate: Date? = nil, id: String? = nil, slot: String = "") -> Self {
+                  date: Date? = nil, endDate: Date? = nil, id: String? = nil, slot: String = "",
+                  systemObjectID: String? = nil, collectionID: String? = nil) -> Self {
             Self(id: id ?? eventID, app: app, operation: operation, title: String(title.prefix(160)),
                  value: String(value.prefix(240)), detail: String(detail.prefix(400)), notice: String(notice.prefix(400)),
-                 date: date, endDate: endDate, slot: slot)
+                 date: date, endDate: endDate, slot: slot, systemObjectID: systemObjectID, collectionID: collectionID)
         }
         func object() -> [String: Any]? {
             // Some legacy tools append a scope notice after one JSON line.
@@ -61,6 +124,12 @@ struct NativeTaskResult: Codable, Equatable, Identifiable {
             guard !title.isEmpty else { return nil }
             return card(.alarm, title, "已设置", "单次闹钟", "创建时的结果 · 仅 Sela 自己的闹钟", date: date, id: id)
         case "calendar_create":
+            if let receipt = NativeEventWriteReceipt.decode(result, operation: operation) {
+                return card(.calendar, receipt.title, "已添加日程", receipt.collection_name, "创建时的结果",
+                            date: receipt.start.flatMap(parseDate), endDate: receipt.end.flatMap(parseDate),
+                            id: receipt.local_receipt_id.uuidString, systemObjectID: receipt.system_item_id,
+                            collectionID: receipt.collection_id)
+            }
             guard let (id, parts, _) = writeParts("已添加日程："), parts.count >= 3,
                   parts.last!.hasPrefix("所属日历：") else { return nil }
             let hasEnd = parts[parts.count - 2].hasPrefix("结束：")
@@ -71,6 +140,12 @@ struct NativeTaskResult: Codable, Equatable, Identifiable {
             return card(.calendar, parts.dropLast(suffix).joined(separator: " · "), "已添加日程",
                         String(parts.last!.dropFirst(5)), "创建时的结果", date: date, endDate: end, id: id)
         case "reminder_create":
+            if let receipt = NativeEventWriteReceipt.decode(result, operation: operation) {
+                return card(.reminders, receipt.title, "已添加提醒", receipt.collection_name,
+                            receipt.due == nil ? "创建时的结果 · 未设置提醒时间" : "创建时的结果",
+                            date: receipt.due.flatMap(parseDate), id: receipt.local_receipt_id.uuidString,
+                            systemObjectID: receipt.system_item_id, collectionID: receipt.collection_id)
+            }
             guard let (id, parts, _) = writeParts("已添加提醒："), parts.count >= 2,
                   parts.last!.hasPrefix("所属列表：") else { return nil }
             let hasDue = parts.count >= 3 && parts[parts.count - 2].hasPrefix("提醒时间：")

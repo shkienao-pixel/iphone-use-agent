@@ -4,7 +4,7 @@ struct ScreenFrame { let jpeg: Data; let capturedAt: Date }
 enum PhoneControlSkill { static func instructions() throws -> String { "Offline phone skill boundary" } }
 enum AppleSupportSkill { static func instructions(for task: String) throws -> String { "Offline support boundary" } }
 enum NativeSkillCatalog {
-    struct Selection { let names = [String](); let instructions = "Offline native skill resource boundary"; let receipt = "" }
+    struct Selection { let names = [String](); let instructions = "Offline native skill resource boundary"; let receipt = ""; let runtimeReceipts = [String]() }
     static func selection(for task: String) throws -> Selection { Selection() }
 }
 enum CtripStore { static let enabled = false; static let hasCredential = false }

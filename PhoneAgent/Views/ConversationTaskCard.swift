@@ -10,6 +10,7 @@ struct ConversationTaskCard: View {
     }
     var body: some View {
         if let record {
+            let handoffConversationID = model.conversation.currentConversationID
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     Image(systemName: record.outcome == .completed ? "checkmark.circle.fill" : "gearshape.2")
@@ -20,7 +21,12 @@ struct ConversationTaskCard: View {
                 }
                 let offers = record.logs.filter { $0.title == "工具回执" && $0.detail.hasPrefix("来源：携程") }
                     .flatMap { CtripFlightParser.offers($0.detail, query: record.goal, at: record.updatedAt) }
-                if !offers.isEmpty { CtripFlightCards(offers: offers, onBook: model.bookFlight) }
+                if !offers.isEmpty {
+                    CtripFlightCards(offers: offers, onBook: { offer in
+                        model.bookFlight(offer, taskID: record.id, conversationID: handoffConversationID,
+                            isVisible: { model.conversation.messages.contains { $0.taskID == record.id } })
+                    })
+                }
                 let nativeResults = record.nativeResults ?? []
                 if !nativeResults.isEmpty { NativeTaskResultCards(results: nativeResults) }
                 let summary = offers.isEmpty ? record.summary : CtripFlightParser.narrative(record.summary, representedBy: offers)

@@ -20,6 +20,7 @@ GENERATED = (
     "SwiftExplicitPrecompiledModules", "ExplicitPrecompiledModules",
 )
 PROJECTS = {"PhoneAgent.xcodeproj", "NativePanelRunner.xcodeproj"}
+STORAGE_SCANNER = "/System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService"
 PRUNE = {".app", ".appex", ".framework", ".bundle", ".xcresult", ".xcarchive", ".xcappdata"}
 TEST_PREFIXES = ("pdf-preflight-checks.", "context-lease-checks.", "conversation-control-checks.",
                  "conversation-reference-checks.", "input-release-checks.", "conversation-task-ownership.",
@@ -45,6 +46,49 @@ def allocated(path):
     return int(result.stdout.split()[0]) * 1024
 
 
+def activity_sessions(root):
+    """Identify build-owning sessions without promoting a shared task folder."""
+    sessions = set()
+    for base, dirs, files in os.walk(root, followlinks=False):
+        path = Path(base)
+        dirs[:] = [d for d in dirs if not (path / d).is_symlink()
+                   and Path(d).suffix not in PRUNE and d not in (".git", "node_modules")]
+        meta = read_plist(path / "info.plist") if "info.plist" in files else {}
+        if Path(str(meta.get("WorkspacePath", ""))).name in PROJECTS:
+            sessions.add(path.parent if path.parent != root else path)
+            dirs[:] = []
+    return sessions
+
+
+def activity_scope(root, path, sessions):
+    """A log/source/result protects its nearest build session, not its siblings."""
+    owners = [p for p in sessions if contains(p, path)]
+    return max(owners, key=lambda p: len(p.parts)) if owners else path
+
+
+def command_scopes(root, command, sessions):
+    # ps does not quote argument paths containing spaces. Match complete known
+    # session paths first, then use other references only at their actual path.
+    matched = {p for p in sessions if re.search(
+        re.escape(str(p)) + r"(?:/|(?=$|[\s'\"]))", command)}
+    precise = {p for p in matched if not any(p != q and contains(p, q) for q in matched)}
+    remaining = command
+    for session in sorted(matched, key=lambda p: len(str(p)), reverse=True):
+        remaining = remaining.replace(str(session), "")
+    references = re.findall(re.escape(str(root)) + r"(?:/[^\s'\"<>|;]*)?", remaining)
+    for reference in references:
+        path = Path(reference)
+        if any(contains(path, p) or contains(p, path) for p in matched):
+            continue
+        scope = activity_scope(root, path, sessions)
+        if scope == path and path.suffix in (".py", ".sh", ".js", ".mjs") and path.is_file():
+            # A running service script can launch a runner in a child folder
+            # later, without holding its binary open between requests.
+            scope = path.parent
+        precise.add(scope)
+    return precise
+
+
 def snapshot_activity(root):
     """Fail closed if process/open-file inspection is unavailable."""
     ps = subprocess.run(["/bin/ps", "-axo", "pid=,ppid=,command="], text=True,
@@ -59,22 +103,25 @@ def snapshot_activity(root):
     while pid and pid not in ancestors:
         ancestors.add(pid)
         pid = processes.get(pid, (0, ""))[0]
-    top = [p for p in root.iterdir() if p.is_dir() and not p.is_symlink()]
+    sessions = activity_sessions(root)
+    directory_scanners = {pid for pid, (_, command) in processes.items()
+                          if command.strip() == STORAGE_SCANNER}
     active = set()
     for pid, (_, command) in processes.items():
         if pid in ancestors:
             continue
-        for p in top:
-            if str(p) + "/" in command or command.endswith(str(p)):
-                active.add(p)
+        active.update(command_scopes(root, command, sessions))
     for owner, path in inspect_open_files():
         if owner not in ancestors:
             if contains(root, path):
-                # An open test result or app in the same session protects
-                # that session's build, even after xcodebuild has exited.
-                relative = path.relative_to(root)
-                if relative.parts:
-                    active.add(root / relative.parts[0])
+                # Storage Settings enumerates output directories to calculate
+                # size; its directory handles are not a running build/session.
+                # Still protect any regular files it actually holds open.
+                if owner in directory_scanners and path.is_dir():
+                    continue
+                # Preserve the actual session and its test artifacts. A system
+                # reader holding a sibling document must not pin every build.
+                active.add(activity_scope(root, path, sessions))
     return active, [value[1] for value in processes.values()]
 
 
@@ -275,13 +322,14 @@ def run(args):
             root, artifacts, active, [p.absolute() for p in args.protect],
             budget=int(args.budget_gib * GIB), keep=args.keep,
             min_age=args.min_age_hours * 3600, max_age=args.max_age_hours * 3600)
-        # Recheck activity after discovery, which can take time on a large tree.
-        if args.apply and selected:
-            active_now, commands = snapshot_activity(root)
-            active |= active_now
         deleted, skipped = [], []
         for item in selected:
             path = item["path"]
+            # Recheck before each deletion: reclaiming many old sessions can
+            # take long enough for another build/test to start in the meantime.
+            if args.apply:
+                active_now, commands = snapshot_activity(root)
+                active |= active_now
             current = next((x for x in discover_one(root, path)), None)
             if (current is None or current["modified"] != item["modified"] or pinned(path, root)
                     or any(contains(p, path) or contains(path, p) for p in active)):

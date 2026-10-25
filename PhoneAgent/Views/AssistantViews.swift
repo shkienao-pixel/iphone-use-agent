@@ -182,6 +182,7 @@ struct AssistantView: View {
     let onModelSetup: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var followingConversation = true
+    @State private var flightHandoffVisibilityEpoch = UUID()
     @State private var conversationUserScrolling = false
     @State private var lastSpokenMessage: UUID?
     @State private var useCamera = false
@@ -252,8 +253,19 @@ struct AssistantView: View {
                                     } else {
                                     let offers = model.conversation.flightOffers(for: message)
                                     if !offers.isEmpty {
+                                        let flightOrigin = CtripFlightHandoffOrigin(
+                                            conversationID: model.conversation.currentConversationID, messageID: message.id)
                                         CtripFlightCards(offers: offers,
-                                            recommendation: model.conversation.flightRecommendation(for: message), onBook: model.bookFlight)
+                                            recommendation: model.conversation.flightRecommendation(for: message),
+                                            showsSortExplanation: CtripFlightCardPresentationPolicy.showsSortExplanation(
+                                                messageID: message.id, messages: model.conversation.messages),
+                                            onBook: { offer in
+                                                let handoffEpoch = flightHandoffVisibilityEpoch
+                                                model.bookFlight(offer, origin: flightOrigin,
+                                                    isVisible: { handoffEpoch == flightHandoffVisibilityEpoch })
+                                            })
+                                    } else if message.flightQuery != nil || message.flightOffers != nil {
+                                        CtripFlightEmptyResult(text: message.text)
                                     } else { SelaMarkdownText(text: message.text) }
                                     }
                                 }
@@ -347,7 +359,10 @@ struct AssistantView: View {
                 .onAppear { reader.scrollTo("bottom", anchor: .bottom) }
         }
         .onChange(of: composing || dictating) { _, active in model.assistantInputActive = active }
-        .onDisappear { composing = false; model.assistantInputActive = false }
+        .onDisappear {
+            flightHandoffVisibilityEpoch = UUID()
+            composing = false; model.assistantInputActive = false
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 8) {
                 if !attachmentDraft.items.isEmpty || attachmentDraft.importing || !attachmentDraft.error.isEmpty {
@@ -462,8 +477,9 @@ struct AssistantView: View {
             Button("清空", role: .destructive) { resetConversation() }
         }
         .onChange(of: model.conversation.currentConversationID) { _, conversationID in
-            attachmentDraft.clear(); showAttachmentPhotos = false; showAttachmentFiles = false
             attachmentConversationID = conversationID
+            attachmentDraft.replace(model.conversation.retryAttachments)
+            showAttachmentPhotos = false; showAttachmentFiles = false
             stopConversationMedia()
             followingConversation = true
             lastSpokenMessage = model.conversation.messages.last?.id
@@ -539,9 +555,6 @@ struct AssistantView: View {
                 HStack(spacing: 8) { conversationSuggestions }
                 VStack(spacing: 8) { conversationSuggestions }
             }
-            Text("需要操作手机时，选择「新任务」。")
-                .font(.caption).foregroundStyle(AgentPalette.secondaryText)
-                .padding(.top, 4)
         }.frame(maxWidth: .infinity).padding(.top, 24).padding(.bottom, 24)
     }
     @ViewBuilder private var conversationSuggestions: some View {

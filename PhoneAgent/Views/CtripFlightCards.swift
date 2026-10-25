@@ -1,8 +1,89 @@
+import Foundation
 import SwiftUI
+
+/// Presentation uses the human turn, never the provider's normalized query.
+enum CtripFlightCardPresentationPolicy {
+    static func showsSortExplanation(messageID: UUID, messages: [AssistantMessage]) -> Bool {
+        guard let reply = messages.firstIndex(where: { $0.id == messageID }), messages[reply].role == "assistant",
+              let human = messages[..<reply].lastIndex(where: { $0.role == "user" || $0.role == "human" }),
+              messages[..<human].contains(where: { $0.role == "assistant" && ($0.flightQuery != nil || $0.flightOffers != nil) }) else { return false }
+        return explicitlyChangesSorting(messages[human].text)
+    }
+
+    static func explicitlyChangesSorting(_ question: String) -> Bool {
+        let text = question.lowercased().replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+        guard !text.isEmpty else { return false }
+        // A request to keep ordering or hide its explanation takes precedence.
+        let suppress = #"(?:不要|不用|无需|不必|别|不需要|不)(?:再)?(?:解释|说明|展示|显示|讲解)[^，,。；;！？!?\n]{0,8}(?:排序|怎么排)|(?:排序|排序规则|排序说明)(?:不用|无需|不必|不要)(?:再)?(?:解释|说明|展示|显示)|(?:不要|不用|无需|不必|别|不需要|不)(?:再)?(?:改|改变|改动|修改|调整|更改|变动)(?:变)?(?:当前|现有|原来|这个|本次|任何|航班)*排序|(?:保持|保留)(?:当前|现有|原来)?排序(?:不变)?|排序(?:保持)?不变|(?:没有|未|无)(?:指定)?排序偏好"#
+        guard text.range(of: suppress, options: .regularExpression) == nil else { return false }
+        let positive = #"(?:价格|票价|低价|便宜|最便宜|总耗时|全程(?:总)?时长|耗时|用时|时间最短|早飞|早到|直飞|少中转|中转次数少|最少中转|出发时段|到达时段|上午出发|下午出发|晚上出发)(?:更)?优先|(?:按|按照|先看|先比)(?:同口径)?(?:价格|票价|总耗时|全程(?:总)?时长|耗时|用时|起飞时间|出发时间|到达时间)(?:(?:从|由)?低到高|(?:从|由)?高到低|升序|降序)?(?:排|排序)|(?:改成|改为|改回|换成|换为|调整为)(?:按)?(?:默认排序|默认规则|价格最低|票价最低|最便宜|耗时最短|总耗时最短|最早出发|最早到达|中转最少)|(?:重新排序|调整排序|更改排序|修改排序|改变排序)|(?:最便宜|便宜|低价|最快|耗时短|总耗时短|早飞|早到|起飞早|最早出发|最早到达|少中转)(?:的)?(?:排|放)(?:在)?(?:最前|前面|第一)"#
+        let clauses = text.components(separatedBy: CharacterSet(charactersIn: "，,。；;！？!?\n"))
+        return clauses.contains { clause in
+            guard let range = clause.range(of: positive, options: .regularExpression) else { return false }
+            let before = String(clause[..<range.lowerBound])
+            return before.range(of: #"(?:不要|不用|无需|不必|别|不需要|不是|并非|不想|不)(?:再)?(?:按|按照|改成|改为|优先考虑)?$"#, options: .regularExpression) == nil
+        }
+    }
+
+    static func shortSortExplanation(_ source: String) -> String {
+        if source.contains("未按金额排序") { return "报价口径不同或未明确，暂未按金额排序。" }
+        let first = source.replacingOccurrences(of: "排序：", with: "").components(separatedBy: " → ").first ?? ""
+        let labels = ["同口径报价低": "价格", "总耗时短": "全程总时长", "中转次数少": "少中转", "起飞早": "早飞", "到达早": "早到", "直飞优先": "直飞"]
+        if let label = labels[first] { return "已按" + label + "优先调整。" }
+        return "已按你的排序偏好调整。"
+    }
+
+    static func preferredHeading(_ offer: CtripFlightOffer, recommendation: CtripFlightRecommendation) -> String {
+        switch offer.selectionStatus {
+        case .satisfied:
+            return recommendation.preferredOfferID == nil && !recommendation.commonNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "可选方案" : "优先方案"
+        case .insufficientInformation: return "待核实方案"
+        case .doesNotMeet: return "不符合条件的方案"
+        }
+    }
+
+    static func isTransfer(_ offer: CtripFlightOffer) -> Bool {
+        offer.itinerarySegments.count > 1 || offer.cardSegments.count > 1 ||
+            CtripFlightParser.flightNumbers(in: offer.title).count > 1 || offer.field("航程类型") == "中转"
+    }
+
+    private static func primaryDuration(_ value: String) -> String? {
+        let primary = value.components(separatedBy: CharacterSet(charactersIn: "（(")).first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard primary.range(of: #"^(?:约)?(?:\d{1,4}\s*(?:天|小时|分钟|分|h|min|m)\s*)+$"#, options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+        return primary
+    }
+
+    /// Only the returned whole-journey duration can carry an including-wait label.
+    /// Flight durations and endpoint clock differences are never substitutes.
+    private static func returnedWholeDurations(_ offer: CtripFlightOffer) -> Set<String> {
+        Set(offer.details.components(separatedBy: .newlines).compactMap { line -> String? in
+            let value = CtripFlightParser.value("总耗时", in: line).trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        })
+    }
+
+    static func wholeJourneyDuration(_ offer: CtripFlightOffer) -> String {
+        let returned = returnedWholeDurations(offer)
+        guard returned.count == 1, let value = returned.first,
+              !["不含等待", "不含中转等待", "不含转机等待", "未含等待", "仅飞行", "纯飞行", "飞行时间合计"].contains(where: { value.contains($0) }),
+              let duration = primaryDuration(value) else { return "待核实" }
+        return duration
+    }
+
+    static func summaryMetadata(_ offer: CtripFlightOffer) -> [String] {
+        guard isTransfer(offer) else { return offer.cardMetadata }
+        let totals = Set(returnedWholeDurations(offer).compactMap(primaryDuration))
+        return offer.cardMetadata.filter { value in
+            guard let duration = primaryDuration(value) else { return true }
+            return !totals.contains(duration)
+        }
+    }
+}
 
 struct CtripFlightCards: View {
     let offers: [CtripFlightOffer]
     var recommendation: CtripFlightRecommendation? = nil
+    var showsSortExplanation = false
     let onBook: (CtripFlightOffer) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title) private var timeSize: CGFloat = 29
@@ -13,14 +94,16 @@ struct CtripFlightCards: View {
         let preferred = ordered.first
         let remaining = Array(ordered.dropFirst())
         let summary = recommendation ?? CtripFlightParser.recommendation("", representedBy: offers)
-        let rule = summary.sortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         VStack(spacing: 12) {
             if let preferred {
-                Text(rule.isEmpty ? "排序：按当前查询返回顺序" : rule).font(.subheadline).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("flight.sortDescription")
-                Text(preferredHeading(preferred)).font(.subheadline.weight(.semibold))
+                if showsSortExplanation {
+                    Text(CtripFlightCardPresentationPolicy.shortSortExplanation(summary.sortDescription))
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("flight.sortDescription")
+                }
+                Text(CtripFlightCardPresentationPolicy.preferredHeading(preferred, recommendation: summary)).font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 card(preferred)
             }
@@ -82,13 +165,6 @@ struct CtripFlightCards: View {
         }
     }
 
-    private func preferredHeading(_ offer: CtripFlightOffer) -> String {
-        switch offer.selectionStatus {
-        case .satisfied: return "优先方案"
-        case .insufficientInformation: return "待核实方案"
-        case .doesNotMeet: return "不符合条件的方案"
-        }
-    }
     private func visibleIssues(_ offer: CtripFlightOffer) -> [String] {
         var result: [String] = []
         for value in offer.selectionIssues + offer.cardWarnings where !result.contains(value) { result.append(value) }
@@ -112,13 +188,24 @@ struct CtripFlightCards: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("flight.selectionStatus")
             }
+            if CtripFlightCardPresentationPolicy.isTransfer(offer) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("全程总时长（含中转等待）").font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(CtripFlightCardPresentationPolicy.wholeJourneyDuration(offer))
+                        .font(.title3.weight(.semibold)).monospacedDigit()
+                        .fixedSize(horizontal: false, vertical: true)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine).accessibilityIdentifier("flight.totalDuration")
+            }
             itinerary(offer)
             if !offer.transferAirport.isEmpty {
                 Label(offer.transferAirport == "中转机场" ? "中转机场待核实" : "经 " + offer.transferAirport, systemImage: "arrow.triangle.branch")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            if !offer.cardMetadata.isEmpty {
-                Text(offer.cardMetadata.joined(separator: " · "))
+            let metadata = CtripFlightCardPresentationPolicy.summaryMetadata(offer)
+            if !metadata.isEmpty {
+                Text(metadata.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             ForEach(Array(visibleIssues(offer).enumerated()), id: \.offset) { item in
@@ -266,5 +353,25 @@ struct CtripFlightCards: View {
                 .contentShape(Capsule())
         }.buttonStyle(.plain).accessibilityLabel(offer.bookingButtonTitle + "，" + offer.cardTitle)
             .accessibilityIdentifier("flight.book")
+    }
+}
+
+
+/// A flight response without complete cards stays compact until the user asks for its source.
+struct CtripFlightEmptyResult: View {
+    let text: String
+    @State private var showsOriginal = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("这次未返回可展示的完整航班方案。")
+                .font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("flight.emptyResult")
+            DisclosureGroup("查看原始结果", isExpanded: $showsOriginal) {
+                Text(text).font(.footnote).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
+            }.font(.subheadline).accessibilityIdentifier("flight.originalResult")
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

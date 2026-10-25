@@ -264,5 +264,38 @@
     "original503FailurePreserved": true,
     "privateHealthValuesAndDatesOmitted": true,
     "evidence": "output/ios-native-longrun-20261025/L60-NATIVE-HW105-NOTES-C1/verification.json"
+  },
+  "latestActualAutomaticRecoveryWorkflow": {
+    "case": "NETWORK-READ-HEALTH-H11-R2",
+    "build": 134,
+    "workflowAcceptance": true,
+    "actualReads": 63,
+    "actualReadMetadata": 63,
+    "completeRanges": 21,
+    "unknownReadReceipts": 0,
+    "actualContextArchivedEntries": 106,
+    "automaticModelTransportRecoveries": 2,
+    "extraExecutionApprovalTaps": 0,
+    "manualContinueOrRetryTaps": 0,
+    "engineModelRequests": 66,
+    "allActualBoundsDigestsAndUTF8Matched": true,
+    "threeActualCardsAndFullVisibleFinalReportMatched": true,
+    "cold135AllFiveStoresPreserved": true,
+    "coldThreeCardsRestored": true,
+    "controlledOffline120sAcceptance": false,
+    "privateHealthValuesAndDatesOmitted": true,
+    "evidence": "output/ios-native-longrun-20261025/NETWORK-READ-HEALTH-H11-R2/verification.json"
+  },
+  "freshAtomicLongReadRun": {
+    "case": "HEALTH-LONG-FRESH-H12",
+    "build": 135,
+    "status": "running_not_accepted",
+    "plannedRanges": 160,
+    "plannedReads": 480,
+    "targetEngineSeconds": 3600,
+    "noArtificialDelayOrRepeatedRanges": true,
+    "physicalSourcePrefixVerifiedReads": 43,
+    "actualDurationAcceptancePending": true,
+    "evidence": "output/ios-native-longrun-20261025/HEALTH-LONG-FRESH-H12/interim-health-audit.json"
   }
 }

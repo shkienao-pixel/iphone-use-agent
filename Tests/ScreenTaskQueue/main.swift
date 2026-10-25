@@ -42,11 +42,13 @@ import Foundation
         expect(vm.pauseScreenQueueTask(b.id) && vm.engine.activityControlSessionID == originalSession, "Pausing B does not pause or change A")
         expect(vm.resumeScreenQueueTask(b.id) && vm.screenQueueWaiting.map(\.id) == [c.id,b.id], "Starting B only restores its existing position")
         expect(vm.pauseScreenQueueTask(b.id), "Individual pause can be restored before reaching the head")
+        let releaseDrop = vm.task("RELEASE-DROP"); try vm.taskQueue.append(releaseDrop)
         allowA = true
         try await wait { vm.engine.releasing && vm.engine.currentRecord?.id == a }
         expect(!vm.pauseScreenQueueTask(a) && !vm.stopScreenQueueTask(a), "Late controls on completed A cannot pause/stop the queue during input release")
         expect(vm.queueRunning, "A stale completed-task control preserves the active FIFO run")
-        expect(vm.reorderScreenQueueTasks([b.id,c.id]), "Reordering during release changes the next selected task")
+        expect(vm.reorderScreenQueueTasks([b.id,c.id,releaseDrop.id]), "Reordering during release changes the next selected task")
+        expect(vm.removeScreenQueueTask(releaseDrop.id), "A later item may be removed during the current task's input release")
         try await wait { !vm.queueRunning && !vm.engine.releasing }
         expect(ModelProbe.goals == ["A"] && vm.taskQueue.items.first(where: { $0.id == b.id })?.state == .paused, "A paused head blocks later tasks and is never automatically resumed")
         expect(vm.resumeScreenQueueTask(b.id) && ModelProbe.goals == ["A"], "Resuming an item while the queue is paused grants no immediate execution")
@@ -107,6 +109,19 @@ import Foundation
         mixed.engine.stop(); try await wait { mixed.engine.executionSettled }; ModelProbe.delay = 0
 
         resetModel()
+        let oldPause = try make("old-pause")
+        ModelProbe.delay = 1_000_000_000
+        oldPause.engine.start(task: "OLD-PAUSE", settings: oldPause.settings)
+        try await wait { ModelProbe.calls == 1 }
+        oldPause.engine.pause(); try await wait { oldPause.engine.executionSettled }
+        expect(oldPause.screenQueueCurrent?.state == .suspended,
+               "An initial task paused outside the queue retains a review hold in its read-only snapshot")
+        try oldPause.taskQueue.append(oldPause.task("AFTER-OLD-PAUSE"))
+        expect(!oldPause.startScreenQueue() && ModelProbe.calls == 1,
+               "Global start cannot silently resume a manually paused initial task through a default waiting snapshot")
+        ModelProbe.delay = 0
+
+        resetModel()
         let restart = try make("restart")
         let held = restart.task("HELD", state: .paused), fresh = restart.task("FRESH")
         try restart.taskQueue.append(held); try restart.taskQueue.append(fresh)
@@ -118,6 +133,32 @@ import Foundation
         expect(loaded.startScreenQueue(), "One explicit global start authorizes never-started queued work after restart")
         try await wait { !loaded.queueRunning && loaded.engine.executionSettled }
         expect(ModelProbe.goals == ["HELD","FRESH"], "Never-started restart items execute in saved order after one global start")
+
+        resetModel()
+        let terminal = try make("terminal-history")
+        var stale = terminal.task("ALREADY-DONE", state: .suspended); stale.started = true
+        stale.record.outcome = .interrupted
+        try terminal.taskQueue.append(stale); try terminal.taskQueue.append(terminal.task("AFTER-DONE"))
+        var completed = stale.record; completed.outcome = .completed; completed.summary = "persisted completed receipt"
+        terminal.history.upsert(completed)
+        expect(!terminal.resumeScreenQueueTask(stale.id) && terminal.taskQueue.items[0].state == .completed,
+               "A completed history receipt reconciles a stale interrupted queue checkpoint instead of replaying it")
+        expect(terminal.startScreenQueue(), "Terminal-history reconciliation leaves the remaining FIFO work executable")
+        try await wait { !terminal.queueRunning && terminal.engine.executionSettled }
+        expect(ModelProbe.goals == ["AFTER-DONE"], "Completed work is never restored through a stale queue row")
+        let stoppedTerminal = terminal.task("ALREADY-STOPPED", state: .suspended)
+        try terminal.taskQueue.append(stoppedTerminal)
+        var stoppedRecord = stoppedTerminal.record; stoppedRecord.outcome = .stopped; terminal.history.upsert(stoppedRecord)
+        expect(!terminal.resumeScreenQueueTask(stoppedTerminal.id) && terminal.taskQueue.items.last?.state == .stopped,
+               "A stopped history receipt cannot be silently revived by generic item start")
+
+        resetModel()
+        let reservation = try make("reservation-failure")
+        try reservation.taskQueue.append(reservation.task("MUST-NOT-DISPATCH"))
+        let reservationURL = folder.appendingPathComponent("reservation-failure/queue.json")
+        try FileManager.default.removeItem(at: reservationURL); try FileManager.default.createDirectory(at: reservationURL, withIntermediateDirectories: false)
+        expect(!reservation.startScreenQueue() && ModelProbe.calls == 0 && reservation.engine.currentRecord == nil,
+               "A reservation persistence failure makes no model request and dispatches no input")
 
         // History failure after A completes must never be cleared by a later
         // successful queue write and permit B to start.

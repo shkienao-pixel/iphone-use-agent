@@ -5,3 +5,4 @@ checks_dir="$(mktemp -d "${TMPDIR:-/tmp}/sela-native-results.XXXXXX")"
 trap 'rm -rf "$checks_dir"' EXIT
 xcrun swiftc -parse-as-library "$project_dir/Shared/NativeTaskResult.swift" "$project_dir/Tests/NativeTaskResults/main.swift" -o "$checks_dir/checks"
 TZ=Asia/Shanghai "$checks_dir/checks"
+python3 "$project_dir/Tests/NativeTaskResults/event_write_wiring.py"

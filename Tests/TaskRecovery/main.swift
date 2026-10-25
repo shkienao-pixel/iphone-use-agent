@@ -238,6 +238,21 @@ import Foundation
         expect(!nativeVM.continueTask(blockedNative.id) && !nativeVM.backgroundTasks.contains(blockedNative.id),
                "Native recovery cannot bypass an unresolved write receipt")
         ModelProbe.delay = 0
+        let fifoHistory = try make("screen-fifo-history")
+        fifoHistory.settings.toolsOnly = false
+        var oldScreen = source; oldScreen.executionLane = "screen"
+        var newScreen = newerQueue; newScreen.id = oldScreen.id; newScreen.executionLane = "screen"
+        let beforeSelected = PhoneTaskRecord(title: "Earlier screen task", goal: "Earlier screen task", outcome: .paused)
+        try fifoHistory.taskQueue.append(.init(record: beforeSelected, settings: fifoHistory.settings))
+        try fifoHistory.taskQueue.append(.init(record: oldScreen, settings: fifoHistory.settings, step: 4, started: true, state: .suspended))
+        fifoHistory.history.upsert(newScreen)
+        let callsBeforeFIFO = ModelProbe.calls
+        expect(fifoHistory.continueTask(oldScreen.id) && fifoHistory.engine.currentRecord == nil && ModelProbe.calls == callsBeforeFIFO,
+               "A history-card continue for a queued screen task only restores its queue position")
+        expect(fifoHistory.taskQueue.items.map(\.id) == [beforeSelected.id,oldScreen.id] && fifoHistory.taskQueue.items[1].step == 9 && fifoHistory.taskQueue.items[1].record.subtasks?.first?.completed == true,
+               "Queue recovery preserves FIFO and the newer complete history checkpoint including its step")
+        expect(fifoHistory.retryTask(oldScreen.id) && fifoHistory.taskQueue.items[1].record.attemptStartStep == 9 && ModelProbe.calls == callsBeforeFIFO,
+               "Explicit queued retry renews only the selected attempt budget without secretly executing or moving it")
         checks += try RecoveryReceiptChecks.run()
         print("TaskRecovery controller checks passed (\(checks) checks; full actual engine and stores, synthetic platform/model/input)")
     }

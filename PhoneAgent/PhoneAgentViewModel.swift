@@ -285,7 +285,7 @@ final class PhoneAgentViewModel: ObservableObject {
             do {
                 var checkpoint = record
                 if mode == .retry { checkpoint.attemptStartStep = max(queued.step, record.checkpointStep ?? 0) }
-                try taskQueue.update(id) { $0.record = checkpoint; $0.state = .waiting; $0.note = "已按原位置恢复排队" }
+                try taskQueue.update(id) { $0.record = checkpoint; $0.step = max($0.step, checkpoint.checkpointStep ?? 0); $0.state = .waiting; $0.note = "已按原位置恢复排队" }
                 if engine.currentRecord?.id == id { engine.discardCurrent(); queueActiveID = nil }
                 return resumeScreenQueueTask(id)
             } catch { notice = error.localizedDescription; return false }
@@ -1210,6 +1210,9 @@ extension PhoneAgentViewModel {
         guard token == queueGeneration, queueRunning else { throw CancellationError() }
         guard UIApplication.shared.applicationState == .active else { throw AgentError.message("请回到 Sela 点“运行队列”；后台不自动开启下一项") }
         guard history.error.isEmpty, taskQueue.error.isEmpty else { throw AgentError.message("任务记录未能保存，队列已暂停，请先处理存储问题") }
+        if queueUsesStrictOrder {
+            for pending in taskQueue.items where pending.resumable && isScreenQueueItem(pending) { _ = try reconcileScreenQueueHistory(pending.id) }
+        }
         guard let item = taskQueue.items.first(where: { $0.resumable && (!queueUsesStrictOrder || isScreenQueueItem($0)) }) else {
             haltQueue("队列已完成"); return
         }
@@ -1299,7 +1302,7 @@ extension PhoneAgentViewModel {
             let stored = taskQueue.items.first { $0.id == record.id }
             let config = engine.currentSettings ?? stored?.settings ?? settings
             guard config.toolsOnly != true, record.executionLane != "native" else { return nil }
-            var item = stored ?? QueuedPhoneTask(record: record, settings: config)
+            var item = stored ?? QueuedPhoneTask(record: record, settings: config, state: engine.running ? .running : .suspended)
             item.record = record; item.settings = config; item.step = engine.currentStep; item.started = true
             if engine.running { item.state = .running }
             else if record.outcome == .completed { item.state = .completed }
@@ -1317,6 +1320,17 @@ extension PhoneAgentViewModel {
     }
     var screenQueueCount: Int { screenQueueWaiting.count + (screenQueueCurrent?.resumable == true ? 1 : 0) }
     var screenQueueBusy: Bool { queueSwitching }
+    @discardableResult
+    private func reconcileScreenQueueHistory(_ id: UUID) throws -> Bool {
+        guard let record = history.records.first(where: { $0.id == id }), [.completed, .stopped, .preview].contains(record.outcome),
+              let queued = taskQueue.items.first(where: { $0.id == id }), queued.resumable, isScreenQueueItem(queued) else { return false }
+        try taskQueue.update(id) { item in
+            item.record = record; item.step = max(item.step, record.checkpointStep ?? 0)
+            item.state = record.outcome == .completed ? .completed : record.outcome == .preview ? .preview : .stopped
+            item.note = "已按任务历史核对结束状态，不会重新执行"
+        }
+        return true
+    }
     @discardableResult
     private func preserveScreenQueueCurrent() throws -> QueuedPhoneTask? {
         guard let current = screenQueueCurrent else { return nil }
@@ -1338,6 +1352,7 @@ extension PhoneAgentViewModel {
         }
         let current: QueuedPhoneTask?
         do {
+            for item in taskQueue.items where item.resumable && isScreenQueueItem(item) { _ = try reconcileScreenQueueHistory(item.id) }
             // Starting the queue explicitly authorizes untouched waiting work
             // after restart, while individual holds and reviewed failures stay.
             try taskQueue.transaction { items in
@@ -1404,6 +1419,7 @@ extension PhoneAgentViewModel {
     @discardableResult
     func resumeScreenQueueTask(_ id: UUID) -> Bool {
         do {
+            if try reconcileScreenQueueHistory(id) { notice = "这项任务已有结束回执，不会重新执行"; return false }
             if screenQueueCurrent?.id == id { _ = try preserveScreenQueueCurrent() }
             guard let item = taskQueue.items.first(where: { $0.id == id }), item.resumable, isScreenQueueItem(item), item.state != .running else { throw AgentError.message("这项任务正在执行、已结束或不存在") }
             guard !tools.hasUnresolvedWrite(taskID: id) else { throw AgentError.message("这项任务有未核验的写入，请先核对实际结果") }
@@ -1424,9 +1440,9 @@ extension PhoneAgentViewModel {
             }
             guard let item = taskQueue.items.first(where: { $0.id == id }), item.resumable, isScreenQueueItem(item) else { throw AgentError.message("这项屏幕任务已结束或不存在") }
             var record = item.record; record.outcome = .stopped; record.summary = item.started ? "你已终止这项排队任务，已有操作不会撤销" : "你已终止这项排队任务，尚未执行"
-            record.updatedAt = Date(); history.upsert(record)
-            guard history.error.isEmpty else { throw AgentError.message(history.error) }
+            record.updatedAt = Date()
             try taskQueue.update(id) { $0.record = record; $0.state = .stopped; $0.note = record.summary }
+            history.upsert(record); guard history.error.isEmpty else { throw AgentError.message(history.error) }
             notice = ""; return true
         } catch { screenQueueMutationFailed(error); return false }
     }
@@ -1437,8 +1453,9 @@ extension PhoneAgentViewModel {
             guard let item = taskQueue.items.first(where: { $0.id == id }), isScreenQueueItem(item), item.state != .running else { throw AgentError.message("这项任务正在执行或已不存在") }
             var record = item.record
             if item.resumable { record.outcome = .stopped; record.summary = item.started ? "已从队列删除，已有操作和回执保留" : "已从队列删除，尚未执行"; record.updatedAt = Date() }
+            try taskQueue.remove(id)
             history.upsert(record); guard history.error.isEmpty else { throw AgentError.message(history.error) }
-            try taskQueue.remove(id); notice = ""; return true
+            notice = ""; return true
         } catch { screenQueueMutationFailed(error); return false }
     }
     @discardableResult

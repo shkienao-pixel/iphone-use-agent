@@ -97,9 +97,10 @@ struct TaskDetailView: View {
                         }
                         else if !model.engine.running && !model.engine.releasing {
                             Button("用作新任务") {
-                                if !model.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.goal != record.effectiveGoal { model.notice = "输入框里还有未提交的任务，请先处理草稿。" }
-                                else { model.goal = record.effectiveGoal }
-                                dismiss()
+                                if model.reuseTaskInNewConversation(record) {
+                                    model.showAssistant = true
+                                    dismiss()
+                                }
                             }.buttonStyle(AgentButtonStyle())
                             if record.outcome != .completed { Text("新任务会从头规划；上次可能已部分完成，请先删去无需重做的要求。不会自动恢复旧执行。") .font(.caption).foregroundStyle(.secondary) }
                         }

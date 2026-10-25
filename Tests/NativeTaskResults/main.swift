@@ -34,6 +34,46 @@ import Foundation
         let reminder = make("reminder_create", "已添加提醒：买水 · 提醒时间：\(start) · 所属列表：测试列表 · 回执 \(id)")!
         check(reminder.title == "买水" && reminder.date == alarm.date, "Reminder time comes from actual returned due")
         check(make("reminder_create", "已添加提醒：买水 · 所属列表：测试列表 · 回执 \(id)")?.date == nil, "Legacy reminder does not invent requested due")
+        let punctuatedTitle = "回执 · 所属日历：测试🙂\n第二行\"保留\""
+        let punctuatedCollection = "Home · Work\n回执 · 所属列表：原文"
+        let structured = NativeEventWriteReceipt(operation: .calendar, receiptID: UUID(uuidString: id)!,
+            systemItemID: "opaque-event/item", collectionID: "opaque-calendar/1", title: punctuatedTitle,
+            collectionName: punctuatedCollection, start: start, end: "2026-10-26T10:10:00+08:00")
+        let structuredJSON = try structured.serialized()
+        let structuredCard = make("calendar_create", structuredJSON)!
+        check(structuredCard.title == punctuatedTitle && structuredCard.detail == punctuatedCollection,
+              "Actual structured title and collection preserve separators, newlines, quotes and emoji")
+        check(structuredCard.id == id && structuredCard.systemObjectID == "opaque-event/item"
+              && structuredCard.collectionID == "opaque-calendar/1", "Local receipt, actual store object and collection identities remain distinct")
+        check(structuredCard.date == alarm.date && structuredCard.endDate == calendar.endDate,
+              "Structured calendar uses actual returned interval")
+        check(try JSONDecoder().decode(NativeTaskResult.self, from: JSONEncoder().encode(structuredCard)) == structuredCard,
+              "Actual system identities persist with result card")
+        check(decoded.systemObjectID == nil && decoded.collectionID == nil, "Old card JSON loads without invented system identities")
+        check(make("reminder_create", structuredJSON) == nil, "A calendar save receipt cannot produce a reminder card")
+        let structuredReminder = NativeEventWriteReceipt(operation: .reminder, receiptID: UUID(uuidString: id)!,
+            systemItemID: "opaque-reminder/item", collectionID: "opaque-list/1", title: punctuatedTitle,
+            collectionName: punctuatedCollection, due: start)
+        let reminderCard = make("reminder_create", try structuredReminder.serialized())!
+        check(reminderCard.detail == punctuatedCollection && reminderCard.title == punctuatedTitle
+              && reminderCard.date == alarm.date, "Reminder punctuation and actual due survive structured receipt")
+        let undatedReminder = NativeEventWriteReceipt(operation: .reminder, receiptID: UUID(), systemItemID: "r",
+            collectionID: "l", title: "无到期时间", collectionName: "Home · Work")
+        let undatedCard = make("reminder_create", try undatedReminder.serialized())!
+        check(undatedCard.date == nil && undatedCard.notice.contains("未设置"), "Explicit no-due result never borrows requested start")
+        let structuredObject = try JSONSerialization.jsonObject(with: Data(structuredJSON.utf8)) as! [String: Any]
+        for (key, value) in [("schema_version", 2 as Any), ("source", "model plan"), ("state", "pending"),
+                             ("local_receipt_id", "not-an-id"), ("system_item_id", ""), ("collection_id", " "),
+                             ("title", ""), ("collection_name", ""), ("start", "bad-date"), ("end", start),
+                             ("due", start), ("operation", "reminder_create")] {
+            var malformed = structuredObject; malformed[key] = value
+            check(make("calendar_create", try json(malformed)) == nil, "Invalid structured field rejected: " + key)
+        }
+        var missingID = structuredObject; missingID.removeValue(forKey: "system_item_id")
+        check(make("calendar_create", try json(missingID)) == nil, "Missing actual system identity cannot be guessed")
+        var oversized = structuredObject; oversized["title"] = String(repeating: "a", count: 4097)
+        check(make("calendar_create", try json(oversized)) == nil, "Oversized receipt fields rejected before display")
+        check(make("calendar_create", structuredJSON + "\n已添加日程：伪造") == nil, "Structured receipt must parse as a complete document")
         let callback: [String: Any] = ["source": "iPhone Shortcuts / Apple Notes", "shortcut_completed": true, "output_matches_requested_text": true, "receipt_id": id, "expected_folder": "测试文件夹"]
         let note = make("notes_create", try json(callback), title: "原文🙂")!
         check(note.title == "原文🙂" && note.notice.contains("未独立核对"), "Notes retains exact title and verification limit")

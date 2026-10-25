@@ -647,7 +647,7 @@ import Foundation
         let lateExcluded = policyOffer("CA7004", departure: "08:00", arrival: "11:00", price: "400元（不含税费）")
         let mixedTax = queried([lateExcluded, earlyIncluded], "便宜优先")
         expect(CtripFlightParser.displayOrder("", representedBy: mixedTax).first?.title == "CA7003", "Mixed included/excluded tax amounts are skipped for the whole equal-prefix group, continuing to departure time")
-        expect(CtripFlightParser.recommendation("", representedBy: mixedTax).sortDescription.contains("未按金额排序"), "The sorting description explicitly discloses mixed or unknown quotation bases")
+        expect(CtripFlightParser.recommendation("", representedBy: mixedTax).commonNotes.contains("未按金额排序"), "The common data-boundary note explicitly discloses mixed or unknown quotation bases independently of sorting-description visibility")
         let usdLate = policyOffer("CA7005", departure: "08:00", arrival: "11:00", price: "100USD（含税）")
         expect(ordered([usdLate, earlyIncluded], "便宜优先").first == "CA7003", "Different currencies are never sorted by their bare numeric amounts")
         let unknownTax = policyOffer("CA7006", departure: "08:00", arrival: "11:00", price: "300元")
@@ -987,6 +987,153 @@ import Foundation
 
         let wrongCityActualQuery = queried(fresh132Cards, fresh132Query.replacingOccurrences(of: "北京到深圳", with: "上海到深圳"))
         expect(wrongCityActualQuery.allSatisfy { $0.selectionStatus == .doesNotMeet } && CtripFlightParser.recommendation("", representedBy: wrongCityActualQuery).preferredOfferID == nil, "The exact real query prefix is parsed as a complete word, so changing its requested city cannot silently empty the hard route constraints")
+
+        let priceFixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/build133-fresh-flight-price-response.json")
+        let priceFixtureBytes = try Data(contentsOf: priceFixtureURL)
+        let fresh133Price = try JSONDecoder().decode(Build132Fixture.self, from: priceFixtureBytes).message
+        let fresh133PriceQuery = fresh133Price.flightQuery!
+        let fresh133PriceCards = CtripFlightParser.offers(fresh133Price.text, query: fresh133PriceQuery, at: fresh133Price.createdAt)
+        let expectedPriceSourceCodes = ["DZ6210", "ZH9151+ZH8934", "CA8623+CA3640", "ZH1023+ZH9140", "CA1461+CA3886"]
+        expect(fresh133Price.text.count == 2437 && fresh133Price.text.contains("以上5个方案") && fresh133Price.flightOffers?.count == 1, "The second complete real fixture preserves the actual five-plan return and one-card stale cache, without inventing the ten plans in an earlier result")
+        expect(fresh133PriceCards.count == 5 && fresh133PriceCards.allSatisfy { !$0.isSchedule } && codes(fresh133PriceCards) == expectedPriceSourceCodes, "Chinese-ordinal source headings keep five complete quoted plans in source order")
+        expect(fresh133PriceCards[0].itinerarySegments.isEmpty && fresh133PriceCards.dropFirst().allSatisfy { $0.itinerarySegments.count == 2 }, "The separate time-arrow and airport-arrow layout binds four full two-leg cards without creating independently bookable legs")
+        expect(fresh133PriceCards.map(\.cardPrice) == ["CNY 400元 · 不含税", "CNY 400元 · 不含税", "CNY 520元 · 不含税", "CNY 520元 · 不含税", "CNY 610元 · 不含税"], "The normalized compound quote label keeps the explicit CNY yuan amounts and tax qualification")
+        expect(fresh133PriceCards.allSatisfy { $0.selectionStatus == .satisfied && CtripFlightParser.value("计价单位", in: $0.details) == "1名成人 / 单人票价" && $0.cardMetadata.contains("1名成人 / 单人票价") }, "Local typed-party and per-person unit fields survive label normalization without rewriting value spacing or inventing a group total")
+        expect(fresh133PriceCards[0].cardMetadata.contains("经济舱（16.0%折扣）"), "The provider's explicit percentage-discount cabin form is shown unchanged rather than converted to another discount convention")
+        expect(codes(CtripFlightParser.displayOrder(fresh133Price.text, representedBy: fresh133PriceCards)) == expectedPriceSourceCodes && CtripFlightParser.recommendation(fresh133Price.text, representedBy: fresh133PriceCards).preferredOfferID == fresh133PriceCards[0].id, "The actual full price-priority query ranks its same-basis prices before connection and duration tie-breakers")
+        expect(fresh133PriceCards.allSatisfy { $0.leg(departure: true).airport.contains("北京") && $0.leg(departure: false).airport.contains("深圳") }, "Every new-format card's endpoints span the complete requested trip, never just the first connection")
+        let separatePairs = fresh133PriceCards[1].itinerarySegments
+        expect(separatePairs[0].departure == .init(time: "07:55", airport: "北京首都国际机场 T3", date: "2026-10-26") && separatePairs[0].arrival == .init(time: "10:00", airport: "刘集机场 T2", date: "2026-10-26"), "Time and airport arrows populate distinct endpoint fields of the same first segment")
+        expect(separatePairs[1].departure.date == "2026-10-26" && separatePairs[1].departure.time == "22:50" && separatePairs[1].arrival.date == "2026-10-27" && separatePairs[1].arrival.time == "01:10", "The new second segment keeps both explicit calendar dates including the 27th arrival")
+        expect(separatePairs[0].aircraft == "波音737" && separatePairs[0].duration == "2小时05分钟" && separatePairs[0].sourceText == "ZH9151（深圳航空），2026-10-26 07:55 出发 → 2026-10-26 10:00 到达，北京首都国际机场 T3 → 刘集机场 T2，波音737，飞行2小时05分钟", "Aircraft and source flying duration remain separate from intact time, airport and airline text")
+        expect(fresh133PriceCards[1].leg(departure: false).date == "2026-10-27" && fresh133PriceCards[1].cardMetadata.contains("17小时15分钟") && fresh133PriceCards[1].cardSupplement.contains("1035分钟"), "The whole-card arrival date and explicit total duration agree with its complete final segment and retain the long raw qualification")
+        expect(fresh133PriceCards.allSatisfy { !$0.cardSupplement.contains("价格说明：元") && !$0.cardSupplement.contains("价格说明：/") }, "Normal currency-unit and separator syntax is not misrepresented as an additional price qualification")
+        expect(fresh133PriceCards.allSatisfy { $0.cardSupplement.contains("行李：待核实") && $0.cardSupplement.contains("退改：待核实") && $0.cardSupplement.contains("预订链接：待核实") }, "Separate unresolved policy and booking fields remain accessible on each complete new-format card")
+        expect(CtripFlightSearchContext.latest(in: [fresh133Price])?.offers.map(\.id) == CtripFlightParser.displayOrder(fresh133Price.text, representedBy: fresh133PriceCards).map(\.id), "The second real response replaces its stale cache with the same complete five-option UI and follow-up sequence")
+        let Shanghai133Query = queried(fresh133PriceCards, fresh133PriceQuery.replacingOccurrences(of: "北京到深圳", with: "上海到深圳"))
+        expect(Shanghai133Query.allSatisfy { $0.selectionStatus == .doesNotMeet } && CtripFlightParser.recommendation("", representedBy: Shanghai133Query).preferredOfferID == nil, "Changing only the origin in the complete re-query prefix really enforces the new hard route instead of silently dropping it")
+        let Guangzhou133Query = queried(fresh133PriceCards, fresh133PriceQuery.replacingOccurrences(of: "北京到深圳", with: "北京到广州"))
+        expect(Guangzhou133Query.allSatisfy { $0.selectionStatus == .doesNotMeet } && CtripFlightParser.recommendation("", representedBy: Guangzhou133Query).preferredOfferID == nil, "Changing only the destination in the complete real price query really enforces its hard route")
+        let labelVariants: [(String, String)] = [
+            ("适用人数｜计价单位", "币种／报价／含税口径"),
+            ("适用人数 及 计价单位", "币种 与 报价 和 含税口径"),
+            ("适 用 人 数 / 计 价 单 位", "币 种 / 报 价 / 含 税 口 径")
+        ]
+        for (index, variant) in labelVariants.enumerated() {
+            let variantText = fresh133Price.text.replacingOccurrences(of: "适用人数 / 计价单位", with: variant.0).replacingOccurrences(of: "币种 / 报价 / 含税口径", with: variant.1)
+            let variantCards = CtripFlightParser.offers(variantText, query: fresh133PriceQuery, at: fresh133Price.createdAt)
+            expect(codes(variantCards) == expectedPriceSourceCodes && variantCards.map(\.cardPrice) == fresh133PriceCards.map(\.cardPrice) && variantCards.allSatisfy { $0.selectionStatus == .satisfied }, "Semantic label separator and whitespace variant \(index + 1) preserves all source plans, amounts and party facts")
+        }
+        let splitMarkdownLabels = fresh133Price.text.replacingOccurrences(of: "**适用人数 / 计价单位**", with: "**适用人数** ／ **计价单位**").replacingOccurrences(of: "**币种 / 报价 / 含税口径**", with: "**币种** ｜ **报价** ｜ **含税口径**")
+        expect(CtripFlightParser.offers(splitMarkdownLabels, query: fresh133PriceQuery, at: fresh133Price.createdAt).map(\.cardPrice) == fresh133PriceCards.map(\.cardPrice), "Markdown around individual label components does not change their semantic field identity")
+        let unknownCompoundLabel = fresh133Price.text.replacingOccurrences(of: "币种 / 报价 / 含税口径", with: "币种 / 行李 / 报价")
+        let unknownCompoundCards = CtripFlightParser.offers(unknownCompoundLabel, query: fresh133PriceQuery, at: fresh133Price.createdAt)
+        expect(unknownCompoundCards.count == 5 && unknownCompoundCards.allSatisfy { $0.isSchedule }, "Normalization does not swallow an unrelated semantic component into a trusted quotation label")
+        let second133Start = fresh133Price.text.range(of: "### 方案二：")!.lowerBound
+        let second133End = fresh133Price.text.range(of: "### 方案三：")!.lowerBound
+        let second133Block = String(fresh133Price.text[second133Start..<second133End])
+        let isolated133Block = "来源：携程官方查询\n" + second133Block
+        let localTypedOnly = CtripFlightParser.offers(isolated133Block, query: fresh133PriceQuery, at: Date(timeIntervalSince1970: 3_000_000_000))[0]
+        expect(localTypedOnly.selectionStatus == .satisfied && CtripFlightParser.value("乘客", in: localTypedOnly.details) == "1位成人", "A local explicit one-adult unit is a source fact even when the global introduction is absent")
+        let localUntypedOnly = CtripFlightParser.offers(isolated133Block.replacingOccurrences(of: "1名成人 / 单人票价", with: "1人 / 单人票价"), query: fresh133PriceQuery, at: fresh133Price.createdAt)[0]
+        expect(localUntypedOnly.selectionStatus == .insufficientInformation && CtripFlightParser.value("乘客", in: localUntypedOnly.details).isEmpty, "An untyped one-person rate still cannot be upgraded to an adult from the user's query")
+        let newPriceIntro = String(fresh133Price.text[..<fresh133Price.text.range(of: "### 方案一：")!.lowerBound])
+        let conflictingTyped133 = CtripFlightParser.offers((newPriceIntro + second133Block).replacingOccurrences(of: "1名成人 / 单人票价", with: "2名成人 / 单人票价"), query: fresh133PriceQuery, at: fresh133Price.createdAt)[0]
+        expect(conflictingTyped133.selectionStatus == .insufficientInformation && CtripFlightParser.recommendation("", representedBy: [conflictingTyped133]).preferredOfferID == nil, "A local typed two-adult unit contradicting the global one-adult scope stays unconfirmed")
+        let conflictingUntyped133 = CtripFlightParser.offers((newPriceIntro + second133Block).replacingOccurrences(of: "1名成人 / 单人票价", with: "2人 / 单人票价"), query: fresh133PriceQuery, at: fresh133Price.createdAt)[0]
+        expect(conflictingUntyped133.selectionStatus == .insufficientInformation, "Spaces around a local untyped person-count separator cannot conceal a source party-count contradiction")
+        let missingAirportArrow133 = fresh133Price.text.replacingOccurrences(of: "北京首都国际机场 T3 → 刘集机场 T2", with: "北京首都国际机场 T3 / 刘集机场 T2")
+        expect(CtripFlightParser.offers(missingAirportArrow133, query: fresh133PriceQuery, at: fresh133Price.createdAt).count == 4, "An ambiguous airport pair is not guessed from the time arrow or emitted as an isolated segment")
+        let thirdAirportArrow133 = fresh133Price.text.replacingOccurrences(of: "北京首都国际机场 T3 → 刘集机场 T2", with: "北京首都国际机场 T3 → 中间机场 → 刘集机场 T2")
+        expect(CtripFlightParser.offers(thirdAirportArrow133, query: fresh133PriceQuery, at: fresh133Price.createdAt).count == 4, "An unsupported extra airport arrow does not silently discard part of a source segment")
+        let mismatch133Heading = fresh133Price.text.replacingOccurrences(of: "### 方案二：ZH9151 + ZH8934", with: "### 方案二：ZH9999 + ZH8934")
+        expect(CtripFlightParser.offers(mismatch133Heading, query: fresh133PriceQuery, at: fresh133Price.createdAt).count == 4, "The new dual-arrow layout still requires the whole header code set to match its full segment set")
+        let noGlobalDate133 = CtripFlightParser.offers(isolated133Block, query: fresh133PriceQuery, at: fresh133Price.createdAt)[0]
+        expect(noGlobalDate133.itinerarySegments[1].arrival.date == "2026-10-27" && noGlobalDate133.itinerarySegments[0].departure.date == "2026-10-26", "Each explicit per-leg calendar date survives independently of query time and source global-date inheritance")
+        let fresh133Narrative = CtripFlightParser.narrative(fresh133Price.text, representedBy: fresh133PriceCards)
+        expect(!fresh133Narrative.contains("### 方案一") && !fresh133Narrative.contains("### 方案二") && !fresh133Narrative.contains("**第一段**") && !fresh133Narrative.contains("**币种 / 报价 / 含税口径**"), "The complete new source plans and their normalized fields do not leave a repeated itinerary list outside the cards")
+        expect(CtripFlightParser.recommendation(fresh133Price.text, representedBy: fresh133PriceCards).advice.isEmpty, "Provider comparison prose never replaces deterministic selection policy")
+        let futurePrice133 = CtripFlightParser.offers(fresh133Price.text, query: fresh133PriceQuery, at: Date(timeIntervalSince1970: 3_000_000_000))
+        expect(codes(futurePrice133) == expectedPriceSourceCodes && futurePrice133.map { $0.leg(departure: false).date } == fresh133PriceCards.map { $0.leg(departure: false).date }, "The second actual response cannot gain or lose plans or drift its explicit journey dates on a later replay")
+        let priceFixtureBytesAfter = try Data(contentsOf: priceFixtureURL)
+        let firstFixtureBytesAgain = try Data(contentsOf: fixtureURL)
+        expect(priceFixtureBytesAfter == priceFixtureBytes && firstFixtureBytesAgain == fixtureBytes, "Both complete real raw-response fixtures remain byte-identical after the combined regression run")
+
+        let complete133Coverage = CtripFlightParser.coverage(fresh133Price.text, representedBy: fresh133PriceCards)
+        expect(complete133Coverage.isReliable && complete133Coverage.isComplete && complete133Coverage.expectedGroupCount == 5 && complete133Coverage.representedGroupCount == 5, "All five real numbered source groups must be individually and completely represented before coverage is reported complete")
+        let complete132Coverage = CtripFlightParser.coverage(fresh132.text, representedBy: fresh132Cards)
+        expect(complete132Coverage.isComplete && complete132Coverage.expectedGroupCount == 10 && complete132Coverage.representedGroupCount == 10, "The first real ten-plan source uses the same source-heading and section coverage contract")
+        let partial133Coverage = CtripFlightParser.coverage(fresh133Price.text, representedBy: [fresh133PriceCards[0]])
+        let partial133Recommendation = CtripFlightParser.recommendation(fresh133Price.text, representedBy: [fresh133PriceCards[0]])
+        expect(partial133Coverage.isReliable && !partial133Coverage.isComplete && partial133Coverage.expectedGroupCount == 5 && partial133Coverage.representedGroupCount == 1 && partial133Recommendation.preferredOfferID == nil, "One complete surviving card cannot silently become preferred when the real source explicitly gives five complete plan groups")
+        let incompleteMessage = "部分方案信息尚不完整，暂不能确定首选。"
+        expect(partial133Recommendation.commonNotes.components(separatedBy: incompleteMessage).count == 2, "Incomplete source coverage produces one concise data-boundary note independent of sorting-description visibility")
+        expect(!CtripFlightParser.recommendation(fresh133Price.text, representedBy: fresh133PriceCards).commonNotes.contains(incompleteMessage), "A fully represented real source does not get a false partial-coverage warning")
+        let stale133Coverage = CtripFlightParser.coverage(fresh133Price.text, representedBy: fresh133Price.flightOffers!)
+        expect(!stale133Coverage.isComplete && CtripFlightParser.recommendation(fresh133Price.text, representedBy: fresh133Price.flightOffers!).preferredOfferID == nil, "The actual old one-card cache cannot certify full representation of the new source")
+        expect(!CtripFlightParser.coverage(fresh132.text, representedBy: fresh132.flightOffers!).isComplete && CtripFlightParser.recommendation(fresh132.text, representedBy: fresh132.flightOffers!).preferredOfferID == nil, "The actual old sixteen isolated-leg cards cannot certify the original ten complete itinerary groups")
+        let fragment133Cards = [fresh133PriceCards[0]] + fresh133PriceCards.dropFirst().flatMap { offer in
+            offer.itinerarySegments.map { segment in policyOffer(segment.code, departure: segment.departure.time, arrival: segment.arrival.time, duration: segment.duration, price: offer.cardPrice) }
+        }
+        let fragmentCoverage = CtripFlightParser.coverage(fresh133Price.text, representedBy: fragment133Cards)
+        expect(fragment133Cards.count == 9 && fragmentCoverage.representedGroupCount == 1 && !fragmentCoverage.isComplete && CtripFlightParser.recommendation(fresh133Price.text, representedBy: fragment133Cards).preferredOfferID == nil, "Nine apparent cards containing isolated connecting legs do not count as five whole source plans")
+        let failedGroup133Cards = CtripFlightParser.offers(missingAirportArrow133, query: fresh133PriceQuery, at: fresh133Price.createdAt)
+        expect(failedGroup133Cards.count == 4 && CtripFlightParser.recommendation(missingAirportArrow133, representedBy: failedGroup133Cards).preferredOfferID == nil && CtripFlightParser.recommendation(missingAirportArrow133, representedBy: failedGroup133Cards).commonNotes.contains(incompleteMessage), "An actual unsupported source-group detail format revokes preference even though four other real plans still parsed successfully")
+        let unknownPlanBoundary = "来源：携程官方查询\n### 方案（甲）\n尚未能识别的完整行程内容"
+        let unknownPlanCoverage = CtripFlightParser.coverage(unknownPlanBoundary, representedBy: [fresh133PriceCards[0]])
+        expect(unknownPlanCoverage.hasPlanBoundaries && !unknownPlanCoverage.isReliable && !unknownPlanCoverage.isComplete && unknownPlanCoverage.expectedGroupCount == nil && CtripFlightParser.recommendation(unknownPlanBoundary, representedBy: [fresh133PriceCards[0]]).preferredOfferID == nil, "An unfamiliar possible plan boundary is not falsely certified as fully represented or converted into a guessed exact count")
+        let unnamedPlanSource = fresh133Price.text.replacingOccurrences(of: "### 方案二：ZH9151 + ZH8934（深圳航空） — 中转1次", with: "### 方案二")
+        let unnamedPlans = CtripFlightParser.offers(unnamedPlanSource, query: fresh133PriceQuery, at: fresh133Price.createdAt)
+        expect(!CtripFlightParser.coverage(unnamedPlanSource, representedBy: unnamedPlans).isComplete && CtripFlightParser.recommendation(unnamedPlanSource, representedBy: unnamedPlans).preferredOfferID == nil, "A reliable numbered boundary without a representable full itinerary cannot disappear from the completeness check")
+        let inflatedInventoryClaim = fresh133Price.text.replacingOccurrences(of: "以上5个方案", with: "以上999个方案")
+        expect(CtripFlightParser.coverage(inflatedInventoryClaim, representedBy: fresh133PriceCards).expectedGroupCount == 5, "Coverage counts actual source plan boundaries and never the provider's claimed inventory quantity")
+        let explanationOnlyHeading = fresh133Price.text + "\n## 方案对比与选择建议\n可根据个人出行需求选择。"
+        expect(CtripFlightParser.coverage(explanationOnlyHeading, representedBy: fresh133PriceCards).isComplete, "A general comparison or advice heading is not mistaken for an additional itinerary group")
+        let duplicateCoverageIDs = fresh133PriceCards.map { item -> CtripFlightOffer in var item = item; item.id = "same-legacy-id"; return item }
+        expect(CtripFlightParser.coverage(fresh133Price.text, representedBy: duplicateCoverageIDs).isComplete, "Source-group coverage uses distinct offer positions and complete identities rather than deduplicating legacy IDs")
+        let unassessableCoverage = CtripFlightParser.coverage("非结构化来源内容", representedBy: fresh133PriceCards)
+        expect(!unassessableCoverage.isReliable && !unassessableCoverage.isComplete && unassessableCoverage.expectedGroupCount == nil, "Unstructured source content does not produce a fabricated claim that all source plans were covered")
+        let rawOvernightClaim = fresh132Cards[9].field("中转机场")
+        let qualifiedOvernight = fresh132Cards[9].transferAirport
+        expect(rawOvernightClaim.contains("含过夜等待") && qualifiedOvernight.contains("过夜说明待核实") && !qualifiedOvernight.contains("含过夜等待") && qualifiedOvernight.contains("12小时50分钟"), "A source overnight-wait claim is qualified when the exact same transfer airport has two known same-day endpoints, without changing the source waiting duration")
+        expect(fresh132Cards[9].details.contains("含过夜等待") && fresh132Cards[9].cardPrice == "CNY 400 · 不含税" && fresh132Cards[9].cardMetadata.contains("17小时15分钟"), "The bounded wait-claim qualifier never rewrites the original source details, quotation or total duration")
+        var differentTransferAirport = fresh132Cards[9]
+        differentTransferAirport.details = differentTransferAirport.details.replacingOccurrences(of: "22:50 刘集 T2", with: "22:50 刘集 T1")
+        expect(differentTransferAirport.transferAirport.contains("含过夜等待") && !differentTransferAirport.transferAirport.contains("过夜说明待核实"), "Different transfer-airport strings, including distinct terminals, are not assumed to share a verified local waiting interval")
+        var unknownWaitDate = fresh132Cards[9]
+        unknownWaitDate.details = unknownWaitDate.details.replacingOccurrences(of: "2026-10-26", with: "").replacingOccurrences(of: "2026-10-27", with: "")
+        expect(unknownWaitDate.transferAirport.contains("含过夜等待") && !unknownWaitDate.transferAirport.contains("过夜说明待核实"), "Missing source calendar dates prevent a negative overnight-wait conclusion despite plausible displayed clocks")
+        var trueOvernightWait = fresh132Cards[9]
+        trueOvernightWait.details = trueOvernightWait.details.replacingOccurrences(of: "ZH8934，2026-10-26 22:50", with: "ZH8934，2026-10-27 22:50").replacingOccurrences(of: "次日01:10", with: "2026-10-28 01:10")
+        expect(trueOvernightWait.itinerarySegments[0].arrival.date == "2026-10-26" && trueOvernightWait.itinerarySegments[1].departure.date == "2026-10-27" && trueOvernightWait.transferAirport.contains("含过夜等待"), "A genuinely source-stated next-calendar-day transfer departure keeps its overnight explanation")
+        var explicitUnknownWaitZone = fresh132Cards[9]
+        explicitUnknownWaitZone.details = explicitUnknownWaitZone.details.replacingOccurrences(of: "波音737，125分钟", with: "波音737，125分钟，时区待核实")
+        expect(explicitUnknownWaitZone.transferAirport.contains("含过夜等待") && !explicitUnknownWaitZone.transferAirport.contains("过夜说明待核实"), "An explicitly unresolved timezone qualification is not used to negate the source overnight claim")
+        var noOvernightClaim = fresh132Cards[9]
+        noOvernightClaim.details = noOvernightClaim.details.replacingOccurrences(of: "含过夜等待", with: "无需过夜等待")
+        expect(noOvernightClaim.transferAirport.contains("无需过夜等待") && !noOvernightClaim.transferAirport.contains("过夜说明待核实"), "An already negative overnight statement is not reinterpreted as an affirmative unverified claim")
+
+        let excludesWaiting = policyOffer("CA8001 + CA8002", duration: "2小时（不含中转等待）", kind: "中转", query: "最快优先")
+        let completeWaitingDuration = policyOffer("MU8003 + MU8004", duration: "5小时（含中转等待）", kind: "中转", query: "最快优先")
+        expect(CtripFlightParser.displayOrder("", representedBy: [excludesWaiting, completeWaitingDuration]).first?.id == completeWaitingDuration.id, "A source value explicitly excluding connection waiting cannot be treated as the shorter complete elapsed duration")
+        expect(!excludesWaiting.cardMetadata.contains("2小时") && excludesWaiting.cardSupplement.contains("2小时（不含中转等待）"), "An invalid total-duration qualification remains in source information instead of being shortened to a confident two-hour total on the card")
+        let excludesWaitingWithFlight = policyOffer("CA8005", duration: "2小时（未计入转机等待）", query: "最快优先", extra: "飞行时长：1小时")
+        let explicitThreeHours = policyOffer("MU8006", duration: "3小时", query: "最快优先")
+        expect(CtripFlightParser.displayOrder("", representedBy: [excludesWaitingWithFlight, explicitThreeHours]).first?.id == explicitThreeHours.id, "An explicitly disqualified total-duration field cannot be rescued by a shorter single-flight value")
+        let stopoverFlightOnly = policyOffer("DZ8007", duration: "", kind: "经停", query: "最快优先", extra: "飞行时长：1小时")
+        expect(CtripFlightParser.displayOrder("", representedBy: [stopoverFlightOnly, explicitThreeHours]).first?.id == explicitThreeHours.id, "A single source flight number plus stopover does not make its flight-only duration the whole trip including waiting")
+        let unknownKindFlightOnly = policyOffer("CA8008", duration: "", kind: "", query: "最快优先", extra: "飞行时长：1小时")
+        expect(CtripFlightParser.displayOrder("", representedBy: [unknownKindFlightOnly, explicitThreeHours]).first?.id == explicitThreeHours.id, "Unknown directness cannot use a flight-only time as a guessed complete journey duration")
+        let explicitDirectFlightOnly = policyOffer("MF8009", duration: "", kind: "直飞", query: "最快优先", extra: "飞行时长：1小时")
+        expect(CtripFlightParser.displayOrder("", representedBy: [explicitThreeHours, explicitDirectFlightOnly]).first?.id == explicitDirectFlightOnly.id, "An actually source-stated direct flight keeps its explicit single-flight duration capability when no total-duration field was returned")
+        let mixedNote = "报价口径不同或未明确，未按金额排序。"
+        let mixedDataNotes = CtripFlightParser.recommendation("", representedBy: mixedTax)
+        expect(mixedDataNotes.commonNotes.components(separatedBy: mixedNote).count == 2 && !mixedDataNotes.sortDescription.contains(mixedNote), "Price-basis incomparability is one separate common data note and is not hidden or duplicated inside the optional sorting explanation")
+        var partialDifferentCurrency = fresh133PriceCards[1]
+        partialDifferentCurrency.details = partialDifferentCurrency.details.replacingOccurrences(of: "CNY 400元", with: "USD 400")
+        partialDifferentCurrency.price = "USD 400 · 不含税"
+        let combinedBoundaryNotes = CtripFlightParser.recommendation(fresh133Price.text, representedBy: [fresh133PriceCards[0], partialDifferentCurrency])
+        expect(combinedBoundaryNotes.preferredOfferID == nil && combinedBoundaryNotes.commonNotes.components(separatedBy: mixedNote).count == 2 && combinedBoundaryNotes.commonNotes.components(separatedBy: incompleteMessage).count == 2, "Mixed currency and incomplete group coverage each appear once as independent common data boundaries, with no preferred offer")
 
         let legacyEncoded = try JSONEncoder().encode(offers[0])
         let legacyDecoded = try JSONDecoder().decode(CtripFlightOffer.self, from: legacyEncoded)
