@@ -28,8 +28,10 @@ destination.mkdir(exist_ok=False)
 vm = (root / "PhoneAgent/PhoneAgentViewModel.swift").read_text()
 coordinator = (root / "PhoneAgent/Services/UnifiedConversationCoordinator.swift").read_text()
 closure = member(vm, "        conversation.unifiedRoute = { [weak self] input in")
+pending_callback = member(vm, "        conversation.pendingTaskSubmission = { [weak self] in")
 members = {
-    "routeBridge": "    func installRouteBridge() {\n" + closure + "\n    }",
+    "routeBridge": "    func installRouteBridge() {\n" + pending_callback + "\n" + closure + "\n    }",
+    "pendingTask": member(vm, "    func pendingTaskForConversation(_ conversationID: UUID) -> ConversationTaskSubmission?"),
     "taskContext": member(coordinator, "    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil) -> String"),
     "actionHandler": member(coordinator, "    func handleConversationAction(_ route: ConversationRoute, messageID: UUID)"),
     "resume": member(vm, "    func resumeVoiceTask("),

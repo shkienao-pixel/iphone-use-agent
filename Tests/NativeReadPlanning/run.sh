@@ -34,4 +34,9 @@ xcrun swiftc -parse-as-library -module-cache-path "$check_dir/module-cache" \
   "$check_dir/production/ProductionToolsLoop.swift" \
   "$project_dir/Tests/NativeReadPlanning/WireEnvironment.swift" "$project_dir/Tests/NativeReadPlanning/main.swift" \
   -o "$check_dir/conversation-routing-checks"
-"$check_dir/conversation-routing-checks" "$check_dir/result.json"
+result_path="${1:-$check_dir/result.json}"
+"$check_dir/conversation-routing-checks" "$result_path"
+if [[ $# -gt 0 ]]; then
+  cp "$check_dir/production/extraction.json" "$result_path.client-extraction.json"
+  cp "$check_dir/production/engine-extraction.json" "$result_path.engine-extraction.json"
+fi

@@ -27,6 +27,7 @@ def main():
     submission = member(shared, "struct ConversationTaskSubmission:")
     signatures = ["    func manualAction(allowsBackgroundScreen:",
                   "    @discardableResult\n    func pauseTask(", "    func stop()",
+                  "    func stop(cancelConversation: Bool)",
                   "    private func cancelVoicePreparation("]
     members = [member(vm, signature) for signature in signatures]
     start = ble.index("    private lazy var releaseController =")
@@ -40,7 +41,7 @@ def main():
     environment = environment.replace("// EXACT_PRODUCTION_BLE_MEMBERS", "\n".join(ble_members))
     environment = environment.replace("// EXACT_PRODUCTION_SUBMISSION_TYPE", submission)
     (destination / "Environment.swift").write_text(environment)
-    names = ["manualAction", "pauseTask", "stop", "cancelVoicePreparation", "releaseController", "release"]
+    names = ["manualAction", "pauseTask", "stop", "stopWithConversationControl", "cancelVoicePreparation", "releaseController", "release"]
     for name, text in zip(names, members + ble_members):
         (destination / (name + ".swift.txt")).write_text(text)
     # Fresh whole source copies are per-run evidence, never embedded test inputs.

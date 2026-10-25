@@ -129,9 +129,13 @@ import Foundation
         expect(independentCancel.messages.isEmpty && independentCancel.draft == "只取消 A", "Cancelled request cannot repopulate its own restored draft")
         expect(independentCancel.conversations.first(where: { $0.id == retainedOrigin })?.messages.last?.text == "B 独立完成", "Cancelling A does not stop B or redirect its result")
 
-        let handoff = conversation("offscreen-native-handoff"), handoffOrigin = handoff.currentConversationID
+        let actualTask = UUID(), backgroundSession = UUID(), handoffSeedID = UUID()
+        let handoffStore = AssistantConversationStore(url: folder.appendingPathComponent("offscreen-native-handoff.json"))
+        try handoffStore.upsert(.init(id: handoffSeedID, title: "本对话原生任务", messages: [
+            .init(role: "assistant", text: "本对话已关联的原生任务", taskID: actualTask)
+        ], createdAt: Date(), updatedAt: Date(), recipient: "", draft: ""), currentConversationID: handoffSeedID)
+        let handoff = AssistantConversation(store: handoffStore), handoffOrigin = handoff.currentConversationID
         var nativeRoute: CheckedContinuation<ConversationRoute, Never>?, handledOrigin: UUID?, handledReply: UUID?
-        let actualTask = UUID(), backgroundSession = UUID()
         var capturedSessions: [UUID: UUID] = [:]
         handoff.backgroundTaskSessions = { [actualTask: backgroundSession] }
         handoff.unifiedRoute = { input in capturedSessions = input.backgroundSessions; return await withCheckedContinuation { nativeRoute = $0 } }
@@ -224,7 +228,9 @@ import Foundation
         recall.draft = "只回答当前的新问题"
         _ = recall.send(settings: settings, apiKey: "", memories: recallMemory, taskRecords: [historicalTask])
         try await settle { model.requests.count == recallStart + 2 }
-        expect(recallInput?.history.isEmpty == true && recallInput?.taskContext == "{}" && model.requests[recallStart + 1].history.isEmpty && !model.requests[recallStart + 1].context.contains("SECRET"), "Unavailable exclusion state fails closed for histories, archived references and task snapshots while allowing fresh input")
+        let unavailablePayload = (try? JSONSerialization.jsonObject(with: Data((recallInput?.taskContext ?? "").utf8))) as? [String: Any]
+        let unavailableTaskRows = unavailablePayload?["tasks"] as? [[String: Any]] ?? []
+        expect(recallInput?.history.isEmpty == true && unavailablePayload != nil && unavailableTaskRows.isEmpty && model.requests[recallStart + 1].history.isEmpty && !model.requests[recallStart + 1].context.contains("SECRET"), "Unavailable exclusion state fails closed for histories, archived references and task snapshots while allowing fresh input")
         model.complete(recallStart + 1, answer: "当前问题的回答")
         try await settle { !recall.loading }
         let answerBeforeUnavailableRetry = recall.messages.last!

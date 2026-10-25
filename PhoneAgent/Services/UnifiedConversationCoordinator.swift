@@ -4,12 +4,13 @@ import UIKit
 @MainActor extension PhoneAgentViewModel {
     func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil) -> String {
         // Recent verbatim turns stay separate from task records. Only task IDs
-        // already linked to this thread, its focused task, and the active task
-        // are eligible. A different thread's old goals never become instructions.
-        let active = engine.hasCurrentTask ? engine.currentRecord : nil
-        let background = backgroundTasks.records.filter { backgroundTasks.token($0.id) != nil }
+        // already linked to this session are eligible. Global active/selected
+        // tasks from another session supply neither context nor control authority.
+        let pending = pendingTaskForConversation(conversation.currentConversationID)
+        let ids = ConversationTaskScope.linkedTaskIDs(in: messages, selectedTaskID: conversation.focusedTaskID, pendingTaskID: pending?.taskID)
+        let active = engine.hasCurrentTask ? engine.currentRecord.flatMap { ids.contains($0.id) ? $0 : nil } : nil
+        let background = backgroundTasks.records.filter { ids.contains($0.id) && backgroundTasks.token($0.id) != nil }
         let activeIDs = Set(background.map(\.id) + [active?.id].compactMap { $0 })
-        let ids = Set(messages.compactMap(\.taskID) + [unifiedFocusedTaskID].compactMap { $0 }).union(activeIDs)
         var records = history.records.filter { ids.contains($0.id) && !activeIDs.contains($0.id) }
         records = Array(records.prefix(3))
         records.insert(contentsOf: background, at: 0)
@@ -17,12 +18,17 @@ import UIKit
         // Every active/queued task retains its real ID. Compact rows leave room
         // for travel references without dropping a worker from intent routing.
         let compact = records.count > 3
-        let data = records.map { record -> [String: String] in
+        var data = records.map { record -> [String: String] in
             let receipts = record.logs.last(where: { $0.title == "工具回执" })?.detail ?? ""
             return ["id": record.id.uuidString, "goal": ConversationReferenceText.excerpt(record.effectiveGoal, characters: compact ? 160 : 1000, jsonCharacters: compact ? 240 : 1600), "status": record.outcome.rawValue,
                     "summary": ConversationReferenceText.excerpt(record.summary, characters: compact ? 120 : 1000, jsonCharacters: compact ? 180 : 1600), "verifiedToolReceipts": ConversationReferenceText.excerpt(receipts, characters: compact ? 180 : 1800, jsonCharacters: compact ? 260 : 2600),
                     "active": String(activeIDs.contains(record.id)), "execution": record.executionLane ?? "screen",
                     "detailsOmitted": String(compact)]
+        }
+        if let pending, !records.contains(where: { $0.id == pending.taskID }) {
+            data.append(["id": pending.taskID.uuidString, "goal": String(pending.goal.prefix(1000)),
+                "status": "preparing", "summary": "本对话请求仍在准备，尚未创建执行记录", "verifiedToolReceipts": "",
+                "active": "true", "pending": "true", "execution": "screen", "detailsOmitted": "false"])
         }
         let search = CtripFlightSearchContext.latest(in: messages)
         let positions = search?.referencePositions(question: question) ?? []
@@ -66,11 +72,16 @@ import UIKit
             }
             // Compact reference copies only. Original goals, messages, task
             // records and card contents remain intact in their owning stores.
-            payload["tasks"] = records.map { record in
+            var compactTasks = records.map { record in
                 ["id": record.id.uuidString, "goal": limited(record.effectiveGoal, bytes: 180),
                  "status": record.outcome.rawValue, "active": String(activeIDs.contains(record.id)),
                  "execution": record.executionLane ?? "screen", "detailsOmitted": "true"]
             }
+            if let pending, !records.contains(where: { $0.id == pending.taskID }) {
+                compactTasks.append(["id": pending.taskID.uuidString, "status": "preparing", "active": "true",
+                    "pending": "true", "summary": "尚未启动", "execution": "screen", "detailsOmitted": "true"])
+            }
+            payload["tasks"] = compactTasks
             if let rows = payload["flightOffers"] as? [[String: Any]] {
                 payload["flightOffers"] = rows.map { row in
                     var short = row
@@ -108,6 +119,32 @@ import UIKit
     }
     func handleConversationAction(_ route: ConversationRoute, messageID: UUID) {
         let origin = route.originConversationID ?? conversation.currentConversationID
+        var route = route
+        let originMessages = origin == conversation.currentConversationID ? conversation.messages :
+            conversation.conversations.first(where: { $0.id == origin })?.messages ?? []
+        let originTaskIDs = ConversationTaskScope.linkedTaskIDs(in: originMessages).union(route.authorizedTaskIDs)
+        if route.controlsTask {
+            guard let target = ConversationTaskScope.controlTarget(route.taskID,
+                context: route.controlContext, taskIDs: originTaskIDs) else {
+                let message = "这次对话没有关联可控制的任务，请说明新任务。"
+                if conversation.currentConversationID == origin { notice = message }
+                conversation.reportTaskHandoff(text: message, to: messageID, in: origin)
+                return
+            }
+            route.taskID = target
+        }
+        if let pending = route.pendingTask {
+            guard [.pause, .stop].contains(route.mode), route.taskID == pending.taskID, pending.conversationID == origin,
+                  pendingTaskForConversation(origin) == pending, let lease = route.controlContext,
+                  ConversationTaskScope.controlContext(conversationControlContext, taskIDs: originTaskIDs,
+                      pendingTaskID: pending.taskID) == lease else {
+                if conversation.currentConversationID == origin { notice = "等待中的任务状态已改变，请重新核对" }
+                return
+            }
+            if route.mode == .pause { _ = pauseTask() } else { stop(cancelConversation: origin == conversation.currentConversationID) }
+            conversation.reportTaskHandoff(text: "已取消本对话等待中的任务，尚未启动。", to: messageID, in: origin)
+            return // No execution record exists, so do not create a task card/link.
+        }
         if route.controlsTask, let target = route.taskID, backgroundTasks.token(target) != nil {
             guard let token = route.backgroundControlToken, token == backgroundTasks.token(target) else {
                 notice = "这项后台任务状态已改变，请核对后重新发送"; return
@@ -127,8 +164,16 @@ import UIKit
             } catch { notice = error.localizedDescription }
             return
         }
+        if route.mode == .resume, let target = route.taskID, backgroundTasks.token(target) == nil,
+           recoverableTask(target)?.executionLane == "native" {
+            // Explicit session source/selection authorizes recovery of this exact
+            // inactive native record; continueTask retains its write/recovery gates.
+            if continueTask(target) { conversation.linkTask(target, to: messageID, in: origin) }
+            return
+        }
         if route.controlsTask {
-            guard route.backgroundControlToken == nil, let context = route.controlContext, context == conversationControlContext else {
+            guard route.backgroundControlToken == nil, let context = route.controlContext,
+                  context == ConversationTaskScope.controlContext(conversationControlContext, taskIDs: originTaskIDs) else {
                 notice = "任务状态已改变，请核对当前任务后重新发送"; return
             }
         }
@@ -204,8 +249,7 @@ import UIKit
                     guard queued.resumable else { notice = "这项任务没有可继续的进度"; return }
                     if resumeScreenQueueTask(target) { conversation.linkTask(target, to: messageID, in: origin) }; return
                 }
-                let referenced = engine.currentRecord?.id == target || unifiedFocusedTaskID == target ||
-                    conversation.messages.contains { $0.taskID == target }
+                let referenced = originTaskIDs.contains(target)
                 guard referenced, recoverableTask(target) != nil else { notice = "这项任务没有可继续的进度"; return }
                 // Use the same guarded recovery as the history card. It keeps
                 // task identity, progress and uncertain-write checks, and
@@ -226,7 +270,7 @@ import UIKit
         case .stop:
             guard route.taskID == nil || (engine.hasCurrentTask && route.taskID == engine.currentRecord?.id) else { notice = "这项任务不是当前执行的任务，未停止其他任务"; return }
             if let id = engine.currentRecord?.id { conversation.linkTask(id, to: messageID, in: origin) }
-            stop()
+            stop(cancelConversation: origin == conversation.currentConversationID)
         default: break
         }
     }

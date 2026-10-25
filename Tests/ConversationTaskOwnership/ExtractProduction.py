@@ -27,6 +27,7 @@ members = {
     "focus": field(vm, "    var unifiedFocusedTaskID:"),
     "pending": field(vm, "    var pendingConversationTask:"),
     "pendingConsent": field(vm, "    private var pendingConsentStart ="),
+    "pendingScope": member(vm, "    func pendingTaskForConversation(_ conversationID: UUID) -> ConversationTaskSubmission?"),
     "context": member(coordinator, "    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil) -> String"),
 }
 for signature in ["    private var automaticPreparationConversationTaskID:", "    private var pendingConsentConversationTask:"]:
@@ -36,7 +37,7 @@ for name, signature in {
     "start": "    @discardableResult\n    func startAgent(", "prepare": "    func prepareAutomatically(",
     "cancelPrepare": "    func cancelAutomaticPreparation(", "requestConsent": "    func requestConsent()",
     "acceptConsent": "    func acceptConsent()", "declineConsent": "    func declineConsent()",
-    "stop": "    func stop()", "pause": "    func pauseTask(",
+    "stop": "    func stop()", "stopWithConversationControl": "    func stop(cancelConversation: Bool)", "pause": "    func pauseTask(",
     "cancelVoice": "    private func cancelVoicePreparation(",
 }.items():
     members[name] = member(vm, signature)
