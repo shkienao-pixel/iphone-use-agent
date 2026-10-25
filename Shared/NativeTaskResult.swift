@@ -62,8 +62,8 @@ struct NativeEventWriteReceipt: Codable, Equatable {
 }
 
 /// Presentation of an actual completed native call, never a model plan.
-struct NativeTaskResult: Codable, Equatable, Identifiable {
-    enum App: String, Codable { case alarm, calendar, reminders, notes, health, contacts, photos, music, location, content }
+struct NativeTaskResult: Codable, Equatable, Identifiable, Sendable {
+    enum App: String, Codable, Sendable { case alarm, calendar, reminders, notes, health, contacts, photos, music, location, content }
     let id: String
     let app: App
     let operation: String
@@ -243,5 +243,48 @@ struct NativeTaskResult: Codable, Equatable, Identifiable {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+}
+
+/// Conversation-owned display evidence. It contains no goal, logs, checkpoint,
+/// tool permissions or execution token, and cannot be resumed as a task.
+struct NativeTaskSnapshot: Codable, Equatable, Sendable {
+    enum State: String, Codable, Sendable {
+        case completed, failed, stopped, interrupted, paused, needsUser
+        var label: String {
+            switch self {
+            case .completed: return "已完成"
+            case .failed: return "执行中断"
+            case .stopped: return "已停止"
+            case .interrupted: return "上次未结束"
+            case .paused: return "已暂停"
+            case .needsUser: return "需要处理"
+            }
+        }
+    }
+    let taskID: UUID
+    let title: String
+    let summary: String
+    let state: State
+    let updatedAt: Date
+    let results: [NativeTaskResult]
+
+    init?(taskID: UUID, title: String, summary: String, outcome: String, updatedAt: Date, results: [NativeTaskResult]) {
+        guard let state = State(rawValue: outcome) else { return nil }
+        self.taskID = taskID; self.title = title; self.summary = summary
+        self.state = state; self.updatedAt = updatedAt; self.results = results
+        guard valid else { return nil }
+    }
+
+    var valid: Bool {
+        !title.isEmpty && title.count <= 160 && summary.count <= 60_000 && updatedAt.timeIntervalSince1970.isFinite &&
+        !results.isEmpty && results.count <= 40 && Set(results.map(\.id)).count == results.count &&
+        results.allSatisfy { result in
+            !result.id.isEmpty && result.id.count <= 4096 && result.operation.count <= 80 &&
+            result.title.count <= 160 && result.value.count <= 240 && result.detail.count <= 400 && result.notice.count <= 400 &&
+            result.slot.count <= 200 && (result.systemObjectID?.utf8.count ?? 0) <= 4096 &&
+            (result.collectionID?.utf8.count ?? 0) <= 4096 &&
+            (result.date?.timeIntervalSince1970.isFinite ?? true) && (result.endDate?.timeIntervalSince1970.isFinite ?? true)
+        }
     }
 }

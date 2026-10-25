@@ -25,6 +25,7 @@ enum TaskOutcome { case completed, interrupted
     var label: String { self == .completed ? "已完成" : "执行中断" }
 }
 struct PhoneTaskRecord {
+    var nativeConversationSnapshot: NativeTaskSnapshot? { nil }
     var id = UUID()
     var title: String
     var goal: String

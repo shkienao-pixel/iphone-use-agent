@@ -270,7 +270,7 @@ struct AssistantView: View {
                                     }
                                 }
                                 else { Text(message.text).font(.body).lineSpacing(4).textSelection(.enabled) }
-                                if let taskID = message.taskID { ConversationTaskCard(taskID: taskID) }
+                                if let taskID = message.taskID { ConversationTaskCard(taskID: taskID, savedResult: message.nativeTaskResult) }
                                 if let attachments = message.attachments, !attachments.isEmpty {
                                     ComposerAttachmentList(attachments: attachments)
                                 }

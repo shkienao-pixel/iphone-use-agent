@@ -88,14 +88,14 @@ replacement = signature + '\n        return try await AttachmentWireProbe.load(r
 Path(sys.argv[2]).write_text(source[:start] + replacement + source[cursor:])
 PY
 xcrun swiftc -parse-as-library -module-cache-path "$check_dir/module-cache" \
-  "$project_dir/Shared/ComposerAttachment.swift" "$project_dir/Shared/AssistantConversationContext.swift" "$project_dir/Shared/ConversationUnderstanding.swift" \
+  "$project_dir/Shared/ComposerAttachment.swift" "$project_dir/Shared/NativeTaskResult.swift" "$project_dir/Shared/AssistantConversationContext.swift" "$project_dir/Shared/ConversationUnderstanding.swift" \
   "$project_dir/Shared/AgentModels.swift" "$project_dir/Shared/MouseProtocol.swift" \
   "$project_dir/Shared/PhoneHarness.swift" "$project_dir/Shared/SystemToolRequest.swift" \
   "$project_dir/Shared/RunMetrics.swift" "$project_dir/Shared/ModelHistoryContext.swift" \
   "$project_dir/Shared/CameraObservationWindow.swift" "$project_dir/Shared/MeetingNotes.swift" \
   "$project_dir/Shared/WebSearchModels.swift" "$project_dir/Shared/WebPageModels.swift" \
   "$project_dir/Shared/WebInvestigationModels.swift" \
-  "$project_dir/Shared/ChatGPTPlanProtocol.swift" "$project_dir/Shared/ChatGPTPlanResponses.swift" \
+  "$project_dir/Shared/NativePlanningRecovery.swift" "$project_dir/Shared/ChatGPTPlanProtocol.swift" "$project_dir/Shared/ChatGPTPlanResponses.swift" \
   "$project_dir/PhoneAgent/Services/ChatGPTPlanRuntime.swift" \
   "$project_dir/PhoneAgent/Services/PrivacyConsent.swift" "$project_dir/PhoneAgent/Services/PhoneAppSkillCatalog.swift" \
   "$project_dir/PhoneAgent/Services/ConnectedConversationClient.swift" "$check_dir/VisionClient.swift" \

@@ -139,6 +139,9 @@ struct VisionClient {
             guard let id = planProfileID, ChatGPTPlanStore.active(id) else { throw CancellationError() }
             guard let http = result.1 as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 ChatGPTPlanDiagnostics.record(result.0, status: (result.1 as? HTTPURLResponse)?.statusCode ?? 0)
+                if let http = result.1 as? HTTPURLResponse,
+                   let failure = NativePlanningServiceFailure.response(status: http.statusCode, body: result.0,
+                       retryAfter: http.value(forHTTPHeaderField: "Retry-After")) { throw failure }
                 let object = (try? JSONSerialization.jsonObject(with: result.0)) as? [String: Any]
                 throw ChatGPTPlanResponses.failure(code: (object?["error"] as? [String: Any])?["code"] as? String, status: (result.1 as? HTTPURLResponse)?.statusCode)
             }
@@ -147,6 +150,9 @@ struct VisionClient {
                 return (try ChatGPTPlanResponses.completion(from: result.0), result.1)
             }
         }
+        if !settings.usesChatGPTPlan, let http = result.1 as? HTTPURLResponse,
+           let failure = NativePlanningServiceFailure.response(status: http.statusCode, body: result.0,
+               retryAfter: http.value(forHTTPHeaderField: "Retry-After")) { throw failure }
         return result
     }
     /// A bounded text-only connection diagnostic, never a native task/action.

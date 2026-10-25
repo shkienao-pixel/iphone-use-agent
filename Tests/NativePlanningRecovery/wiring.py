@@ -12,4 +12,10 @@ assert 'self.stillCurrent(token)' in native and 'self.measuredWait(nanoseconds: 
 assert native.index('NativePlanningRecovery.nextAction(') < native.index('switch action.kind')
 assert native.index('switch action.kind') < native.index('try await executeTool(')
 assert native.count('try await executeTool(') == 1
+client = (root / 'PhoneAgent/Services/VisionClient.swift').read_text()
+load = client[client.index('    private func load('):client.index('    func checkPlanInference(')]
+assert load.count('NativePlanningServiceFailure.response(') == 2
+assert load.index('ChatGPTPlanStore.active(id)') < load.index('NativePlanningServiceFailure.response(')
+assert 'retryAfter: http.value(forHTTPHeaderField: "Retry-After")' in load
+assert 'ChatGPTPlanDiagnostics.record(result.0' in load
 print('Native planning recovery wiring: only model request is retried; native dispatch stays outside')

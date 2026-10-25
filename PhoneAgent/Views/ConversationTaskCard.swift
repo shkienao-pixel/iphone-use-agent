@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ConversationTaskCard: View {
     let taskID: UUID
+    var savedResult: NativeTaskSnapshot? = nil
     @EnvironmentObject private var model: PhoneAgentViewModel
     private var record: PhoneTaskRecord? {
         if model.engine.currentRecord?.id == taskID { return model.engine.currentRecord }
@@ -59,8 +60,24 @@ struct ConversationTaskCard: View {
                 }
             }.padding(16).background(AgentPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
                 .accessibilityElement(children: .contain).accessibilityIdentifier("task.card." + taskID.uuidString)
+        } else if let savedResult, savedResult.taskID == taskID, savedResult.valid {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    Text(savedResult.title).font(.headline)
+                    Spacer(minLength: 8)
+                    Text(savedResult.state.label).font(.caption).foregroundStyle(.secondary)
+                }
+                Text("历史结果 · " + savedResult.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption).foregroundStyle(.secondary)
+                NativeTaskResultCards(results: savedResult.results)
+                if !savedResult.summary.isEmpty {
+                    DisclosureGroup("查看任务报告") { SelaMarkdownText(text: savedResult.summary) }
+                        .accessibilityIdentifier("task.report." + taskID.uuidString)
+                }
+            }.padding(16).background(AgentPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
+                .accessibilityElement(children: .contain).accessibilityIdentifier("task.snapshot." + taskID.uuidString)
         } else {
-            Label("正在准备任务", systemImage: "clock").font(.subheadline).foregroundStyle(.secondary)
+            Label("任务记录暂不可用", systemImage: "clock").font(.subheadline).foregroundStyle(.secondary)
         }
     }
 }

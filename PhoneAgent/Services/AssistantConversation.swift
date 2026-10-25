@@ -290,6 +290,59 @@ final class AssistantConversation: ObservableObject {
             }
         }
     }
+    /// Update only an existing assistant message linked to this actual task.
+    /// A late completion cannot create a conversation or change the open draft.
+    @discardableResult
+    func retainTaskResult(_ result: NativeTaskSnapshot?) -> Bool {
+        retainTaskResults([result])
+    }
+
+    /// Startup migration is one archive transaction, independent of task history
+    /// retention. Missing old task sources remain unknown rather than fabricated.
+    @discardableResult
+    func retainTaskResults(_ results: [NativeTaskSnapshot?]) -> Bool {
+        guard results.count <= 50 else { return false }
+        let validResults = results.compactMap { $0 }.filter(\.valid)
+        guard !validResults.isEmpty else { return false }
+        var updated = conversations
+        var current = messages
+        var changed = false
+        var matched = false
+        for result in validResults {
+            for recordIndex in updated.indices {
+                for messageIndex in updated[recordIndex].messages.indices {
+                    let message = updated[recordIndex].messages[messageIndex]
+                    guard message.role == "assistant", message.taskID == result.taskID else { continue }
+                    matched = true
+                    guard message.nativeTaskResult != result,
+                          message.nativeTaskResult.map({ $0.updatedAt <= result.updatedAt }) ?? true else { continue }
+                    updated[recordIndex].messages[messageIndex].nativeTaskResult = result
+                    changed = true
+                }
+            }
+            // The visible conversation may include changes not yet persisted.
+            for index in current.indices where current[index].role == "assistant" && current[index].taskID == result.taskID {
+                matched = true
+                guard current[index].nativeTaskResult != result,
+                      current[index].nativeTaskResult.map({ $0.updatedAt <= result.updatedAt }) ?? true else { continue }
+                current[index].nativeTaskResult = result; changed = true
+            }
+        }
+        guard changed else { return matched }
+        // Persist transactionally before publishing. Keep recency, reference
+        // disclosure, active request, focus, composer and attachments untouched.
+        if let index = updated.firstIndex(where: { $0.id == currentConversationID }) { updated[index].messages = current }
+        else if current != messages {
+            storageError = "原对话尚未保存，结果卡片未能归档；请保留当前任务记录。"
+            return false
+        }
+        do {
+            try store.save(updated, currentConversationID: currentConversationID)
+            conversations = store.records; messages = current; storageError = ""
+            return true
+        } catch { storageError = error.localizedDescription; return false }
+    }
+
     func selectFrame(_ frame: ScreenFrame?) { selectedFrame = frame; selectedSequence = [] }
     func selectSequence(_ frames: [CameraObservationFrame]) { selectedFrame = nil; selectedSequence = frames }
     func retainDraftAttachments(_ attachments: [ComposerAttachment], conversationID: UUID) {

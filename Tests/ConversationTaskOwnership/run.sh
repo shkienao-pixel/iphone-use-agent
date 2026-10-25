@@ -15,7 +15,7 @@ finish() {
 trap finish EXIT
 python3 "$project_dir/Tests/ConversationTaskOwnership/ExtractProduction.py" "$source_root" "$project_dir/Tests/ConversationTaskOwnership" "$check_dir/production"
 xcrun swiftc -parse-as-library -module-cache-path "$check_dir/module-cache" \
-  "$source_root/Shared/ComposerAttachment.swift" "$source_root/Shared/AssistantConversationContext.swift" "$source_root/Shared/ConversationUnderstanding.swift" \
+  "$source_root/Shared/ComposerAttachment.swift" "$source_root/Shared/NativeTaskResult.swift" "$source_root/Shared/AssistantConversationContext.swift" "$source_root/Shared/ConversationUnderstanding.swift" \
   "$source_root/PhoneAgent/Stores/AssistantConversationStore.swift" "$source_root/PhoneAgent/Services/AssistantConversation.swift" \
   "$check_dir/production/ModelBoundaries.swift" "$check_dir/production/OwnershipEnvironment.swift" \
   "$project_dir/Tests/ConversationTaskOwnership/main.swift" -o "$check_dir/conversation-task-ownership"

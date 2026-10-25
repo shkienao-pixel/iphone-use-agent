@@ -14,6 +14,8 @@ struct AssistantMessage: Identifiable, Codable, Equatable, Sendable {
     var usedWebSearch: Bool? = nil
     var flightOffers: [CtripFlightOffer]? = nil
     var taskID: UUID? = nil
+    /// Display evidence retained with its conversation, never execution authority.
+    var nativeTaskResult: NativeTaskSnapshot? = nil
     /// Complete provider query, including for a successful search with no offers.
     var flightQuery: String? = nil
     var paotuiCard: PaotuiChatCard? = nil

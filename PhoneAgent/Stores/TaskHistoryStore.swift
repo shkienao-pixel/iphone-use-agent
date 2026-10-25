@@ -40,6 +40,10 @@ struct PhoneTaskRecord: Identifiable, Codable {
     var logs: [AgentLogEntry] = []
     // Actual completed native results for conversation cards; absent in old records.
     var nativeResults: [NativeTaskResult]? = nil
+    var nativeConversationSnapshot: NativeTaskSnapshot? {
+        NativeTaskSnapshot(taskID: id, title: title, summary: summary, outcome: outcome.rawValue,
+                           updatedAt: updatedAt, results: nativeResults ?? [])
+    }
     // Optional so existing task files remain readable.
     var amendments: [TaskAmendment]? = nil
     var subtasks: [TaskSubtask]? = nil

@@ -15,9 +15,9 @@ finish() {
 trap finish EXIT
 python3 "$project_dir/Tests/ConversationRouting/ExtractProduction.py" "$source_root" "$check_dir/production"
 xcrun swiftc -parse-as-library -module-cache-path "$check_dir/module-cache" \
-  "$source_root/Shared/ComposerAttachment.swift" "$source_root/Shared/AssistantConversationContext.swift" "$source_root/Shared/ConversationUnderstanding.swift" \
+  "$source_root/Shared/ComposerAttachment.swift" "$source_root/Shared/NativeTaskResult.swift" "$source_root/Shared/AssistantConversationContext.swift" "$source_root/Shared/ConversationUnderstanding.swift" \
   "$source_root/Shared/AgentModels.swift" "$source_root/Shared/MouseProtocol.swift" \
-  "$source_root/Shared/ChatGPTPlanProtocol.swift" "$source_root/Shared/ChatGPTPlanResponses.swift" \
+  "$source_root/Shared/NativePlanningRecovery.swift" "$source_root/Shared/ChatGPTPlanProtocol.swift" "$source_root/Shared/ChatGPTPlanResponses.swift" \
   "$source_root/PhoneAgent/Services/ChatGPTPlanRuntime.swift" \
   "$source_root/Shared/PhoneHarness.swift" "$source_root/Shared/SystemToolRequest.swift" \
   "$source_root/Shared/RunMetrics.swift" "$source_root/Shared/ModelHistoryContext.swift" \

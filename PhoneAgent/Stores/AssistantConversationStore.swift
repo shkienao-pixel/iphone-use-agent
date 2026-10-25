@@ -73,6 +73,10 @@ final class AssistantConversationStore {
         for record in records {
             try ComposerAttachmentPolicy.validate(record.draftAttachments ?? [])
             for message in record.messages { try ComposerAttachmentPolicy.validate(message.attachments ?? []) }
+            for message in record.messages where message.nativeTaskResult != nil {
+                guard message.role == "assistant", message.nativeTaskResult!.valid,
+                      message.nativeTaskResult!.taskID == message.taskID else { throw AssistantConversationStoreError.invalid }
+            }
             guard !record.title.isEmpty, record.title.count <= 80, record.recipient.count <= 4000,
                   record.draft.count <= 4000, record.messages.count <= 100,
                   record.createdAt.timeIntervalSince1970.isFinite, record.updatedAt.timeIntervalSince1970.isFinite,

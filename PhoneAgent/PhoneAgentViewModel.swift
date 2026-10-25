@@ -103,6 +103,7 @@ final class PhoneAgentViewModel: ObservableObject {
         pool.onRecord = { [weak self] record, _ in
             guard let self else { return }
             self.history.upsert(record)
+            self.conversation.retainTaskResult(record.nativeConversationSnapshot)
             self.objectWillChange.send()
         }
         return pool
@@ -531,6 +532,7 @@ final class PhoneAgentViewModel: ObservableObject {
                     self.conversation.reportTaskHandoff(text: "任务已启动，但任务卡未能保存关联，请到任务记录查看。", to: pending.messageID, in: pending.conversationID, onlyIfUnlinked: false)
                 }
             }
+            self?.conversation.retainTaskResult(record.nativeConversationSnapshot)
         }
         engine.$phase.removeDuplicates().sink { [weak self] phase in
             guard let self, self.recordingAudioOwner == nil, self.settings.spokenFeedback == true, UIApplication.shared.applicationState == .active else { return }
@@ -544,6 +546,7 @@ final class PhoneAgentViewModel: ObservableObject {
         }
         speech.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         conversation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
+        conversation.retainTaskResults(history.records.map(\.nativeConversationSnapshot))
         Publishers.Merge(
             NotificationCenter.default.publisher(for: UIAccessibility.assistiveTouchStatusDidChangeNotification),
             NotificationCenter.default.publisher(for: UIAccessibility.guidedAccessStatusDidChangeNotification))
