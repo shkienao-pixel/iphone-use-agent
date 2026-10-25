@@ -43,6 +43,7 @@ struct ContentView: View {
     @State private var showingConfigurationComplete = false
     @State private var expandedSteps = false
     @State private var followLatest = true
+    @State private var taskUserScrolling = false
     @State private var appeared = false
     @State private var amendmentDrafts: [UUID: String] = [:]
     @State private var searchText = ""
@@ -796,13 +797,27 @@ struct ContentView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 16)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _, _ in
+                    guard followLatest else { return }
+                    let taskID = record.id
+                    DispatchQueue.main.async {
+                        guard followLatest, displayedRecord?.id == taskID else { return }
+                        reader.scrollTo("conversationBottom", anchor: .bottom)
+                    }
+                }
                 .simultaneousGesture(TapGesture().onEnded { composing = false })
             }
             .scrollDismissesKeyboard(.interactively)
             .scrollEdgeEffectHidden(for: .top)
+            .onScrollPhaseChange { _, phase in
+                taskUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            }
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.visibleRect.maxY >= geometry.contentSize.height - 80
-            } action: { _, nearBottom in followLatest = nearBottom }
+            } action: { _, nearBottom in
+                if nearBottom { followLatest = true }
+                else if taskUserScrolling { followLatest = false }
+            }
             .overlay(alignment: .bottom) {
                 if !followLatest {
                     SelaScrollLatestButton {
@@ -856,10 +871,10 @@ struct ContentView: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
-                                Text("执行步骤")
+                                Text("执行记录")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
-                                Text("\(isCurrentConversation && model.engine.running ? model.engine.currentStep : activities.count)")
+                                Text("\(activities.count)")
                                     .font(.caption2.monospacedDigit().weight(.bold))
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 6).padding(.vertical, 2)
@@ -946,6 +961,7 @@ struct ContentView: View {
     }
 
     private func taskResponse(_ record: PhoneTaskRecord) -> some View {
+        let nativeResults = record.nativeResults ?? []
         let offers = record.logs.filter { $0.title == "工具回执" && $0.detail.hasPrefix("来源：携程") }
             .flatMap { CtripFlightParser.offers($0.detail, query: record.goal, at: record.updatedAt) }
         let handoffConversationID = model.conversation.currentConversationID
@@ -964,16 +980,27 @@ struct ContentView: View {
                         isVisible: { selectedDestination == .tasks && displayedRecord?.id == record.id })
                 })
             }
-            let response = isCurrentConversation && model.engine.running ? "正在处理当前步骤" : isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
+            if !nativeResults.isEmpty {
+                NativeTaskResultCards(results: nativeResults)
+                    .accessibilityIdentifier("task.nativeResults." + record.id.uuidString)
+            }
+            let response = !nativeResults.isEmpty && record.outcome == .completed ? record.summary
+                : isCurrentConversation && model.engine.running ? "正在处理当前步骤" : isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
             let narrative = offers.isEmpty ? response : CtripFlightParser.narrative(response, representedBy: offers)
             if !narrative.isEmpty {
-                SelaMarkdownText(text: narrative).font(.body).lineSpacing(4).textSelection(.enabled)
+                if !nativeResults.isEmpty, record.outcome == .completed {
+                    DisclosureGroup("查看任务报告") {
+                        SelaMarkdownText(text: narrative).font(.body).lineSpacing(4).textSelection(.enabled)
+                    }
+                    .accessibilityIdentifier("task.report." + record.id.uuidString)
+                } else {
+                    SelaMarkdownText(text: narrative).font(.body).lineSpacing(4).textSelection(.enabled)
+                }
             }
 
             HStack(spacing: 6) {
                 Button {
-                    let content = isCurrentConversation ? (model.engine.executingAction?.reason ?? model.engine.state) : record.summary
-                    UIPasteboard.general.string = content
+                    UIPasteboard.general.string = response
                     model.notice = "已复制结果"
                 } label: {
                     Label("复制", systemImage: "doc.on.doc").frame(width: 44, height: 44)

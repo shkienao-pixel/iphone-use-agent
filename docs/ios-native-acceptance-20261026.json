@@ -9,9 +9,10 @@
   "currentInstalledBuild": 203,
   "actualRuntimeSourceRevision": "e80151bcf335c91a9651f2ed9cef98f813143b15+sha256:f836887f93a9655d034965388684a4ee5973b1f83e356b7fe9639401ab500053",
   "latestFrozenFullChecks": {
-    "inputFileCount": 676,
+    "inputFileCount": 678,
     "passed": true,
-    "commit": "e80151bcf335c91a9651f2ed9cef98f813143b15"
+    "commit": "d526c134816a8276fada80e3cdf10ee080bdb11b",
+    "build": 204
   },
   "additionalOwnedHarnessCommit": "6d414d9",
   "additionalHarnessGuardsPhysicalAcceptancePending": true,
@@ -39,8 +40,19 @@
     "status": "prepared_not_pushed"
   },
   "finalBuildPreparation": {
-    "targetBuild": 204,
+    "targetBuild": 205,
     "fullFrozenChecksAndSignInstallStillPending": true,
-    "settingsCopyAlignedWithAutomaticExecution": true
+    "settingsCopyAlignedWithAutomaticExecution": true,
+    "previous204FullFrozenChecksPassed": true
+  },
+  "savedTaskLinkCardRegression": {
+    "beforeBuild": 203,
+    "actualTaskPageReportOnlyScreenshotCaptured": true,
+    "sourceFixBuild": 205,
+    "sameSourceBoundNativeCardRendererUsed": true,
+    "completedReportExpandable": true,
+    "retainedLogCountNoLongerLabelledActions": true,
+    "postFixPhysicalScreenshotAcceptancePending": true,
+    "physicalTapAcceptance": false
   }
 }
