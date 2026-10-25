@@ -45,3 +45,17 @@
 仍待：H20 完整运行时长和全部源审计；203 新回归的可见卡片与停止按钮；真实已睡时长、正运动记录及音乐播放正样本；新的 60–120 秒受控断网用例。历史可见卧床样本、空运动列表或指南加载均不能代替这些项目。
 
 发布前重新冻结最终源码、完整检查、签名和数据扫描；08:30 仅正常推送经过验证的提交，核验远端 SHA 后撤销本次临时部署密钥。其他并行工作区不做 checkout、reset、stash 或整文件覆盖。
+
+## 可复用的独立审计
+
+`Tools/NativeAcceptance/audit_health_evidence.py` 只读取已保存证据，合并因任务日志上限而分散的原始条目，核对完整 SHA-256、UTF-8 长度、JSON 类型、日期范围、顺序和完成身份。相同范围的新读取可以有独立身份；是否违反不重复计划由声明范围另行核对。未对齐的多文件快照需要重新只读采集，不能补造结果或重复 SDK 调用。
+
+```sh
+python3 Tools/NativeAcceptance/audit_health_evidence.py \
+  --case-directory /path/to/case --task ACTUAL_TASK_UUID \
+  --manifest /path/to/manifest.json \
+  --terminal-evidence /path/to/case/settled-evidence \
+  --output /path/to/case/new-audit.json
+```
+
+输出不复述健康原值或查询日期，不覆盖已有结论。文件一致性、终态计数报告、设备来源、物理输入和卡片可见性分别记录；离线脚本不能单独证明设备来源。12 项独立异常夹具覆盖空值与零、布尔冒充数值、摘要/字节错误、不同任务、真实重复读取身份、日志淘汰、未决回执及停止后的部分结果，均未调用设备或模型。实际手机证据的额外回放也已核对，但本轮终态仍待完成。
