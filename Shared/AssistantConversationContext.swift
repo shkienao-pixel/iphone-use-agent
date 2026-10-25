@@ -1942,6 +1942,7 @@ enum ConversationTaskScope {
         if let tasks = payload["tasks"] as? [[String: Any]] {
             payload["tasks"] = tasks.filter { row in (row["id"] as? String).flatMap(UUID.init(uuidString:)).map(taskIDs.contains) == true }
         } else { payload["tasks"] = [] }
+        if payload.count == 1, (payload["tasks"] as? [[String: Any]])?.isEmpty == true { return "{}" }
         guard let bytes = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return "{}" }
         return String(decoding: bytes, as: UTF8.self)
     }

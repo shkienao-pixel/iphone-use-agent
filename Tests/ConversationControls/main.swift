@@ -268,6 +268,44 @@ import Foundation
         idleDraft.handleConversationAction(.init(mode: .task, request: "迟到路由的屏幕任务", message: "开始"), messageID: idleDraftMessage)
         expect(idleDraft.goal == "新会话里尚未发送的草稿" && idleDraft.actions.map(\.0) == ["enqueue"],
                "Even an idle screen executor queues a late task while preserving a newer unsent draft")
+        let nativeForeground = PhoneAgentViewModel(), nativeForegroundMessage = UUID()
+        nativeForeground.settings.toolsOnly = true
+        nativeForeground.goal = "保留中的原生任务草稿"
+        nativeForeground.conversation.loading = true
+        nativeForeground.handleConversationAction(.init(mode: .task, request: "只读取健康数据", message: "开始", execution: .screen), messageID: nativeForegroundMessage)
+        let nativeForegroundID = nativeForeground.taskQueue.items.last?.id
+        expect(nativeForeground.actions.map(\.0) == ["enqueue"], "The handoff does not bypass its still-loading send lease")
+        nativeForeground.conversation.loading = false
+        await drain()
+        expect(nativeForeground.actions.map(\.0) == ["enqueue", "history"] && nativeForeground.actions.last?.1 == nativeForegroundID,
+               "A foreground native request starts only its newly linked record without another execution tap")
+        expect(nativeForeground.goal == "保留中的原生任务草稿" && nativeForeground.conversation.handoffs[nativeForegroundMessage]?.contains("已自动启动") == true,
+               "Automatic foreground native execution retains the old draft and reports actual startup")
+        let busyNative = vmWithTask(); busyNative.settings.toolsOnly = true
+        busyNative.handleConversationAction(.init(mode: .task, request: "只读取健康数据", message: "开始", execution: .screen), messageID: UUID())
+        await drain()
+        expect(busyNative.actions.map(\.0) == ["enqueue"], "An existing execution session prevents an automatic foreground takeover")
+        let backgroundNative = PhoneAgentViewModel(); backgroundNative.settings.toolsOnly = true; backgroundNative.goal = "当前草稿"
+        var backgroundRoute = ConversationRoute(mode: .task, request: "只读取健康数据", message: "开始", execution: .screen)
+        backgroundRoute.originConversationID = UUID()
+        backgroundNative.handleConversationAction(backgroundRoute, messageID: UUID())
+        await drain()
+        expect(backgroundNative.actions.map(\.0) == ["enqueue"] && backgroundNative.goal == "当前草稿",
+               "A late route from another conversation cannot automatically occupy the foreground")
+        let blockedNative = PhoneAgentViewModel(); blockedNative.settings.toolsOnly = true; blockedNative.goal = "保留草稿"; blockedNative.historicalRecoveryAllowed = false
+        let blockedNativeMessage = UUID()
+        blockedNative.handleConversationAction(.init(mode: .task, request: "只读取健康数据", message: "开始", execution: .screen), messageID: blockedNativeMessage)
+        await drain()
+        expect(blockedNative.actions.map(\.0) == ["enqueue"] && blockedNative.conversation.handoffs[blockedNativeMessage]?.contains("尚未启动") == true,
+               "A failed recovery gate remains queued and never claims startup")
+        for cancelByPause in [false, true] {
+            let cancelled = PhoneAgentViewModel(); cancelled.settings.toolsOnly = true; cancelled.goal = "保留草稿"
+            cancelled.handleConversationAction(.init(mode: .task, request: "只读取健康数据", message: "开始", execution: .screen), messageID: UUID())
+            if cancelByPause { cancelled.taskQueue.items[0].state = .paused }
+            else { cancelled.queueGeneration = UUID() }
+            await drain()
+            expect(cancelled.actions.map(\.0) == ["enqueue"], "A stop generation or item pause cancels deferred native startup")
+        }
         let rejectedQueue = vmWithTask(), rejectedQueueMessage = UUID(); rejectedQueue.enqueueAllowed = false
         rejectedQueue.handleConversationAction(.init(mode: .task, request: "创建闹钟", message: "开始"), messageID: rejectedQueueMessage)
         expect(rejectedQueue.actions.isEmpty && rejectedQueue.conversation.handoffs[rejectedQueueMessage]?.contains("也未加入队列") == true,

@@ -16,7 +16,7 @@ import Foundation
 }
 @MainActor final class SessionHistory {var records=[PhoneTaskRecord]()}
 @MainActor final class Queue {
- struct Item {var id=UUID();var resumable=true}
+ struct Item {enum State {case waiting,paused,cancelled};var id=UUID();var resumable=true;var state:State = .waiting}
  var items=[Item]()
 }
 @MainActor final class SessionBackground {
@@ -41,6 +41,7 @@ import Foundation
  let engine=SessionEngine(),history=SessionHistory(),backgroundTasks=SessionBackground(),taskQueue=Queue()
  let assistiveTouchVerification=Probe(),contentStore=Probe(),liveCamera=Probe(),camera=Probe(),speech=Probe(),tools=Probe()
  var settings=AgentSettings(),consentReady=true,modelReady=true
+ var queueGeneration=UUID()
  var recoverable=[UUID:PhoneTaskRecord]()
  var pendingConversationTask:ConversationTaskSubmission?,pendingConsentConversationTask:ConversationTaskSubmission?
  var pendingConsentStart=false,pendingConsentAttachments=[ComposerAttachment]()

@@ -203,10 +203,32 @@ import UIKit
                 return
             }
             if engine.hasCurrentTask || queueRunning || !screenQueueWaiting.isEmpty || !goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // A foreground-only native request can retain an unsent draft
+                // without becoming a second Start/Continue confirmation. The
+                // selected record still passes normal recovery/permission gates.
+                let startNativeForeground = settings.toolsOnly == true && settings.systemToolsEnabled == true &&
+                    origin == conversation.currentConversationID && !engine.hasCurrentTask && !queueRunning && screenQueueWaiting.isEmpty
                 if let id = queueConversationScreenTask(route) {
                     let linked = conversation.linkTask(id, to: messageID, in: origin)
-                    conversation.reportTaskHandoff(text: linked ? "已加入任务队列，尚未开始执行。" : "已加入任务队列，任务卡暂未关联，请在队列查看；尚未开始执行。",
-                        to: messageID, in: origin, onlyIfUnlinked: false)
+                    if linked && startNativeForeground {
+                        conversation.reportTaskHandoff(text: "已接收原生任务，正在准备执行；原草稿已保留。", to: messageID, in: origin, onlyIfUnlinked: false)
+                        let queueToken = queueGeneration
+                        // The current send still owns conversation.loading until
+                        // its action callback returns. Start on the next actor
+                        // turn, then recheck cancellation and the exact queue ID.
+                        Task { @MainActor [weak self] in
+                            guard let self, self.queueGeneration == queueToken,
+                                  self.conversation.currentConversationID == origin,
+                                  self.taskQueue.items.first(where: { $0.id == id })?.state == .waiting else { return }
+                            let started = self.continueTask(id)
+                            self.conversation.reportTaskHandoff(text: started ? "已自动启动本次原生任务，原草稿已保留。" :
+                                "原生任务尚未启动：" + (self.notice.isEmpty ? "请核对当前执行状态。" : self.notice),
+                                to: messageID, in: origin, onlyIfUnlinked: false)
+                        }
+                    } else {
+                        conversation.reportTaskHandoff(text: linked ? "已加入任务队列，尚未开始执行。" : "已加入任务队列，任务卡暂未关联，请在队列查看；尚未开始执行。",
+                            to: messageID, in: origin, onlyIfUnlinked: false)
+                    }
                 } else {
                     conversation.reportTaskHandoff(text: "任务未启动，也未加入队列：" + (notice.isEmpty ? "队列没有接收这次请求，请检查后重新发送。" : notice),
                         to: messageID, in: origin)

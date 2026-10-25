@@ -79,5 +79,27 @@
     "independentSystemObjectReviewPending": false,
     "currentRootGuideCardInstructionsNotYetRepackaged": true,
     "independentSystemObjectMatched": true
+  },
+  "structuredReceiptCardsM02": {
+    "build": 201,
+    "taskID": "4A3E6812-E08F-4EB2-B943-08EA18F59A51",
+    "device": "iPhone 13 Pro",
+    "oneSend": true,
+    "extraExecutionApprovalTaps": 0,
+    "actualNativeCalls": 6,
+    "actualWrites": 2,
+    "postSaveTypedSystemIDsMatched": true,
+    "queryHasNoSystemIDs": true,
+    "allFourExpandedActualCardsMatched": true,
+    "completeVisibleJSONSourceMatched": true,
+    "independentSystemAppMatched": true,
+    "coldFiveStoresByteIdentical": true,
+    "coldAllFourActualCardsRestored": true,
+    "defaultCreationCardPriorityAcceptance": false,
+    "defaultCreationCardPriorityFixCandidate": 202,
+    "fullTaskAcceptance": false,
+    "evidence": "output/ios-native-longrun-20261025/NATIVE-ATOMIC-CARDS-M02/verification.json",
+    "actualLocalTime": "2026-10-26 09:10 through 09:25 +08:00",
+    "internalReceiptURLNotShownAsConference": true
   }
 }

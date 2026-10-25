@@ -92,6 +92,18 @@ import Foundation
         check(make("health_query", try json(health)) == nil, "Wrong health source rejected")
         let matches = try json(["matches": [["title": "实际日程"]], "matched_count": 24, "returned_count": 1, "truncated": true])
         let search = make("calendar_search", matches)!
+        let reminderSearch = make("reminder_search", matches)!
+        let sourceOrder = [structuredCard, search, undatedCard, reminderSearch]
+        let ordered = NativeTaskResult.displayOrder(sourceOrder)
+        check(ordered.prefix(2).map(\.operation) == ["reminder_create", "calendar_create"],
+              "M02 query-create-query sequence keeps both actual creations visible before readback cards")
+        check(Array(ordered.prefix(3)).contains(structuredCard) && Array(ordered.prefix(3)).contains(undatedCard),
+              "Default three include the real calendar interval and undated reminder")
+        check(Set(ordered.map(\.id)) == Set(sourceOrder.map(\.id)) && ordered.count == sourceOrder.count,
+              "Expanded display preserves every source object exactly once")
+        check(sourceOrder == [structuredCard, search, undatedCard, reminderSearch], "Presentation does not mutate stored chronology")
+        check(NativeTaskResult.displayOrder([search, reminderSearch]) == [reminderSearch, search],
+              "Read-only results retain newest-first order")
         check(search.value == "24 项匹配" && search.notice.contains("截断"), "Matched versus returned count kept truthful")
         check(make("photo_search", try json(["matches": [], "matched_count": 0, "returned_count": 0]))?.notice.contains("不含图像") == true, "Photos metadata never becomes invented pixels")
         check(make("music_play", try json(["source": "Sela Music player", "queue_owner": "Sela", "state": "paused", "confirmed": false]))?.value == "已暂停", "Music uses actual state, not requested play")

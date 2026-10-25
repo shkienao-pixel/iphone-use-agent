@@ -87,5 +87,31 @@
     "oldTaskHistoryExactExistingLimit50Matched": true,
     "esp32Used": false,
     "verifiedAt": "2026-10-25T13:09:25.564441+00:00"
+  },
+  "atomicGuideScope201": {
+    "taskID": "FA1DC4C1-C561-4649-B6ED-A25F9E3BA954",
+    "build": 201,
+    "sourceRevision": "3cf041080cf359eb4c468d4cb7cf3738d5663630+sha256:562a823073e4895262e07ceb2be0cf5c727f825c84b6c24f1d729f2ec13973b8",
+    "actualNativeCalls": 1,
+    "actualOwnAlarmCount": 0,
+    "actualWrites": 0,
+    "modelRequests": 2,
+    "sendCount": 1,
+    "extraExecutionApprovalTaps": 0,
+    "coldFiveCoreStoresByteEqual": {
+      "tasks.json": true,
+      "receipts.json": true,
+      "phone-content.json": true,
+      "file-store.json": true,
+      "conversations.json": true
+    },
+    "actualDefaultAndColdCardIdentifiersMatched": true,
+    "entireVisibleReportMatched": true,
+    "elapsedSeconds": 14.192189166671596,
+    "status": "all10 guides loaded with one real alarm query and automatic finish; card/report/cold verified",
+    "fullTaskAcceptance": true,
+    "actualLoadedNativeGuideCount": 10,
+    "evidence": "output/ios-native-longrun-20261025/ATOMIC-GUIDES-A15/verification.json",
+    "originalFailedCasePreserved": "ATOMIC-GUIDES-A13"
   }
 }

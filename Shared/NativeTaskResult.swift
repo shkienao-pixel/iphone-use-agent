@@ -90,6 +90,15 @@ struct NativeTaskResult: Codable, Equatable, Identifiable, Sendable {
         return Array(next.suffix(40))
     }
 
+    /// Keep completed actions visible when a later verification query returns.
+    /// Reordering is presentation only; source objects and stored order survive.
+    static func displayOrder(_ results: [Self]) -> [Self] {
+        let actions: Set<String> = ["alarm_create", "calendar_create", "reminder_create", "notes_create",
+            "content_create", "content_prepare_clipboard", "music_play", "music_pause", "music_resume"]
+        let newest = Array(results.reversed())
+        return newest.filter { actions.contains($0.operation) } + newest.filter { !actions.contains($0.operation) }
+    }
+
     static func completed(operation: String, result: String, title requestedTitle: String?,
                           start requestedStart: String?, eventID: String) -> Self? {
         guard result.utf8.count <= 48_000, !result.hasPrefix("重复请求已跳过") else { return nil }

@@ -3,12 +3,15 @@ import SwiftUI
 struct NativeTaskResultCards: View {
     let results: [NativeTaskResult]
     @State private var expanded = false
-    private var displayed: [NativeTaskResult] { expanded ? Array(results.reversed()) : Array(results.reversed().prefix(3)) }
+    private var displayed: [NativeTaskResult] {
+        let ordered = NativeTaskResult.displayOrder(results)
+        return expanded ? ordered : Array(ordered.prefix(3))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(displayed) { NativeTaskResultCard(result: $0) }
             if results.count > 3 {
-                Button(expanded ? "收起最近结果" : "查看最近 \(results.count) 项结果") { expanded.toggle() }
+                Button(expanded ? "收起结果" : "查看全部 \(results.count) 项结果") { expanded.toggle() }
                     .font(.subheadline).accessibilityIdentifier("native.results.expand")
             }
         }

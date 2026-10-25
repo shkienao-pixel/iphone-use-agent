@@ -38,7 +38,7 @@ struct Record {
 }
 @MainActor final class History { var records: [Record] = [] }
 @MainActor final class Queue {
-    struct Item { var id = UUID(); var resumable = true }
+    struct Item { enum State { case waiting, paused, cancelled }; var id = UUID(); var resumable = true; var state: State = .waiting }
     var items: [Item] = []
     var pendingCount: Int { items.filter(\.resumable).count }
 }
@@ -51,6 +51,7 @@ struct Record {
     var messages: [AssistantMessage] = []
     var unifiedRoute: ((ConversationRoutingInput) async throws -> ConversationRoute)?
     var links: [UUID] = [], cancellations = 0
+    var loading = false
     var handoffs: [UUID: String] = [:], linkedMessages: [UUID: UUID] = [:]
     @discardableResult func linkTask(_ id: UUID, to messageID: UUID, in conversationID: UUID? = nil) -> Bool {
         links.append(id); linkedMessages[messageID] = id; return true
@@ -151,6 +152,7 @@ struct Record {
         return record?.outcome == .completed ? nil : record
     }
     func continueTask(_ id: UUID) -> Bool {
+        guard !conversation.loading else { return false }
         if recoverableTask(id)?.executionLane == "native" { actions.append(("nativeRecovery", id)); return true }
         guard historicalRecoveryAllowed, !engine.hasCurrentTask || engine.currentRecord?.id == id else { return false }
         actions.append(("history", id)); return true

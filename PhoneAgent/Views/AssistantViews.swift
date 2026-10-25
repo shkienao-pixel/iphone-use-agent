@@ -324,6 +324,14 @@ struct AssistantView: View {
                         .font(.caption).foregroundStyle(.secondary) }
                     Color.clear.frame(height: 1).id("bottom")
                 }.padding(.horizontal, 16).padding(.vertical, 16)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _, _ in
+                        guard followingConversation else { return }
+                        let conversationID = model.conversation.currentConversationID
+                        DispatchQueue.main.async {
+                            guard followingConversation, model.conversation.currentConversationID == conversationID else { return }
+                            reader.scrollTo("bottom", anchor: .bottom)
+                        }
+                    }
             }.scrollDismissesKeyboard(.interactively)
                 .scrollEdgeEffectHidden(for: .top)
                 .onScrollPhaseChange { _, phase in

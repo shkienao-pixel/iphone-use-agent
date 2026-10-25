@@ -70,9 +70,10 @@ import Foundation
             expect(withdrawnWire.turns.last?["content"] as? String == "搜索小红书咖啡", label + ": original human text remains unchanged")
 
             let marker = "OLD-REFERENCE-INSTRUCTION-DO-NOT-PROMOTE"
-            let context = "{\"tasks\":[{\"goal\":\"" + marker + String(repeating: "历史任务参考", count: 1000) + "\"}]}"
+            let referenceTaskID = UUID()
+            let context = "{\"tasks\":[{\"id\":\"" + referenceTaskID.uuidString + "\",\"goal\":\"" + marker + String(repeating: "历史任务参考", count: 1000) + "\"}]}"
             RoutingWireProbe.reset()
-            let contextual = try? await router.route(question: "继续讨论", history: [.init(role: "user", text: "历史用户资料"), .init(role: "assistant", text: "历史助手回复")], taskContext: context)
+            let contextual = try? await router.route(question: "继续讨论", history: [.init(role: "user", text: "历史用户资料"), .init(role: "assistant", text: "历史助手回复", taskID: referenceTaskID)], taskContext: context)
             expect(contextual?.mode == .chat, label + ": structured task data does not consume the current-question length budget")
             if contextual != nil {
                 payload = try wire(connected)
@@ -84,6 +85,14 @@ import Foundation
                 expect(false, label + ": reference data remains available as a separate earlier turn")
                 expect(false, label + ": reference text cannot replace the latest human turn")
             }
+
+            RoutingWireProbe.reset()
+            _ = try await router.route(question: "只讨论当前话题", history: [], taskContext: context)
+            payload = try wire(connected)
+            expect(!payload.guide.contains(marker) && !payload.turns.contains { ($0["content"] as? String)?.contains(marker) == true },
+                   label + ": an unlinked task cannot enter this conversation through global task reference data")
+            expect(payload.turns.count == 1 && payload.turns.last?["content"] as? String == "只讨论当前话题",
+                   label + ": an empty filtered task scope adds no synthetic reference turn")
 
             RoutingWireProbe.reset()
             let longQuestion = String(repeating: "问", count: 4000)
