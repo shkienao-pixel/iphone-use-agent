@@ -358,6 +358,10 @@ final class PhoneAgentViewModel: ObservableObject {
     private var voicePreparation: Task<Void, Never>?
     private var voiceGeneration = UUID()
     private var conversationInteractionID = UUID()
+    func pendingTaskForConversation(_ conversationID: UUID) -> ConversationTaskSubmission? {
+        guard !engine.hasCurrentTask, let pending = pendingConversationTask, pending.conversationID == conversationID else { return nil }
+        return pending
+    }
     var conversationControlContext: ConversationControlContext {
         .init(taskID: engine.hasCurrentTask ? engine.currentRecord?.id : nil,
               engineSessionID: engine.activityControlSessionID,
@@ -428,6 +432,10 @@ final class PhoneAgentViewModel: ObservableObject {
             return self.unifiedTaskContext(history: history, question: question)
         }
         conversation.taskControlContext = { [weak self] in self?.conversationControlContext }
+        conversation.pendingTaskSubmission = { [weak self] in
+            guard let self else { return nil }
+            return self.pendingTaskForConversation(self.conversation.currentConversationID)
+        }
         conversation.unifiedRoute = { [weak self] input in
             guard let self, self.consentReady else { throw AgentError.message("当前 AI 数据授权已失效") }
             let config = self.settings, credential = SettingsStore.apiKey(for: self.settings.endpoint)
@@ -437,7 +445,8 @@ final class PhoneAgentViewModel: ObservableObject {
                   input.memoryRevision == nil || input.memoryRevision == self.memories.recallRevision else {
                 throw AgentError.message("模型或记忆设置已改变，请重新发送")
             }
-            let controlContext = input.controlContext ?? self.conversationControlContext
+            let controlContext = ConversationTaskScope.controlContext(input.controlContext,
+                taskIDs: input.authorizedTaskIDs, pendingTaskID: input.pendingTask?.taskID)
             var result = try await UnifiedConversationRouter(settings: config, apiKey: credential).route(input: input)
             try Task.checkCancellation()
             guard self.consentReady, self.settings.endpoint == config.endpoint, self.settings.model == config.model,
@@ -445,19 +454,37 @@ final class PhoneAgentViewModel: ObservableObject {
                   self.settings.useMemories == config.useMemories,
                   input.memoryRevision == nil || input.memoryRevision == self.memories.recallRevision else { throw AgentError.message("模型或记忆设置已改变，请重新发送") }
             if result.controlsTask {
+                let activeTargets = Set(input.backgroundSessions.keys).union([controlContext?.taskID].compactMap { $0 })
+                guard let target = ConversationTaskScope.controlTarget(result.taskID ?? input.selectedTaskID,
+                    context: controlContext, taskIDs: input.authorizedTaskIDs, ambiguous: activeTargets.count > 1) else {
+                    return ConversationRoute(mode: .clarify, request: "",
+                        message: input.authorizedTaskIDs.isEmpty ? "这次对话没有关联可控制的任务，请说明新任务。" : "请说明要控制本对话的哪项任务。",
+                        relation: .independent)
+                }
+                result.taskID = target
+                result.authorizedTaskIDs = input.authorizedTaskIDs
+                if let pending = input.pendingTask, pending.taskID == target {
+                    guard [.pause, .stop].contains(result.mode), self.pendingTaskForConversation(pending.conversationID) == pending,
+                          let controlContext,
+                          ConversationTaskScope.controlContext(self.conversationControlContext, taskIDs: input.authorizedTaskIDs,
+                              pendingTaskID: pending.taskID) == controlContext else { throw AgentError.message("等待中的任务状态已改变，请重新核对") }
+                    result.pendingTask = pending; result.controlContext = controlContext
+                    return result
+                }
                 // Bind only the selected worker's submitted session. A change
                 // to another task cannot invalidate or redirect this command.
                 if let target = result.taskID, let submitted = input.backgroundSessions[target] {
                     guard self.backgroundTasks.token(target) == submitted else { throw AgentError.message("这项后台任务状态已改变，请核对后重新发送") }
                     result.backgroundControlToken = submitted
+                } else if result.mode == .resume, self.backgroundTasks.token(target) == nil,
+                          self.recoverableTask(target)?.executionLane == "native" {
+                    // The submitted session link/explicit task-page selection is
+                    // sufficient for exact native recovery; never borrow a GUI lease.
+                    return result
                 } else {
                     guard result.taskID == nil || self.backgroundTasks.token(result.taskID!) == nil,
-                          self.conversationControlContext == controlContext else { throw AgentError.message("任务状态已改变，请核对当前任务后重新发送") }
-                    if result.taskID == nil, !input.backgroundSessions.isEmpty {
-                        throw AgentError.message("有多项任务，请说明要控制哪一项任务")
-                    }
+                          ConversationTaskScope.controlContext(self.conversationControlContext, taskIDs: input.authorizedTaskIDs) == controlContext else { throw AgentError.message("任务状态已改变，请核对当前任务后重新发送") }
                     result.controlContext = controlContext
-                    if result.taskID == nil { result.taskID = controlContext.taskID }
                 }
             }
             return result
@@ -980,7 +1007,8 @@ final class PhoneAgentViewModel: ObservableObject {
         voiceGeneration = UUID(); voicePreparation?.cancel(); voicePreparation = nil; voicePending = false
         if wasPending, let message { notice = message }
     }
-    func stop() {
+    func stop() { stop(cancelConversation: true) }
+    func stop(cancelConversation: Bool) {
         if let pending = pendingConversationTask ?? pendingConsentConversationTask {
             let handedToRunningExecutor = engine.running && engine.currentRecord?.id == pending.taskID
             conversation.reportTaskHandoff(text: handedToRunningExecutor ? "已请求停止执行；本次任务此前尚未收到启动回执。" : "任务未启动：已停止等待中的执行请求。", to: pending.messageID, in: pending.conversationID)
@@ -991,7 +1019,9 @@ final class PhoneAgentViewModel: ObservableObject {
         haltQueue("已停止队列，等待任务已保留")
         liveCamera.stop()
         camera.stop()
-        speech.cancel(); conversation.cancel(); voiceMode = nil
+        speech.cancel()
+        if cancelConversation { conversation.cancel() }
+        voiceMode = nil
         pendingConsentStart = false; pendingConsentAttachments = []; pendingConsentConversationTask = nil; pendingConversationTask = nil
         cancelVoicePreparation(message: "语音任务已取消")
         if calibrating { cancelCalibration?() }

@@ -642,6 +642,7 @@ final class AgentEngine: ObservableObject {
         do {
             var recoveries = 3
             var limit = settings.responseTokenLimit
+            var formatRetry = false
             var readProgress = NativeReadProgress()
             while currentStep < Int.max && settings.allowsNextStep(after: attemptSteps) {
                 let step = currentStep + 1
@@ -653,7 +654,7 @@ final class AgentEngine: ObservableObject {
                 do {
                     action = try await NativePlanningRecovery.nextAction(
                         stillCurrent: { try self.stillCurrent(token) },
-                        request: { try await client.nextAction(task: self.planningGoal(goal), jpeg: Data(), width: 0, height: 0, history: self.logs, keyboardAvailable: false, mappedHomeAvailable: false, tokenLimit: limit, memoryContext: context, taskContext: self.taskContext, attachments: self.currentRecord?.attachments ?? [], skillReference: self.currentRecord?.conversationReference ?? "", nativeExecutionContext: readProgress.context(for: self.planningGoal(goal))) },
+                        request: { try await client.nextAction(task: self.planningGoal(goal), jpeg: Data(), width: 0, height: 0, history: self.logs, keyboardAvailable: false, mappedHomeAvailable: false, tokenLimit: limit, formatRetry: formatRetry, memoryContext: context, taskContext: self.taskContext, attachments: self.currentRecord?.attachments ?? [], skillReference: self.currentRecord?.conversationReference ?? "", nativeExecutionContext: readProgress.context(for: self.planningGoal(goal))) },
                         wait: { try await self.measuredWait(nanoseconds: $0) },
                         onRetry: { attempt, interval in
                             let text = "\(interval / 1_000_000_000) 秒后自动继续（\(attempt)/\(NativePlanningRecovery.delays.count)），已完成结果保留，可随时停止"
@@ -664,8 +665,10 @@ final class AgentEngine: ObservableObject {
                 catch let issue as ModelResponseIssue {
                     try stillCurrent(token); guard recoveries > 0 else { throw issue }; recoveries -= 1
                     if issue.kind == .length { limit = min(16384, limit * 2) }
+                    formatRetry = true
                     log("回复未执行", issue.diagnostic); continue
                 }
+                formatRetry = false
                 try stillCurrent(token); log(action.label, action.reason); try stillCurrent(token)
                 switch action.kind {
                 case .finish: try finishAllowed(); running = false; taskIndicator = .completed; transition(.completed, action.completionSummary); savedSettings = nil

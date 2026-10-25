@@ -43,7 +43,11 @@ struct Record {
     var pendingCount: Int { items.filter(\.resumable).count }
 }
 @MainActor final class Conversation {
+    struct Archived { var id: UUID; var messages: [AssistantMessage] }
     let currentConversationID = UUID()
+    var focusedTaskID: UUID?
+    var conversations: [Archived] = []
+    var pendingTaskSubmission: (() -> ConversationTaskSubmission?)?
     var messages: [AssistantMessage] = []
     var unifiedRoute: ((ConversationRoutingInput) async throws -> ConversationRoute)?
     var links: [UUID] = [], cancellations = 0
@@ -136,7 +140,8 @@ struct Record {
         return "offline supplemented"
     }
     func pauseTask() -> String { actions.append(("pause", engine.currentRecord?.id)); return "offline paused" }
-    func stop() { actions.append(("stop", engine.currentRecord?.id)) }
+    func stop() { stop(cancelConversation: true) }
+    func stop(cancelConversation: Bool) { actions.append(("stop", engine.currentRecord?.id)) }
     func runTaskQueue(first id: UUID) { actions.append(("queue", id)) }
     func resumeScreenQueueTask(_ id: UUID) -> Bool { actions.append(("queue", id)); return true }
     var queueRunning = false

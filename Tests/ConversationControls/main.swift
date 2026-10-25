@@ -17,14 +17,17 @@ import Foundation
         }
         func vmWithTask(_ record: Record = Record()) -> PhoneAgentViewModel {
             let vm = PhoneAgentViewModel(); vm.engine.replace(record); vm.history.records = [record]
+            vm.conversation.messages = [.init(role: "assistant", text: "本对话已关联任务", taskID: record.id)]
             vm.installRouteBridge(); return vm
         }
         func route(_ mode: ConversationRoute.Mode, id: UUID? = nil) -> ConversationRoute {
             .init(mode: mode, request: "只操作用户指定的任务", message: "收到请求", taskID: id)
         }
         func begin(_ vm: PhoneAgentViewModel) -> Task<ConversationRoute?, Never> {
-            let input = try! ConversationRoutingInput(question: "对指定任务的明确操作", history: [],
-                taskContext: vm.unifiedTaskContext(history: vm.conversation.messages), controlContext: vm.conversationControlContext, backgroundSessions: vm.backgroundTasks.sessions)
+            let input = try! ConversationRoutingInput(question: "对指定任务的明确操作", history: vm.conversation.messages.filter { $0.taskID != nil },
+                taskContext: vm.unifiedTaskContext(history: vm.conversation.messages), controlContext: vm.conversationControlContext,
+                backgroundSessions: vm.backgroundTasks.sessions, selectedTaskID: vm.conversation.focusedTaskID,
+                conversationID: vm.conversation.currentConversationID, pendingTask: vm.pendingTaskForConversation(vm.conversation.currentConversationID))
             return Task { try? await vm.conversation.unifiedRoute!(input) }
         }
         func finish(_ work: Task<ConversationRoute?, Never>, with result: ConversationRoute) async -> ConversationRoute? {
@@ -131,13 +134,14 @@ import Foundation
 
         for mode in [ConversationRoute.Mode.pause, .stop] {
             let waiting = PhoneAgentViewModel(); waiting.preparingAutomatically = true; waiting.installRouteBridge()
+            waiting.pendingConversationTask = .init(conversationID: waiting.conversation.currentConversationID, messageID: UUID(), goal: "等待准备")
             if let result = try await resolve(waiting, route(mode)) { waiting.handleConversationAction(result, messageID: UUID()) }
             expect(waiting.actions.contains { $0.0 == mode.rawValue }, "No-record preparation can still be controlled: \(mode)")
             let idle = PhoneAgentViewModel(); idle.installRouteBridge(); let work = begin(idle)
             try await wait { ControlRouteProbe.pending != nil }; idle.engine.replace(Record())
             let result = await finish(work, with: route(mode))
             if let result { idle.handleConversationAction(result, messageID: UUID()) }
-            expect(result == nil && idle.effectCount == 0, "Idle control cannot acquire a newly started task: \(mode)")
+            expect((result == nil || result?.mode == .clarify) && idle.effectCount == 0, "Idle control cannot acquire a newly started task: \(mode)")
         }
         let alreadyCompleted = vmWithTask(); alreadyCompleted.engine.hasCurrentTask = false
         if let result = try await resolve(alreadyCompleted, route(.resume)) { alreadyCompleted.handleConversationAction(result, messageID: UUID()) }
@@ -152,6 +156,7 @@ import Foundation
 
         let target = UUID(), queued = vmWithTask()
         queued.taskQueue.items = [.init(id: target)]
+        queued.conversation.messages.append(.init(role: "assistant", text: "本对话队列任务", taskID: target))
         if let result = try await resolve(queued, route(.resume, id: target)) { queued.handleConversationAction(result, messageID: UUID()) }
         expect(queued.actions.contains { $0.0 == "queue" && $0.1 == target } && queued.conversation.links == [target], "An explicit resumable queued target remains usable")
         for current in [false, true] {
@@ -298,7 +303,7 @@ import Foundation
         emptyTask.handleConversationAction(.init(mode: .task, request: "", message: "开始"), messageID: emptyTaskMessage)
         expect(emptyTask.actions.isEmpty && emptyTask.conversation.handoffs[emptyTaskMessage]?.contains("任务内容为空") == true,
                "An empty task request has a concrete rejection rather than an action promise")
-        let nativeVM = vmWithTask(), nativeMessage = UUID(), nativeOrigin = UUID()
+        let nativeVM = vmWithTask(), nativeMessage = UUID(), nativeOrigin = nativeVM.conversation.currentConversationID
         var nativeRoute = ConversationRoute(mode: .task, request: "独立查询已授权联系人", message: "开始", execution: .native)
         nativeRoute.originConversationID = nativeOrigin
         nativeVM.preparingAutomatically = true; nativeVM.engine.running = true
@@ -308,17 +313,19 @@ import Foundation
                "Native handoff preserves original conversation and starts independently while screen execution/preparation continues")
         expect(nativeVM.conversation.linkedMessages[nativeMessage] == nativeID && nativeVM.pendingConversationTask == nil,
                "Native task receives its own card without replacing the pending screen submission")
-        for _ in 0..<3 { _ = try nativeVM.backgroundTasks.submit(goal: "another worker", settings: nativeVM.settings, attachments: [], reference: "", origin: .init(conversationID: UUID(), messageID: UUID())) }
-        let nativeContext = nativeVM.unifiedTaskContext(history: [])
+        for _ in 0..<3 { _ = try nativeVM.backgroundTasks.submit(goal: "another worker", settings: nativeVM.settings, attachments: [], reference: "", origin: .init(conversationID: nativeOrigin, messageID: UUID())) }
+        nativeVM.conversation.messages += nativeVM.backgroundTasks.records.map { .init(role: "assistant", text: "本对话后台任务", taskID: $0.id) }
+        let nativeContext = nativeVM.unifiedTaskContext(history: nativeVM.conversation.messages)
         expect(nativeVM.backgroundTasks.records.allSatisfy { nativeContext.contains($0.id.uuidString) } && nativeContext.contains(nativeVM.engine.currentRecord!.id.uuidString),
                "All workers and the screen task retain IDs in routing context, including more than three tasks")
         let contextBudget = vmWithTask()
         let hugeReference = String(repeating: "😀\\\"罕见资料", count: 4000)
-        for _ in 0..<20 { _ = try contextBudget.backgroundTasks.submit(goal: hugeReference, settings: contextBudget.settings, attachments: [], reference: hugeReference, origin: .init(conversationID: UUID(), messageID: UUID())) }
+        for _ in 0..<20 { _ = try contextBudget.backgroundTasks.submit(goal: hugeReference, settings: contextBudget.settings, attachments: [], reference: hugeReference, origin: .init(conversationID: contextBudget.conversation.currentConversationID, messageID: UUID())) }
         contextBudget.conversation.messages = [.init(role: "assistant", text: "候选参考", flightOffers: (0..<24).map { index in
             CtripFlightOffer(id: "budget-\(index)", title: "CA\(1000 + index)" + hugeReference, details: hugeReference,
                              price: "待核对", bookingURL: nil, query: hugeReference, queriedAt: Date())
         })]
+        contextBudget.conversation.messages += contextBudget.backgroundTasks.records.map { .init(role: "assistant", text: "本对话后台任务", taskID: $0.id) }
         let boundedContext = contextBudget.unifiedTaskContext(history: contextBudget.conversation.messages)
         let boundedObject = try JSONSerialization.jsonObject(with: Data(boundedContext.utf8)) as! [String: Any]
         expect(boundedContext.utf8.count <= 64_000 && (boundedObject["flightOffers"] as? [[String: Any]])?.count == 24,
@@ -343,8 +350,9 @@ import Foundation
         nativeVM.backgroundTasks.sessions[stableWorker] = UUID()
         let workerRejected = await finish(staleWorker, with: route(.pause, id: stableWorker))
         expect(workerRejected == nil, "A changed selected-worker token rejects stale control")
+        nativeVM.conversation.messages.append(.init(role: "assistant", text: "本对话当前屏幕任务", taskID: nativeVM.engine.currentRecord!.id))
         let ambiguousWorker = try await resolve(nativeVM, route(.stop))
-        expect(ambiguousWorker == nil, "A targetless command with multiple tasks cannot silently stop the screen task")
+        expect(ambiguousWorker == nil || ambiguousWorker?.mode == .clarify, "A targetless command with multiple tasks cannot silently stop the screen task")
         let disabledNative = PhoneAgentViewModel(); disabledNative.settings.systemToolsEnabled = false
         disabledNative.handleConversationAction(nativeRoute, messageID: UUID())
         expect(disabledNative.backgroundTasks.records.isEmpty, "A native routing hint cannot grant system-tool permission")

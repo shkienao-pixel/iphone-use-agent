@@ -24,6 +24,7 @@ final class AssistantConversation: ObservableObject {
     var routingTaskContext: ((String, [AssistantMessage]) -> String)?
     var taskControlContext: (() -> ConversationControlContext?)?
     var backgroundTaskSessions: (() -> [UUID: UUID])?
+    var pendingTaskSubmission: (() -> ConversationTaskSubmission?)?
     var unifiedRoute: ((ConversationRoutingInput) async throws -> ConversationRoute)?
     var onAction: ((ConversationRoute, UUID) -> Void)?
     var onActionInConversation: ((ConversationRoute, UUID, UUID) -> Void)?
@@ -658,7 +659,8 @@ final class AssistantConversation: ObservableObject {
         let question = messages[questionIndex], attachments = question.attachments ?? []
         let history = Array(messages[..<questionIndex])
         let shareHistory = sharedContextEnabled, submittedConversations = conversations
-        let submittedTaskContext = taskContext?() ?? "{}"
+        let submittedTaskContext = ConversationTaskScope.taskContext(taskContext?() ?? "{}",
+            taskIDs: ConversationTaskScope.linkedTaskIDs(in: history, selectedTaskID: focusedTaskID))
         let nativeFlightQuery = message.flightOffers != nil || message.flightQuery != nil
         let providerQuery = message.flightQuery ?? message.flightOffers?.first?.query ?? question.text
         if nativeFlightQuery, providerQuery.isEmpty || providerQuery.count > 4000 {
@@ -747,9 +749,13 @@ final class AssistantConversation: ObservableObject {
         if !recipient.isEmpty, recipient != key { newConversation() }
         recipient = key
         let memoryHistory = messages
-        let submittedTaskContext = routingTaskContext?(text, memoryHistory) ?? taskContext?() ?? "{}"
-        let submittedControlContext = taskControlContext?()
-        let submittedBackgroundSessions = backgroundTaskSessions?() ?? [:]
+        let submittedSelectedTaskID = focusedTaskID
+        let submittedPendingTask = pendingTaskSubmission?().flatMap { $0.conversationID == currentConversationID ? $0 : nil }
+        let sessionTaskIDs = ConversationTaskScope.linkedTaskIDs(in: memoryHistory, selectedTaskID: submittedSelectedTaskID, pendingTaskID: submittedPendingTask?.taskID)
+        let submittedTaskContext = ConversationTaskScope.taskContext(
+            routingTaskContext?(text, memoryHistory) ?? taskContext?() ?? "{}", taskIDs: sessionTaskIDs)
+        let submittedControlContext = ConversationTaskScope.controlContext(taskControlContext?(), taskIDs: sessionTaskIDs, pendingTaskID: submittedPendingTask?.taskID)
+        let submittedBackgroundSessions = ConversationTaskScope.backgroundSessions(backgroundTaskSessions?() ?? [:], taskIDs: sessionTaskIDs)
         let routeRequest = unifiedRoute, flightRequest = flightQuery, errandsRequest = paotuiQuery
         let shareHistory = sharedContextEnabled, submittedConversations = conversations
         contextReferences = []
@@ -796,7 +802,8 @@ final class AssistantConversation: ObservableObject {
                     attachments: attachments, visuals: visuals, controlContext: submittedControlContext,
                     configuration: .init(connection: key, model: settings.model, useMemories: settings.useMemories == true),
                     now: message.createdAt, memoryRevision: preparedMemory.recallRevision,
-                    timeZoneIdentifier: message.timeZoneIdentifier ?? TimeZone.current.identifier, backgroundSessions: submittedBackgroundSessions)
+                    timeZoneIdentifier: message.timeZoneIdentifier ?? TimeZone.current.identifier, backgroundSessions: submittedBackgroundSessions,
+                    selectedTaskID: submittedSelectedTaskID, conversationID: conversationID, pendingTask: submittedPendingTask)
                 let routingStarted = ProcessInfo.processInfo.systemUptime
                 let route = try await routeRequest?(routingInput)
                 guard preparedMemory.recallRevision == nil || preparedMemory.recallRevision == memories.recallRevision else {

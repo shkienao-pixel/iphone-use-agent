@@ -66,7 +66,7 @@ import Foundation
         var focusSettings = AgentSettings(); focusSettings.useMemories = true
         let focusMemories = MemoryStore(); focusMemories.reference = "SAME-SNAPSHOT-MEMORY"
         let focusAttachment = ComposerAttachment(name: "资料.txt", kind: .text, byteCount: 8, text: "本轮资料", imageJPEG: nil)
-        let focusControl = ConversationControlContext(taskID: UUID(), engineSessionID: UUID(), preparationID: UUID(), voiceID: UUID(), queueID: UUID(), interactionID: UUID())
+        let focusControl = ConversationControlContext(taskID: nil, engineSessionID: UUID(), preparationID: UUID(), voiceID: UUID(), queueID: UUID(), interactionID: UUID())
         focusVM.conversation.taskControlContext = { focusControl }
         focusVM.conversation.selectFrame(ScreenFrame())
         focusVM.conversation.draft = "第27个航班的行李呢？"
@@ -112,7 +112,7 @@ import Foundation
         expect(vm.conversation.openConversation(a), "Opening the original conversation remains usable")
         expect(try taskIDs(vm).contains(actual.uuidString), "Explicitly linked ended task stays available in its own chat")
         for _ in 0..<8 { _ = try await message(vm, text: "只讨论其他信息") }
-        expect(try taskIDs(vm, recentOnly: true).contains(actual.uuidString), "Own task focus survives outside the 12-message routing window")
+        expect(try taskIDs(vm).contains(actual.uuidString), "The complete submitted conversation retains its own task beyond the 12-message routing window")
         let originalMessages = vm.conversation.messages
         vm.conversation.newConversation(); let b = vm.conversation.currentConversationID, bm = try await message(vm)
         _ = vm.submitForChecks(id: UUID(), conversationID: b, messageID: bm, text: "B的任务")
@@ -122,7 +122,7 @@ import Foundation
         expect(vm.conversation.messages == originalMessages, "Switching task focus does not rewrite A's messages")
         let restarted = PhoneAgentViewModel(url: folder.appendingPathComponent("chat-1.json"))
         restarted.history.records = vm.history.records; restarted.installCallbacks()
-        let restartedIDs = try taskIDs(restarted, recentOnly: true)
+        let restartedIDs = try taskIDs(restarted)
         expect(restarted.unifiedFocusedTaskID == actual && restartedIDs.contains(actual.uuidString), "Stored message links recover own-chat focus without restoring execution authority")
         expect(!restarted.engine.running && !restarted.pendingForChecks, "Restart restores no live submission or running task")
 
@@ -160,7 +160,7 @@ import Foundation
         expect(delayed.conversation.conversations.first(where: { $0.id == oldChat })?.messages.first(where: { $0.id == oldMessage })?.text == "任务已启动。", "Late start acknowledgement is written to the original offscreen chat")
         expect(delayed.conversation.currentConversationID == newChat && delayed.conversation.draft == "新对话尚未发送的草稿" && delayed.conversation.messages.isEmpty, "Historical linkage preserves current chat, draft and messages")
         expect(delayed.unifiedFocusedTaskID == nil, "Delayed record cannot focus the replacement conversation")
-        expect(try taskIDs(delayed).contains(delayedActual.uuidString), "The actual active task remains available across chats for current controls")
+        expect(try taskIDs(delayed).isEmpty, "An unlinked replacement conversation cannot import another conversation's active task")
         ended(delayed)
         expect(try taskIDs(delayed).isEmpty, "Ended delayed task is no longer imported into the unlinked replacement chat")
         _ = delayed.conversation.openConversation(oldChat)
