@@ -20,19 +20,27 @@ enum ProbeAssistiveTouch { case enabled, disabled, unknown }
 }
 @MainActor final class ScopeHistory {
     var records: [PhoneTaskRecord] = []
-    func upsert(_ record: PhoneTaskRecord) { records.removeAll { $0.id == record.id }; records.append(record) }
+    var error = ""
+    @discardableResult func upsert(_ record: PhoneTaskRecord) -> Bool {
+        guard error.isEmpty else { return false }
+        records.removeAll { $0.id == record.id }; records.append(record); return true
+    }
 }
 @MainActor final class ScopeEngine {
     var currentRecord: PhoneTaskRecord?
     var hasCurrentTask = false, running = false, releasing = false, acceptsStart = true, publishesRecords = true
     var onRecord: ((PhoneTaskRecord) -> Void)?
+    var persistRecord: ((PhoneTaskRecord) -> Bool)?
     var starts: [UUID] = []
     func start(task: String, settings: AgentSettings, subtasks: [String] = [], attachments: [ComposerAttachment] = [], taskID: UUID = UUID(), conversationReference: String = "") {
         guard acceptsStart else { return }
         starts.append(taskID)
         let record = PhoneTaskRecord(id: taskID, title: "offline", goal: task, summary: "started", outcome: .interrupted, conversationReference: conversationReference)
         currentRecord = record; hasCurrentTask = true; running = true
-        if publishesRecords { onRecord?(record) }
+        if publishesRecords {
+            guard persistRecord?(record) != false else { running = false; return }
+            onRecord?(record)
+        }
     }
     func stop() { running = false; hasCurrentTask = false }
     func pause() { running = false }

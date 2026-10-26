@@ -17,7 +17,7 @@ import Foundation
         }
         func resetModel() {
             ModelProbe.calls = 0; ModelProbe.goals = []; ModelProbe.delay = 0; ModelProbe.actionProvider = nil; ModelProbe.onRequest = nil
-            ModelProbe.action = AgentAction(kind: .finish, reason: "offline completed")
+            ModelProbe.action = AgentAction(kind: .finish, reason: "当前画面已观察，队列测试不声明写入")
         }
         resetModel()
         let vm = try make("ordered")
@@ -25,12 +25,12 @@ import Foundation
         var allowA = false, allowB = false
         ModelProbe.onRequest = {
             let goal = ModelProbe.goals.last ?? ""
-            while (goal == "A" && !allowA) || (goal == "B" && !allowB) { try await Task.sleep(for: .milliseconds(1)) }
+            while (goal == "Inspect A" && !allowA) || (goal == "Inspect B" && !allowB) { try await Task.sleep(for: .milliseconds(1)) }
         }
         vm.engine.executor.ble.releaseDelay = 200_000_000
-        vm.engine.start(task: "A", settings: vm.settings)
+        vm.engine.start(task: "Inspect A", settings: vm.settings)
         try await wait { ModelProbe.calls == 1 }
-        let a = vm.engine.currentRecord!.id, b = vm.task("B"), c = vm.task("C")
+        let a = vm.engine.currentRecord!.id, b = vm.task("Inspect B"), c = vm.task("Inspect C")
         try vm.taskQueue.append(b); try vm.taskQueue.append(c)
         let originalSession = vm.engine.activityControlSessionID
         expect(vm.screenQueueCurrent?.id == a && vm.screenQueueCount == 3, "The initial direct screen task remains visible beside later queued work")
@@ -42,7 +42,7 @@ import Foundation
         expect(vm.pauseScreenQueueTask(b.id) && vm.engine.activityControlSessionID == originalSession, "Pausing B does not pause or change A")
         expect(vm.resumeScreenQueueTask(b.id) && vm.screenQueueWaiting.map(\.id) == [c.id,b.id], "Starting B only restores its existing position")
         expect(vm.pauseScreenQueueTask(b.id), "Individual pause can be restored before reaching the head")
-        let releaseDrop = vm.task("RELEASE-DROP"); try vm.taskQueue.append(releaseDrop)
+        let releaseDrop = vm.task("Inspect RELEASE-DROP"); try vm.taskQueue.append(releaseDrop)
         allowA = true
         try await wait { vm.engine.releasing && vm.engine.currentRecord?.id == a }
         expect(!vm.pauseScreenQueueTask(a) && !vm.stopScreenQueueTask(a), "Late controls on completed A cannot pause/stop the queue during input release")
@@ -50,17 +50,17 @@ import Foundation
         expect(vm.reorderScreenQueueTasks([b.id,c.id,releaseDrop.id]), "Reordering during release changes the next selected task")
         expect(vm.removeScreenQueueTask(releaseDrop.id), "A later item may be removed during the current task's input release")
         try await wait { !vm.queueRunning && !vm.engine.releasing }
-        expect(ModelProbe.goals == ["A"] && vm.taskQueue.items.first(where: { $0.id == b.id })?.state == .paused, "A paused head blocks later tasks and is never automatically resumed")
-        expect(vm.resumeScreenQueueTask(b.id) && ModelProbe.goals == ["A"], "Resuming an item while the queue is paused grants no immediate execution")
+        expect(ModelProbe.goals == ["Inspect A"] && vm.taskQueue.items.first(where: { $0.id == b.id })?.state == .paused, "A paused head blocks later tasks and is never automatically resumed")
+        expect(vm.resumeScreenQueueTask(b.id) && ModelProbe.goals == ["Inspect A"], "Resuming an item while the queue is paused grants no immediate execution")
         expect(vm.startScreenQueue(), "Explicitly starting the queue resumes the ready head")
-        try await wait { vm.engine.currentRecord?.id == b.id && ModelProbe.goals.last == "B" }
+        try await wait { vm.engine.currentRecord?.id == b.id && ModelProbe.goals.last == "Inspect B" }
         vm.pauseScreenQueue()
         try await wait { vm.engine.executionSettled }
         expect(vm.taskQueue.items.map(\.id) == [a,b.id,c.id] && !vm.queueRunning, "Global pause preserves queue order and checkpoints")
         allowB = true
         expect(vm.startScreenQueue(), "Global start continues its globally paused current task")
         try await wait { !vm.queueRunning && vm.taskQueue.items.allSatisfy { !$0.resumable } }
-        expect(ModelProbe.goals == ["A","B","B","C"], "After explicit resume the strict sequence is A, B, C; no selected item is moved to the front")
+        expect(ModelProbe.goals == ["Inspect A","Inspect B","Inspect B","Inspect C"], "After explicit resume the strict sequence is A, B, C; no selected item is moved to the front")
         expect(vm.taskQueue.items.map(\.id) == [a,b.id,c.id], "Completion preserves the original task identities/order")
 
         resetModel()
@@ -68,11 +68,11 @@ import Foundation
         var allowD = false, allowNative = false
         ModelProbe.onRequest = {
             let goal = ModelProbe.goals.last ?? ""
-            while (goal == "D" && !allowD) || (goal == "NATIVE" && !allowNative) { try await Task.sleep(for: .milliseconds(1)) }
+            while (goal == "Inspect D" && !allowD) || (goal == "NATIVE" && !allowNative) { try await Task.sleep(for: .milliseconds(1)) }
         }
-        mutations.engine.start(task: "D", settings: mutations.settings)
-        try await wait { ModelProbe.goals.contains("D") }
-        let d = mutations.engine.currentRecord!.id, e = mutations.task("E"), f = mutations.task("F")
+        mutations.engine.start(task: "Inspect D", settings: mutations.settings)
+        try await wait { ModelProbe.goals.contains("Inspect D") }
+        let d = mutations.engine.currentRecord!.id, e = mutations.task("Inspect E"), f = mutations.task("Inspect F")
         try mutations.taskQueue.append(e); try mutations.taskQueue.append(f)
         var nativeConfig = mutations.settings; nativeConfig.toolsOnly = true; nativeConfig.systemToolsEnabled = true
         let native = AgentEngine(capture: CaptureService(), executor: mutations.engine.executor, ownsScreenInput: false)
@@ -86,24 +86,24 @@ import Foundation
         expect(mutations.engine.activityControlSessionID == dSession && native.activityControlSessionID == nativeSession && native.running, "Future mutations affect neither current input owner nor native workers")
         allowD = true
         try await wait { !mutations.queueRunning && mutations.engine.executionSettled }
-        expect(!ModelProbe.goals.contains("E") && !ModelProbe.goals.contains("F"), "Removed and terminated items cannot execute through automatic advance")
+        expect(!ModelProbe.goals.contains("Inspect E") && !ModelProbe.goals.contains("Inspect F"), "Removed and terminated items cannot execute through automatic advance")
         expect(native.running, "Finishing the screen queue leaves the independent native worker running")
         allowNative = true; try await wait { native.executionSettled }
 
         resetModel()
         let mixed = try make("mixed")
-        let oldNative = mixed.task("OLD-NATIVE", toolsOnly: true), g = mixed.task("G"), h = mixed.task("H")
+        let oldNative = mixed.task("OLD-NATIVE", toolsOnly: true), g = mixed.task("Inspect G"), h = mixed.task("Inspect H")
         try mixed.taskQueue.append(oldNative); try mixed.taskQueue.append(g); try mixed.taskQueue.append(h)
         expect(mixed.screenQueueWaiting.map(\.id) == [g.id,h.id], "Legacy tools-only queue entries are excluded from the screen queue")
         expect(mixed.reorderScreenQueueTasks([h.id,g.id]) && mixed.taskQueue.items.map(\.id) == [oldNative.id,h.id,g.id], "Screen-only drag reorders its subset without moving hidden legacy native entries")
         expect(mixed.startScreenQueue(), "A hidden legacy native item does not block starting the screen queue")
         try await wait { !mixed.queueRunning && mixed.engine.executionSettled }
-        expect(ModelProbe.goals == ["H","G"] && mixed.taskQueue.items.first?.state == .waiting, "FIFO consumes only visible screen work and leaves legacy native state unchanged")
+        expect(ModelProbe.goals == ["Inspect H","Inspect G"] && mixed.taskQueue.items.first?.state == .waiting, "FIFO consumes only visible screen work and leaves legacy native state unchanged")
         var mainNativeConfig = mixed.settings; mainNativeConfig.toolsOnly = true; mainNativeConfig.systemToolsEnabled = true
         mixed.engine.systemTool = { _, _ in "offline" }; ModelProbe.delay = 1_000_000_000
         mixed.engine.start(task: "MAIN-NATIVE", settings: mainNativeConfig)
         let mainNativeSession = mixed.engine.activityControlSessionID
-        try mixed.taskQueue.append(mixed.task("I"))
+        try mixed.taskQueue.append(mixed.task("Inspect I"))
         expect(mixed.screenQueueCurrent == nil && !mixed.startScreenQueue() && mixed.engine.activityControlSessionID == mainNativeSession,
                "A legacy native task in the main engine is not shown or preempted as a screen task")
         mixed.engine.stop(); try await wait { mixed.engine.executionSettled }; ModelProbe.delay = 0
@@ -111,19 +111,19 @@ import Foundation
         resetModel()
         let oldPause = try make("old-pause")
         ModelProbe.delay = 1_000_000_000
-        oldPause.engine.start(task: "OLD-PAUSE", settings: oldPause.settings)
+        oldPause.engine.start(task: "Inspect OLD-PAUSE", settings: oldPause.settings)
         try await wait { ModelProbe.calls == 1 }
         oldPause.engine.pause(); try await wait { oldPause.engine.executionSettled }
         expect(oldPause.screenQueueCurrent?.state == .suspended,
                "An initial task paused outside the queue retains a review hold in its read-only snapshot")
-        try oldPause.taskQueue.append(oldPause.task("AFTER-OLD-PAUSE"))
+        try oldPause.taskQueue.append(oldPause.task("Inspect AFTER-OLD-PAUSE"))
         expect(!oldPause.startScreenQueue() && ModelProbe.calls == 1,
                "Global start cannot silently resume a manually paused initial task through a default waiting snapshot")
         ModelProbe.delay = 0
 
         resetModel()
         let restart = try make("restart")
-        let held = restart.task("HELD", state: .paused), fresh = restart.task("FRESH")
+        let held = restart.task("Inspect HELD", state: .paused), fresh = restart.task("Inspect FRESH")
         try restart.taskQueue.append(held); try restart.taskQueue.append(fresh)
         let loaded = try make("restart")
         expect(loaded.taskQueue.items[0].state == .paused && loaded.taskQueue.items[1].state == .suspended, "Manual per-item pause survives disk reload separately from restart review")
@@ -132,21 +132,21 @@ import Foundation
         expect(loaded.resumeScreenQueueTask(held.id) && ModelProbe.calls == 0, "Item start restores only its place, not execution authority")
         expect(loaded.startScreenQueue(), "One explicit global start authorizes never-started queued work after restart")
         try await wait { !loaded.queueRunning && loaded.engine.executionSettled }
-        expect(ModelProbe.goals == ["HELD","FRESH"], "Never-started restart items execute in saved order after one global start")
+        expect(ModelProbe.goals == ["Inspect HELD","Inspect FRESH"], "Never-started restart items execute in saved order after one global start")
 
         resetModel()
         let terminal = try make("terminal-history")
-        var stale = terminal.task("ALREADY-DONE", state: .suspended); stale.started = true
+        var stale = terminal.task("Inspect ALREADY-DONE", state: .suspended); stale.started = true
         stale.record.outcome = .interrupted
-        try terminal.taskQueue.append(stale); try terminal.taskQueue.append(terminal.task("AFTER-DONE"))
+        try terminal.taskQueue.append(stale); try terminal.taskQueue.append(terminal.task("Inspect AFTER-DONE"))
         var completed = stale.record; completed.outcome = .completed; completed.summary = "persisted completed receipt"
         terminal.history.upsert(completed)
         expect(!terminal.resumeScreenQueueTask(stale.id) && terminal.taskQueue.items[0].state == .completed,
                "A completed history receipt reconciles a stale interrupted queue checkpoint instead of replaying it")
         expect(terminal.startScreenQueue(), "Terminal-history reconciliation leaves the remaining FIFO work executable")
         try await wait { !terminal.queueRunning && terminal.engine.executionSettled }
-        expect(ModelProbe.goals == ["AFTER-DONE"], "Completed work is never restored through a stale queue row")
-        let stoppedTerminal = terminal.task("ALREADY-STOPPED", state: .suspended)
+        expect(ModelProbe.goals == ["Inspect AFTER-DONE"], "Completed work is never restored through a stale queue row")
+        let stoppedTerminal = terminal.task("Inspect ALREADY-STOPPED", state: .suspended)
         try terminal.taskQueue.append(stoppedTerminal)
         var stoppedRecord = stoppedTerminal.record; stoppedRecord.outcome = .stopped; terminal.history.upsert(stoppedRecord)
         expect(!terminal.resumeScreenQueueTask(stoppedTerminal.id) && terminal.taskQueue.items.last?.state == .stopped,
@@ -154,7 +154,7 @@ import Foundation
 
         resetModel()
         let reservation = try make("reservation-failure")
-        try reservation.taskQueue.append(reservation.task("MUST-NOT-DISPATCH"))
+        try reservation.taskQueue.append(reservation.task("Inspect MUST-NOT-DISPATCH"))
         let reservationURL = folder.appendingPathComponent("reservation-failure/queue.json")
         try FileManager.default.removeItem(at: reservationURL); try FileManager.default.createDirectory(at: reservationURL, withIntermediateDirectories: false)
         expect(!reservation.startScreenQueue() && ModelProbe.calls == 0 && reservation.engine.currentRecord == nil,
@@ -166,29 +166,29 @@ import Foundation
         let historyFailure = try make("history-failure")
         var finishHistory = false
         ModelProbe.onRequest = { while !finishHistory { try await Task.sleep(for: .milliseconds(1)) } }
-        historyFailure.engine.start(task: "HISTORY-A", settings: historyFailure.settings)
+        historyFailure.engine.start(task: "Inspect HISTORY-A", settings: historyFailure.settings)
         try await wait { ModelProbe.calls == 1 }
-        try historyFailure.taskQueue.append(historyFailure.task("HISTORY-B")); expect(historyFailure.startScreenQueue(), "History failure fixture starts with a persisted reservation")
+        try historyFailure.taskQueue.append(historyFailure.task("Inspect HISTORY-B")); expect(historyFailure.startScreenQueue(), "History failure fixture starts with a persisted reservation")
         let historyURL = folder.appendingPathComponent("history-failure/history.json")
         try FileManager.default.removeItem(at: historyURL); try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: false)
         finishHistory = true
         try await wait { historyFailure.engine.executionSettled }
-        expect(!historyFailure.queueRunning && !historyFailure.history.error.isEmpty && ModelProbe.goals == ["HISTORY-A"], "A history save failure blocks automatic dispatch of the next queued task")
+        expect(!historyFailure.queueRunning && !historyFailure.history.error.isEmpty && ModelProbe.goals == ["Inspect HISTORY-A"], "A history save failure blocks automatic dispatch of the next queued task")
 
         resetModel()
         let transient = try make("transient")
         var finishTransient = false
         ModelProbe.onRequest = { while !finishTransient { try await Task.sleep(for: .milliseconds(1)) } }
-        transient.engine.start(task: "TRANSIENT-A", settings: transient.settings)
+        transient.engine.start(task: "Inspect TRANSIENT-A", settings: transient.settings)
         try await wait { ModelProbe.calls == 1 }
-        let future = transient.task("TRANSIENT-B"); try transient.taskQueue.append(future); expect(transient.startScreenQueue(), "Transient-write fixture starts running")
+        let future = transient.task("Inspect TRANSIENT-B"); try transient.taskQueue.append(future); expect(transient.startScreenQueue(), "Transient-write fixture starts running")
         let queueURL = folder.appendingPathComponent("transient/queue.json")
         let savedQueue = try Data(contentsOf: queueURL)
         try FileManager.default.removeItem(at: queueURL); try FileManager.default.createDirectory(at: queueURL, withIntermediateDirectories: false)
         expect(!transient.stopScreenQueueTask(future.id) && !transient.queueRunning && transient.engine.running, "A failed future-item mutation stops automatic advance without cancelling the current task")
         try FileManager.default.removeItem(at: queueURL); try savedQueue.write(to: queueURL)
         finishTransient = true; try await wait { transient.engine.executionSettled }
-        expect(!ModelProbe.goals.contains("TRANSIENT-B") && !transient.queueRunning, "Recovering storage does not silently re-enable automatic advance after a failed stop")
+        expect(!ModelProbe.goals.contains("Inspect TRANSIENT-B") && !transient.queueRunning, "Recovering storage does not silently re-enable automatic advance after a failed stop")
 
         for stop in [false,true] {
             resetModel()

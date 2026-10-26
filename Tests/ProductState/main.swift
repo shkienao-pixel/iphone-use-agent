@@ -48,11 +48,11 @@ import Foundation
         expect(reloaded.records[0].id == original.id, "Stored task identity survives restart")
         expect(reloaded.records[0].conversationReference == original.conversationReference && reloaded.records[0].effectiveGoal == original.goal,
                "Restart retains selected conversation data separately from task instructions")
-        for i in 0..<55 { store.upsert(PhoneTaskRecord(title: "Task \(i)", goal: "Offline")) }
-        expect(store.records.count == 50, "History retention is bounded")
+        for i in 0..<55 { store.upsert(PhoneTaskRecord(title: "Task \(i)", goal: "Offline", outcome: .completed)) }
+        expect(store.records.count == 51 && store.records.contains { $0.id == original.id }, "Completed history is bounded separately from an active recovery checkpoint")
         let newest = store.records[0].id; store.remove(newest)
         expect(!store.records.contains { $0.id == newest }, "Delete persists")
-        expect(TaskHistoryStore(url: path).records.count == 49, "Deletion survives reload")
+        expect(TaskHistoryStore(url: path).records.count == 50, "Deletion survives reload without discarding the active checkpoint")
         let corrupt = Data("broken document".utf8); try corrupt.write(to: path)
         let broken = TaskHistoryStore(url: path)
         expect(!broken.error.isEmpty, "Corrupt history shows a recoverable error")
@@ -72,13 +72,13 @@ import Foundation
         let capture = CaptureService(), executor = MouseExecutor()
         let engine = AgentEngine(capture: capture, executor: executor)
         PrivacyConsent.revoke(); ModelProbe.calls = 0
-        engine.start(task: "Offline task", settings: settings)
+        engine.start(task: "Inspect current page", settings: settings)
         expect(!engine.running && ModelProbe.calls == 0, "Missing consent blocks inference")
         PrivacyConsent.grant(settings)
         executor.actionDelay = 1_000_000_000
         ModelProbe.action = AgentAction(kind: .tap, x: 0.5, y: 0.5, reason: "Offline tap")
         let submissionID = UUID()
-        engine.start(task: "Offline task", settings: settings, taskID: submissionID, conversationReference: "VERBATIM-CLARIFICATION-SOURCE")
+        engine.start(task: "Inspect current page", settings: settings, taskID: submissionID, conversationReference: "VERBATIM-CLARIFICATION-SOURCE")
         try await waitUntil { engine.phase == .acting }
         expect(engine.currentRecord?.id == submissionID, "A reserved submission identity reaches the actual engine record")
         expect(engine.runMetrics?.snapshot.taskID == submissionID, "Execution metrics use the same reserved submission identity")
@@ -98,10 +98,10 @@ import Foundation
         expect(executor.actions == [.tap], "Resume does not replay the interrupted action")
         expect(ModelProbe.calls == 2, "Resume obtains a new observation")
         expect(engine.currentRecord?.outcome == .completed, "Completion reaches the history record")
-        expect(engine.state == finalReport && engine.currentRecord?.summary == finalReport,
-               "The final report reaches visible state and durable task history instead of only a short caption")
+        expect(engine.state.hasSuffix(finalReport) && engine.currentRecord?.summary.hasSuffix(finalReport) == true && engine.state.contains("已观察当前画面"),
+               "The full report reaches UI/history with its actual observation-level provenance")
         let reportRoundTrip = try JSONDecoder().decode(PhoneTaskRecord.self, from: JSONEncoder().encode(engine.currentRecord!))
-        expect(reportRoundTrip.summary == finalReport, "The complete result survives history encoding")
+        expect(reportRoundTrip.summary == engine.state && reportRoundTrip.summary.hasSuffix(finalReport), "The complete result and provenance survive history encoding")
         expect(!engine.canResume, "Completed task cannot resume")
         let completedSummary = engine.currentRecord?.summary, completedState = engine.state
         let completedReleases = executor.ble.releases
@@ -112,7 +112,7 @@ import Foundation
                "Stopping shared capture after completion releases input and preserves the completed result")
 
         ModelProbe.action = AgentAction(kind: .ask_user, reason: "Offline human handoff")
-        engine.start(task: "Needs human", settings: settings)
+        engine.start(task: "Inspect current page after human handoff", settings: settings)
         try await waitUntil { engine.phase == .needsUser && !engine.releasing }
         expect(engine.currentRecord?.id != submissionID, "Ordinary new tasks retain fresh default identities")
         expect(engine.canResume && engine.pendingAction?.kind == .ask_user, "Human handoff retains task context")
@@ -368,15 +368,21 @@ import Foundation
         let toolCapture = CaptureService(), toolExecutor = MouseExecutor()
         toolCapture.running = false; toolExecutor.ble.ready = false
         let toolEngine = AgentEngine(capture: toolCapture, executor: toolExecutor)
-        toolEngine.systemTool = { _, _ in "Offline receipt" }
-        ModelProbe.action = AgentAction(kind: .finish, text: finalReport, reason: "简短完成说明")
-        try toolEngine.restoreQueued(record: restoredCheckpoint.record, settings: toolsContinuous,
+        var resumedToolCalls = 0
+        toolEngine.systemTool = { _, _ in resumedToolCalls += 1; return "[]\n本 App 闹钟总数：0，返回前 20 项" }
+        ModelProbe.actionProvider = { call in call == 1
+            ? AgentAction(kind: .system_tool, text: "{\"operation\":\"alarm_list\"}", reason: "取得实际格式的只读回执")
+            : AgentAction(kind: .finish, text: finalReport, reason: "简短完成说明") }
+        var toolCheckpoint = restoredCheckpoint.record
+        toolCheckpoint.goal = "查看本 App 闹钟"; toolCheckpoint.completionEvidence = nil; toolCheckpoint.nativeResults = nil
+        try toolEngine.restoreQueued(record: toolCheckpoint, settings: toolsContinuous,
                                     step: 1000, previouslyStarted: true)
         try await waitUntil { toolEngine.executionSettled }
-        expect(toolEngine.phase == .completed && toolEngine.currentStep == 1001 && ModelProbe.calls == 1,
-               "Tools-only continuous mode also resumes beyond step 100 without capture or BLE")
-        expect(toolEngine.currentRecord?.summary == finalReport && toolEngine.state == finalReport,
-               "Tools-only completion also persists the full report")
+        expect(toolEngine.phase == .completed && toolEngine.currentStep == 1002 && ModelProbe.calls == 2 && resumedToolCalls == 1,
+               "Tools-only continuous recovery obtains actual evidence beyond step 100 without capture or BLE")
+        expect(toolEngine.currentRecord?.summary == toolEngine.state && toolEngine.state.hasSuffix(finalReport) && toolEngine.state.contains("实际工具回执"),
+               "Tools-only completion persists the full report with matching host receipt provenance")
+        ModelProbe.actionProvider = nil
 
         // Finite mode pauses at its chosen budget, then the same task can
         // continue after explicitly changing to long-task mode.

@@ -1,5 +1,6 @@
 import Foundation
 import CoreFoundation
+import CryptoKit
 
 /// Actual post-save EventKit fields. Identifiers are local to this device/store;
 /// neither they nor this creation receipt prove later existence or cloud sync.
@@ -252,6 +253,244 @@ struct NativeTaskResult: Codable, Equatable, Identifiable, Sendable {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+}
+
+/// Host-recorded completion evidence. This data grants no execution authority.
+/// It is separate from the bounded display cards and from model-authored logs.
+struct TaskCompletionEvidence: Codable, Equatable, Sendable {
+    struct Tool: Codable, Equatable, Sendable {
+        var operation: String
+        var receiptID: String
+        var title: String?
+        var start: String?
+        var end: String?
+        var resultSHA256: String
+    }
+    var version = 1
+    var goalSHA256: String
+    var tools: [Tool] = []
+    var observations = 0
+    var inputs = 0
+    var postInputObservations = 0
+    var lastInputAt: Date?
+    var allowsReceiptRecovery = true
+    var subtaskReceiptIDs: [String] = []
+    var subtaskObservationBoundary = 0
+
+    init(goal: String) { goalSHA256 = Self.digest(goal) }
+    static func digest(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    mutating func observe(confirmedAt: Date) {
+        observations = min(1_000_000, observations + 1)
+        if let lastInputAt, confirmedAt > lastInputAt { postInputObservations = min(1_000_000, postInputObservations + 1) }
+    }
+    mutating func input(completedAt: Date) {
+        inputs = min(1_000_000, inputs + 1); lastInputAt = completedAt; postInputObservations = 0
+    }
+    mutating func add(_ tool: Tool) {
+        guard !tools.contains(where: { $0.operation == tool.operation && $0.receiptID == tool.receiptID && $0.resultSHA256 == tool.resultSHA256 }) else { return }
+        tools.append(tool)
+        // Retain operation evidence beyond UI-card eviction without unbounded growth.
+        if tools.count > 2_000 { tools.removeFirst(tools.count - 2_000) }
+    }
+    static func restore(goal: String, persisted: Self?, legacyResults: [NativeTaskResult], receipts: [String]) -> Self {
+        var evidence: Self
+        if let persisted {
+            guard persisted.version == 1, persisted.goalSHA256 == digest(goal), persisted.tools.count <= 2_000,
+                  persisted.observations >= 0, persisted.inputs >= 0, persisted.postInputObservations >= 0 else {
+                var replacement = Self(goal: goal); replacement.allowsReceiptRecovery = false; return replacement
+            }
+            evidence = persisted
+        } else {
+            evidence = Self(goal: goal)
+            // Legacy cards are host-built and task-bound, but not a full audit.
+            // Only writes with a real system identifier and an explicit title in
+            // this unchanged task can establish legacy completion evidence.
+            for card in legacyResults where ["calendar_create", "reminder_create"].contains(card.operation) {
+                guard card.systemObjectID?.isEmpty == false, card.collectionID?.isEmpty == false,
+                      !card.title.isEmpty, goal.contains(card.title), UUID(uuidString: card.id) != nil else { continue }
+                evidence.add(Tool(operation: card.operation, receiptID: card.id, title: card.title,
+                    start: card.date.map { ISO8601DateFormatter().string(from: $0) },
+                    end: card.endDate.map { ISO8601DateFormatter().string(from: $0) }, resultSHA256: digest(card.id + card.operation)))
+            }
+        }
+        for raw in receipts where evidence.allowsReceiptRecovery {
+            for operation in ["calendar_create", "reminder_create", "alarm_create", "notes_create", "content_create"] {
+                if let tool = recoveredWrite(operation: operation, result: raw) { evidence.add(tool) }
+            }
+        }
+        return evidence
+    }
+    static func successfulTool(operation: String, result: String, title: String?, start: String?, end: String?,
+                               query: String?, artifactReference: String?, content: String?, eventID: String) -> Tool? {
+        let prefix = "重复请求已跳过；之前的回执："
+        let raw = result.hasPrefix(prefix) ? String(result.dropFirst(prefix.count)) : result
+        guard !raw.isEmpty, raw.utf8.count <= 48_000 else { return nil }
+        let card = NativeTaskResult.completed(operation: operation, result: raw, title: title, start: start, eventID: eventID)
+        let writes: Set<String> = ["calendar_create", "reminder_create", "alarm_create", "notes_create", "content_create", "content_prepare_clipboard"]
+        if writes.contains(operation) {
+            guard let card else { return nil }
+            if let title, card.title.precomposedStringWithCanonicalMapping != title.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping { return nil }
+            if let start {
+                guard let expected = NativeTaskResult.parseDate(start), let actual = card.date,
+                      abs(expected.timeIntervalSince(actual)) < 1 else { return nil }
+            }
+            if let end {
+                guard let expected = NativeTaskResult.parseDate(end), let actual = card.endDate,
+                      abs(expected.timeIntervalSince(actual)) < 1 else { return nil }
+            }
+            if operation == "content_create", let content {
+                guard let object = json(raw), let reference = object["artifact_ref"] as? String,
+                      reference.hasSuffix(":" + digest(content)), object["utf8_bytes"] as? String == String(content.utf8.count) else { return nil }
+            }
+            if operation == "content_prepare_clipboard" {
+                guard let object = json(raw), object["artifact_ref"] as? String == artifactReference else { return nil }
+            }
+            return Tool(operation: operation, receiptID: card.id, title: title, start: start, end: end, resultSHA256: digest(raw))
+        }
+        if ["music_play", "music_pause", "music_resume"].contains(operation) {
+            guard let object = json(raw), object["confirmed"] as? Bool == true,
+                  object["command"] as? String == operation else { return nil }
+            if operation == "music_play" {
+                guard let track = object["track"] as? [String: Any], track["id"] as? String == query, track["title"] as? String == title else { return nil }
+            }
+        }
+        if operation == "health_query" {
+            guard let object = json(raw), object["type"] as? String == query,
+                  object["start"] as? String == start, object["end"] as? String == end else { return nil }
+        }
+        let servicePrefix = ["ctrip_query": "来源：携程", "meituan_query": "来源：美团官方酒旅", "meituan_paotui": "来源：美团跑腿官方"]
+        guard card != nil || servicePrefix[operation].map({ raw.hasPrefix($0) && raw.count > $0.count }) == true else { return nil }
+        return Tool(operation: operation, receiptID: card?.id ?? eventID, title: title, start: start, end: end, resultSHA256: digest(raw))
+    }
+    private static func recoveredWrite(operation: String, result: String) -> Tool? {
+        if let receipt = NativeEventWriteReceipt.decode(result, operation: operation) {
+            return Tool(operation: operation, receiptID: receipt.local_receipt_id.uuidString, title: receipt.title,
+                start: receipt.start ?? receipt.due, end: receipt.end, resultSHA256: digest(result))
+        }
+        // Alarm text includes the actual scheduled time and host receipt UUID.
+        if operation == "alarm_create", let card = NativeTaskResult.completed(operation: operation, result: result,
+            title: nil, start: nil, eventID: "unused"), UUID(uuidString: card.id) != nil, let date = card.date {
+            return Tool(operation: operation, receiptID: card.id, title: card.title,
+                start: ISO8601DateFormatter().string(from: date), end: nil, resultSHA256: digest(result))
+        }
+        // Notes/content legacy receipts lack a trustworthy request title/body
+        // binding here. Let an explicit deduplicated request re-establish it.
+        return nil
+    }
+    private static func json(_ raw: String) -> [String: Any]? {
+        guard let line = raw.components(separatedBy: .newlines).first else { return nil }
+        return (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+    }
+}
+
+/// A conservative operation-family check, not a natural-language correctness
+/// oracle. Only the host may supply evidence; model reason/text is never proof.
+enum TaskCompletionPolicy {
+    enum Decision: Equatable { case tools, observed, needsUser(String) }
+    static func decide(goal: String, toolsOnly: Bool, evidence: TaskCompletionEvidence) -> Decision {
+        guard evidence.goalSHA256 == TaskCompletionEvidence.digest(goal) else { return .needsUser("任务要求已经改变，原完成依据不能用于当前要求。") }
+        let text = effectiveIntentText(goal.lowercased())
+        let required = requiredOperations(text)
+        let completed = Set(evidence.tools.map(\.operation))
+        let missing = required.subtracting(completed)
+        let visualMutation = requiresVisualMutation(text)
+        if !missing.isEmpty {
+            if !toolsOnly, evidence.inputs > 0, evidence.postInputObservations > 0 { return .observed }
+            return .needsUser("尚无匹配的实际工具成功回执：" + missing.sorted().map(operationLabel).joined(separator: "、") + "。没有把模型的结束声明记为完成。")
+        }
+        if visualMutation {
+            guard !toolsOnly, evidence.inputs > 0, evidence.postInputObservations > 0 else {
+                return .needsUser("这项操作需要实际输入及操作后的新画面核验，现有观察或其他查询不能证明已经完成。")
+            }
+            return .observed
+        }
+        if !required.isEmpty || (toolsOnly && !evidence.tools.isEmpty) { return .tools }
+        if !toolsOnly, evidence.observations > 0 {
+            let readOnly = clauses(text).contains { !negated($0) && readIntent($0) }
+            if readOnly || (evidence.inputs > 0 && evidence.postInputObservations > 0) { return .observed }
+        }
+        return .needsUser("模型已声明结束，但尚无匹配的实际执行依据，请先核对结果；任务没有记为已完成。")
+    }
+    private static func requiredOperations(_ text: String) -> Set<String> {
+        var required = Set<String>()
+        let operations = ["calendar_create", "calendar_search", "reminder_create", "reminder_search", "alarm_create", "alarm_list", "notes_create", "content_create", "health_query", "contact_search", "photo_search", "music_search", "music_play", "music_pause", "music_resume", "music_status", "location_current", "ctrip_query", "meituan_query", "meituan_paotui"]
+        for clause in clauses(text) where !negated(clause) {
+            for operation in operations where clause.contains(operation) { required.insert(operation) }
+            let read = readIntent(clause)
+            let create = !read && ["创建", "新建", "添加", "设置", "设一个", "设定", "安排", "保存", "写入", "create", "add ", "schedule", "set ", "save"].contains(where: clause.contains)
+            if ["提醒", "reminder"].contains(where: clause.contains) {
+                if create || clause.contains("提醒我") || clause.contains("remind me") { required.insert("reminder_create") }
+                else if read { required.insert("reminder_search") }
+            }
+            if ["日历", "日程", "calendar", "event"].contains(where: clause.contains) {
+                if create { required.insert("calendar_create") } else if read { required.insert("calendar_search") }
+            }
+            if ["闹钟", "alarm"].contains(where: clause.contains) {
+                if create { required.insert("alarm_create") } else if read { required.insert("alarm_list") }
+            }
+            if ["备忘录", "apple notes"].contains(where: clause.contains), create { required.insert("notes_create") }
+            if ["本机内容", "本机正文", "sela文件", "sela 文件", "local content"].contains(where: clause.contains), create { required.insert("content_create") }
+            if ["步数", "睡眠", "运动记录", "health", "steps", "sleep", "workout"].contains(where: clause.contains), read { required.insert("health_query") }
+            if ["联系人", "通讯录", "contact"].contains(where: clause.contains), read { required.insert("contact_search") }
+            if ["照片", "相册", "photo"].contains(where: clause.contains), read { required.insert("photo_search") }
+            if ["位置", "定位", "location"].contains(where: clause.contains), read || clause.contains("获取") { required.insert("location_current") }
+            if ["音乐", "歌曲", "music", "song"].contains(where: clause.contains) {
+                if read && ["状态", "播放状态", "status", "playing now"].contains(where: clause.contains) { required.insert("music_status") }
+                else if read { required.insert("music_search") }
+                else if ["暂停", "pause"].contains(where: clause.contains) { required.insert("music_pause") }
+                else if ["继续", "恢复", "resume"].contains(where: clause.contains) { required.insert("music_resume") }
+                else if ["播放", "play"].contains(where: clause.contains) { required.insert("music_play") }
+            }
+        }
+        return required
+    }
+    private static func operationLabel(_ operation: String) -> String {
+        let labels = ["calendar_create": "添加日程", "calendar_search": "查找日程", "reminder_create": "添加提醒", "reminder_search": "查找提醒", "alarm_create": "设置闹钟", "alarm_list": "查看闹钟", "notes_create": "创建备忘录", "content_create": "保存本机正文", "health_query": "读取健康数据", "contact_search": "查找联系人", "photo_search": "查找照片资料", "music_search": "查找音乐", "music_play": "播放音乐", "music_pause": "暂停音乐", "music_resume": "继续播放", "music_status": "查看播放状态", "location_current": "获取当前位置", "ctrip_query": "查询携程", "meituan_query": "查询美团旅行", "meituan_paotui": "查询跑腿服务"]
+        return labels[operation] ?? "核对所需操作"
+    }
+    private static func requiresVisualMutation(_ text: String) -> Bool {
+        clauses(text).contains { clause in
+            !negated(clause) && !readIntent(clause) &&
+            ["发送", "发给", "发微信", "点赞", "评论", "删除", "转账", "付款", "购买", "下单", "send ", "delete ", "purchase", "pay ", "comment ", "like "].contains(where: clause.contains)
+        }
+    }
+    private static func clauses(_ text: String) -> [String] {
+        var segmented = text
+        for separator in ["并且", "然后", "随后", "接着", "同时", "之后", "而是", "改为", "改成", "并", "再", "只", " and then ", " then ", " and "] {
+            segmented = segmented.replacingOccurrences(of: separator, with: ";")
+        }
+        segmented = segmented.replacingOccurrences(of: "改查", with: ";查询")
+        return segmented.components(separatedBy: CharacterSet(charactersIn: "，。；;\n")).filter { !$0.isEmpty }
+    }
+    private static func negated(_ clause: String) -> Bool {
+        ["不要", "无需", "不需要", "不用", "别发送", "取消", "don't ", "do not ", "no need to "].contains(where: clause.contains)
+    }
+    private static func readIntent(_ clause: String) -> Bool {
+        func first(_ words: [String]) -> String.Index? {
+            words.compactMap { clause.range(of: $0)?.lowerBound }.min()
+        }
+        let reads = first(["查询", "查找", "查看", "查一下", "查下", "看看", "读取", "列出", "有哪些", "多少", "告诉我", "总结", "识别", "观察", "search", "list", "read", "show", "check", "find", "inspect", "describe", "summarize", "what is", "what's"])
+        guard let reads else { return false }
+        let writes = first(["创建", "新建", "添加", "设置", "设定", "安排", "保存", "写入", "发送", "发给", "点赞", "评论", "删除", "购买", "下单", "播放", "暂停", "恢复", "create", "add ", "schedule", "set ", "save", "send ", "delete ", "purchase", "play", "pause", "resume"])
+        return writes.map { reads < $0 } ?? true
+    }
+    private static func effectiveIntentText(_ goal: String) -> String {
+        // This delimiter is host-generated by PhoneTaskRecord.effectiveGoal;
+        // the task digest still binds every original/amended byte. A latest
+        // explicit change of operation must not require the abandoned action.
+        guard let marker = goal.range(of: "\n\n用户后续补充（与前文冲突时，以较新的明确要求为准）：\n") else { return goal }
+        var current = String(goal[..<marker.lowerBound])
+        for line in goal[marker.upperBound...].components(separatedBy: .newlines) {
+            let addition = line.replacingOccurrences(of: "^[0-9]+\\. ", with: "", options: .regularExpression)
+            let replacement = ["改为", "改成", "改查", "改做", "不要", "不用", "取消之前", "instead"].contains(where: addition.contains)
+            if replacement && (!requiredOperations(addition).isEmpty || clauses(addition).contains(where: { !negated($0) && readIntent($0) }) || requiresVisualMutation(addition)) {
+                current = addition
+            } else { current += "\n" + addition }
+        }
+        return current
     }
 }
 

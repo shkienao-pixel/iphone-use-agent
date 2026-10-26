@@ -177,10 +177,12 @@ struct InlineDictationComposer: View {
 struct AssistantView: View {
     let reviewDictation: DictationPhase?
     let allowsDictation: Bool
+    var canvasBackground: Color = AgentPalette.background
     @EnvironmentObject private var model: PhoneAgentViewModel
     @Environment(\.scenePhase) private var phase
     let onModelSetup: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var presentationID = UUID()
     @State private var followingConversation = true
     @State private var flightHandoffVisibilityEpoch = UUID()
     @State private var conversationUserScrolling = false
@@ -323,7 +325,8 @@ struct AssistantView: View {
                     if continuous { Text("点按麦克风开始。停顿后自动发送识别文字，播报结束再听下一句；离开此页或 App 后停止。")
                         .font(.caption).foregroundStyle(.secondary) }
                     Color.clear.frame(height: 1).id("bottom")
-                }.padding(.horizontal, 16).padding(.vertical, 16)
+                }.id(model.conversation.currentConversationID)
+                    .padding(.horizontal, 16).padding(.vertical, 16)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _, _ in
                         guard followingConversation else { return }
                         let conversationID = model.conversation.currentConversationID
@@ -366,10 +369,8 @@ struct AssistantView: View {
                 }
                 .onAppear { reader.scrollTo("bottom", anchor: .bottom) }
         }
-        .onChange(of: composing || dictating) { _, active in model.assistantInputActive = active }
-        .onDisappear {
-            flightHandoffVisibilityEpoch = UUID()
-            composing = false; model.assistantInputActive = false
+        .onChange(of: composing || dictating) { _, active in
+            if model.conversation.ownsPresentation(presentationID) { model.assistantInputActive = active }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 8) {
@@ -400,9 +401,9 @@ struct AssistantView: View {
                     let conversationID = dictationConversationID
                     InlineDictationComposer(speech: model.speech, draft: $model.conversation.draft,
                                             isVisible: allowsDictation && !clear && !realtime && !webSearch && memoryEditor == nil,
-                                            isCurrent: { dictating && dictationID == token && model.conversation.currentConversationID == conversationID },
+                                            isCurrent: { model.conversation.ownsPresentation(presentationID) && dictating && dictationID == token && model.conversation.currentConversationID == conversationID },
                                             onSend: { send() }) { _ in
-                        guard dictationID == token, model.conversation.currentConversationID == conversationID else { return }
+                        guard model.conversation.ownsPresentation(presentationID), dictationID == token, model.conversation.currentConversationID == conversationID else { return }
                         transcriptTask?.cancel(); transcriptTask = nil
                         dictationID = UUID(); dictating = false; dictationConversationID = nil
                         if model.voiceMode == .question { model.voiceMode = nil }
@@ -473,7 +474,7 @@ struct AssistantView: View {
             .padding(.horizontal, 16)
             .padding(.top, model.conversation.messages.isEmpty ? 12 : 4)
             .padding(.bottom, 8)
-            .background(AgentPalette.background)
+            .background(canvasBackground)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: dictating)
         }
         .composerAttachmentPicker(store: attachmentDraft, showPhotos: $showAttachmentPhotos, showFiles: $showAttachmentFiles,
@@ -485,6 +486,7 @@ struct AssistantView: View {
             Button("清空", role: .destructive) { resetConversation() }
         }
         .onChange(of: model.conversation.currentConversationID) { _, conversationID in
+            guard model.conversation.ownsPresentation(presentationID) else { return }
             attachmentConversationID = conversationID
             attachmentDraft.replace(model.conversation.retryAttachments)
             showAttachmentPhotos = false; showAttachmentFiles = false
@@ -496,16 +498,23 @@ struct AssistantView: View {
             if !attachments.isEmpty, attachmentDraft.items.isEmpty { attachmentDraft.replace(attachments) }
         }
         .onChange(of: attachmentDraft.items) { _, attachments in
+            guard model.conversation.ownsPresentation(presentationID) else { return }
             if let conversationID = attachmentConversationID {
                 model.conversation.retainDraftAttachments(attachments, conversationID: conversationID)
             }
         }
         .onAppear {
+            let questionRequested = model.voiceMode == .question
+            if model.conversation.claimPresentation(presentationID) { stopConversationMedia() }
+            model.assistantInputActive = composing || dictating
             attachmentConversationID = model.conversation.currentConversationID
-            if model.voiceMode == .question { startListening() }
+            if questionRequested { model.voiceMode = .question; startListening() }
         }
-        .onChange(of: model.voiceMode) { _, mode in if mode == .question { startListening() } }
+        .onChange(of: model.voiceMode) { _, mode in
+            if model.conversation.ownsPresentation(presentationID), mode == .question { startListening() }
+        }
         .onChange(of: model.conversation.messages.last?.id) { _, _ in
+            guard model.conversation.ownsPresentation(presentationID) else { return }
             guard let last = model.conversation.messages.last, last.role == "assistant", !model.conversation.loading, lastSpokenMessage != last.id, model.voiceMode == nil else { return }
             lastSpokenMessage = last.id
             if continuous || model.settings.spokenFeedback == true {
@@ -513,6 +522,7 @@ struct AssistantView: View {
             }
         }
         .onChange(of: useCamera) { _, enabled in
+            guard model.conversation.ownsPresentation(presentationID) else { return }
             stopVideo()
             if enabled || mediaConversationID == model.conversation.currentConversationID { model.conversation.cancel() }
             model.conversation.selectFrame(nil)
@@ -524,12 +534,16 @@ struct AssistantView: View {
             }
         }
         .onChange(of: videoMode) { _, enabled in
+            guard model.conversation.ownsPresentation(presentationID) else { return }
             stopVideo()
             if useCamera && mediaConversationID == model.conversation.currentConversationID { model.conversation.cancel() }
             model.conversation.selectFrame(nil); model.camera.setSequenceEnabled(enabled && useCamera)
         }
-        .onChange(of: model.camera.running) { _, running in if !running { stopVideo() } }
+        .onChange(of: model.camera.running) { _, running in
+            if model.conversation.ownsPresentation(presentationID), !running { stopVideo() }
+        }
         .onChange(of: model.conversation.loading) { wasLoading, loading in
+            guard model.conversation.ownsPresentation(presentationID) else { return }
             if wasLoading, !loading, model.conversation.error.isEmpty, model.conversation.draft.isEmpty {
                 attachmentDraft.clear()
             }
@@ -539,11 +553,27 @@ struct AssistantView: View {
             }
         }
         .onChange(of: model.liveCamera.results.last?.id) { _, _ in
+            guard model.conversation.ownsPresentation(presentationID) else { return }
             if speakObservations, phase == .active, !model.speech.usingAudio, !model.conversation.loading, let result = model.liveCamera.results.last { model.speech.speak(result.text) }
         }
-        .onChange(of: continuous) { _, enabled in if !enabled { stopVoice() } }
-        .onChange(of: phase) { _, value in if value == .background { continuous = false; useCamera = false; stopVideo(); model.camera.stop(); stopVoice(); model.conversation.cancelScreenBoundRequest(); model.conversation.selectFrame(nil) } }
+        .onChange(of: continuous) { _, enabled in
+            if model.conversation.ownsPresentation(presentationID), !enabled { stopVoice() }
+        }
+        .onChange(of: phase) { _, value in
+            if model.conversation.ownsPresentation(presentationID), value == .background {
+                continuous = false; useCamera = false; stopVideo(); model.camera.stop(); stopVoice()
+                model.conversation.cancelScreenBoundRequest(); model.conversation.selectFrame(nil)
+            }
+        }
         .onDisappear {
+            flightHandoffVisibilityEpoch = UUID()
+            // The outgoing page can disappear after its replacement has already
+            // sent a request. Only the current presenter may clear shared state.
+            guard model.conversation.releasePresentation(presentationID) else {
+                attachmentDraft.cancelImport(); transcriptTask?.cancel(); videoQuestionTask?.cancel()
+                return
+            }
+            composing = false; model.assistantInputActive = false
             if let conversationID = attachmentConversationID {
                 model.conversation.retainDraftAttachments(attachmentDraft.items, conversationID: conversationID)
             }
@@ -660,13 +690,13 @@ struct AssistantView: View {
         model.conversation.selectFrame(frame); model.notice = ""
     }
     private func startListening() {
-        guard !dictating, model.recordingAudioOwner == nil, !model.conversation.loading, videoQuestionTask == nil else { return }
+        guard model.conversation.ownsPresentation(presentationID), !dictating, model.recordingAudioOwner == nil, !model.conversation.loading, videoQuestionTask == nil else { return }
         composing = false; model.speech.cancel()
         let token = UUID()
         let conversationID = model.conversation.currentConversationID
         dictationID = token; dictating = true; dictationConversationID = conversationID
         model.speech.onSilence = continuous ? {
-            guard dictating, dictationID == token, model.conversation.currentConversationID == conversationID else { return }
+            guard model.conversation.ownsPresentation(presentationID), dictating, dictationID == token, model.conversation.currentConversationID == conversationID else { return }
             finishAndSend()
         } : nil
     }
@@ -679,12 +709,12 @@ struct AssistantView: View {
         if model.voiceMode == .question { model.voiceMode = nil }
     }
     private func finishAndSend() {
-        guard transcriptTask == nil, dictating, let conversationID = dictationConversationID,
+        guard model.conversation.ownsPresentation(presentationID), transcriptTask == nil, dictating, let conversationID = dictationConversationID,
               conversationID == model.conversation.currentConversationID else { return }
         let token = dictationID
         transcriptTask = Task {
             await model.speech.finish()
-            guard dictationID == token, model.conversation.currentConversationID == conversationID else { return }
+            guard model.conversation.ownsPresentation(presentationID), dictationID == token, model.conversation.currentConversationID == conversationID else { return }
             guard !Task.isCancelled, dictating, phase == .active else { transcriptTask = nil; return }
             model.conversation.draft = model.speech.transcript
             dictationID = UUID(); dictating = false; dictationConversationID = nil
@@ -718,6 +748,7 @@ struct AssistantView: View {
             .accessibilityIdentifier("conversation.response.actions." + message.id.uuidString)
     }
     private func send() {
+        guard model.conversation.ownsPresentation(presentationID) else { return }
         composing = false
         if model.speech.listening { finishAndSend(); return }
         guard !attachmentDraft.importing, !showAttachmentPhotos, !showAttachmentFiles else { return }
@@ -746,7 +777,7 @@ struct AssistantView: View {
                 videoQuestionTask = Task {
                     defer { if videoQuestionID == token { videoQuestionTask = nil } }
                     await model.liveCamera.suspendForQuestion()
-                    guard !Task.isCancelled, videoQuestionID == token, phase == .active, videoMode, useCamera,
+                    guard model.conversation.ownsPresentation(presentationID), !Task.isCancelled, videoQuestionID == token, phase == .active, videoMode, useCamera,
                           model.camera.running, model.conversation.currentConversationID == conversationID else { return }
                     guard model.conversation.draft == originalDraft, attachmentDraft.items == attachments else { model.notice = "问题已变化，请重新发送"; model.liveCamera.stop(); return }
                     guard model.settings.endpoint == configuration.endpoint, model.settings.model == configuration.model,

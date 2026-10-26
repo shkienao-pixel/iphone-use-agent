@@ -169,6 +169,49 @@ import Foundation
         expect(cameraQueryCalls == 0 && camera.processingConversationIDs.isEmpty && camera.messages.isEmpty, "Screen-bound observation cancels on navigation and cannot start a late provider operation")
         expect(camera.conversations.first(where: { $0.id == cameraOrigin })?.draft == "结合当前画面查机票", "Screen-bound cancellation preserves its original question for an explicit retry")
 
+        // Exercise the real service's presentation boundary independently of
+        // SwiftUI callback ordering. Cleanup only follows a successful release.
+        let presented = conversation("presentation-screen-bound"), ownerA = UUID(), ownerB = UUID()
+        expect(!presented.ownsPresentation(ownerA) && !presented.releasePresentation(ownerA), "An unclaimed presentation cannot release another view's services")
+        expect(!presented.claimPresentation(ownerA) && presented.ownsPresentation(ownerA), "The first presentation claim does not replace an existing view")
+        expect(!presented.claimPresentation(ownerA), "A repeated claim by the same presentation does not request media cleanup")
+        let presentedOrigin = presented.currentConversationID
+        presented.newConversation()
+        expect(presented.currentConversationID != presentedOrigin && presented.ownsPresentation(ownerA), "The same view keeps presentation ownership when it opens a new conversation")
+        expect(presented.claimPresentation(ownerB) && presented.ownsPresentation(ownerB) && !presented.ownsPresentation(ownerA), "A replacement presentation reports the displaced owner for media cleanup")
+        var presentedRoute: CheckedContinuation<ConversationRoute, Never>?, presentedQueryCalls = 0
+        presented.unifiedRoute = { _ in await withCheckedContinuation { presentedRoute = $0 } }
+        presented.flightQuery = { _ in presentedQueryCalls += 1; return "不可开始" }
+        presented.draft = "新页面当前画面的问题"; presented.selectFrame(ScreenFrame())
+        expect(presented.send(settings: settings, apiKey: "", memories: memories), "The replacement presentation starts a real screen-bound request")
+        try await settle { presentedRoute != nil }
+        let presentedMessageID = presented.messages.last?.id
+        let oldReleased = presented.releasePresentation(ownerA)
+        if oldReleased { presented.cancelScreenBoundRequest() }
+        expect(!oldReleased && presented.ownsPresentation(ownerB) && presented.loading && presented.messages.last?.id == presentedMessageID && presented.processingConversationIDs == [presented.currentConversationID], "A late outgoing view cannot release its successor or cancel the successor's pending turn")
+        let currentReleased = presented.releasePresentation(ownerB)
+        if currentReleased { presented.cancelScreenBoundRequest() }
+        expect(currentReleased && !presented.ownsPresentation(ownerB) && !presented.loading && presented.messages.isEmpty && presented.draft == "新页面当前画面的问题", "The actual owner can leave and restore a screen-bound question for retry")
+        expect(!presented.releasePresentation(ownerB), "A released owner cannot clean up a later presentation a second time")
+        presentedRoute!.resume(returning: .init(mode: .flightQuery, request: "不应执行的旧画面查询", message: ""))
+        await drain()
+        expect(presentedQueryCalls == 0 && presented.processingConversationIDs.isEmpty, "Owner-authorized screen cleanup rejects a late provider operation")
+
+        let presentedText = conversation("presentation-background-text"), textOwner = UUID(), presentedTextStart = model.requests.count
+        presentedText.claimPresentation(textOwner)
+        presentedText.draft = "离开当前页面仍继续的文本问题"
+        expect(presentedText.send(settings: settings, apiKey: "", memories: memories), "Presentation cleanup fixture starts a real text-only request")
+        try await settle { model.requests.count == presentedTextStart + 1 }
+        let textReleased = presentedText.releasePresentation(textOwner)
+        if textReleased { presentedText.cancelScreenBoundRequest() }
+        expect(textReleased && presentedText.loading && presentedText.messages.last?.text == "离开当前页面仍继续的文本问题", "A valid presentation exit preserves the existing background text request")
+        model.complete(presentedTextStart, answer: "离开页面后的文本回答")
+        try await settle { !presentedText.loading }
+        expect(presentedText.messages.last?.text == "离开页面后的文本回答", "A released presentation's background answer still reaches its originating conversation")
+        presentedText.claimPresentation(textOwner)
+        let reopenedPresentedText = conversation("presentation-background-text")
+        expect(!reopenedPresentedText.ownsPresentation(textOwner) && reopenedPresentedText.messages.last?.text == "离开页面后的文本回答", "Presentation ownership is process-local and is never restored from the conversation archive")
+
         let bounded = conversation("bounded-parallelism"), boundedStart = model.requests.count
         for i in 0..<AssistantConversation.maximumParallelConversations {
             bounded.draft = "等待查询 \(i)"

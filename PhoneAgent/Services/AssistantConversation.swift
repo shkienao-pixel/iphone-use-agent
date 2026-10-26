@@ -60,6 +60,7 @@ final class AssistantConversation: ObservableObject {
     }
     private var liveRequests: [UUID: LiveRequest] = [:]
     private var transientStates: [UUID: TransientState] = [:]
+    private var presentationOwner: UUID?
     static let maximumParallelConversations = 4
 
     var backgroundRequestCount: Int { processingConversationIDs.filter { $0 != currentConversationID }.count }
@@ -67,6 +68,25 @@ final class AssistantConversation: ObservableObject {
     private func isLiveRequest(_ token: UUID, in id: UUID) -> Bool { liveRequests[id]?.token == token }
 
     private func updateProcessingIDs() { processingConversationIDs = Set(liveRequests.keys) }
+
+    /// View lifetime is independent of a conversation ID: the same composer can
+    /// open another conversation, and a replacement can appear before its
+    /// predecessor disappears. An outgoing view must not clean up its successor.
+    @discardableResult
+    func claimPresentation(_ owner: UUID) -> Bool {
+        let replacing = presentationOwner != nil && presentationOwner != owner
+        presentationOwner = owner
+        return replacing
+    }
+
+    func ownsPresentation(_ owner: UUID) -> Bool { presentationOwner == owner }
+
+    @discardableResult
+    func releasePresentation(_ owner: UUID) -> Bool {
+        guard ownsPresentation(owner) else { return false }
+        presentationOwner = nil
+        return true
+    }
 
     /// Navigation must not terminate a text/cloud request. Camera observation,
     /// card confirmation and legacy answer retry remain foreground operations.

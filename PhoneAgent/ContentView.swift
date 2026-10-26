@@ -111,10 +111,14 @@ struct ContentView: View {
         lifecycleWorkspace
     }
 
+    private var mainCanvas: Color {
+        sidebarOpen ? AgentPalette.surface : isTaskHome ? SelaHomePalette.background : AgentPalette.background
+    }
+
     private var workspace: some View {
         ZStack {
             // The shifted main page is the raised surface; the sidebar stays flat.
-            (sidebarOpen ? AgentPalette.surface : isTaskHome ? SelaHomePalette.background : AgentPalette.background)
+            mainCanvas
                 .ignoresSafeArea().accessibilityHidden(true)
             Group {
                 switch selectedDestination {
@@ -140,15 +144,20 @@ struct ContentView: View {
             }.id(selectedDestination).transition(pageTransition)
         }
         .animation(pageAnimation, value: selectedDestination).tint(AgentPalette.accent)
-        .modifier(SelaTopChrome(conversation: selectedDestination.isConversation) {
+        .modifier(SelaTopChrome(conversation: selectedDestination.isConversation, background: mainCanvas) {
             VStack(spacing: 0) {
                 if selectedDestination != .settings { topBar }
                 AgentPiPPanel(controller: model.pip)
             }
         })
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
-        .modifier(SidebarMainSurface(open: sidebarOpen))
+        .modifier(SidebarMainSurface(open: sidebarOpen, background: mainCanvas, scrim: sidebarScrimColor))
         .offset(x: sidebarOpen && !reduceMotion ? max(0, sidebarWidth + sidebarDrag) : 0)
+        .background {
+            if sidebarOpen {
+                SelaSidebarPalette.background.ignoresSafeArea(.container).accessibilityHidden(true)
+            }
+        }
         .accessibilityHidden(sidebarOpen)
         .overlay { sidebarOverlay }
     }
@@ -627,6 +636,7 @@ struct ContentView: View {
     private var unifiedConversation: some View {
         AssistantView(reviewDictation: reviewVoicePhase,
             allowsDictation: !model.preparingAutomatically && sheet == nil && !settingsPageOpen && !sidebarOpen && !modeSwitcherOpen,
+            canvasBackground: mainCanvas,
             onModelSetup: { present(.connection(.model)) })
     }
     @ViewBuilder private var taskPage: some View {
@@ -1253,7 +1263,7 @@ struct ContentView: View {
         GeometryReader { geometry in
             if sidebarOpen {
                 ZStack(alignment: .leading) {
-                    Button { setSidebar(false) } label: { Rectangle().fill(sidebarScrimColor).contentShape(Rectangle()) }
+                    Button { setSidebar(false) } label: { Rectangle().fill(Color.clear).contentShape(Rectangle()) }
                     .frame(width: max(0, geometry.size.width - sidebarWidth), height: geometry.size.height)
                     .offset(x: sidebarWidth)
                     .accessibilityActivationPoint(CGPoint(x: geometry.frame(in: .global).maxX - 20, y: geometry.frame(in: .global).midY))

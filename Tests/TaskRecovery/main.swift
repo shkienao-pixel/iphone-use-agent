@@ -223,6 +223,16 @@ import Foundation
         nativeVM.engine.start(task: "another active task", settings: nativeVM.settings)
         let mainIdentity = nativeVM.engine.currentRecord!.id
         var nativeSource = source; nativeSource.id = UUID(); nativeSource.executionLane = "native"
+        nativeSource.goal = "查看本 App 的闹钟"
+        // Recovery may finish without repeating an already completed SDK read,
+        // but a model finish/reason alone is not evidence. Use the same strict
+        // host receipt parser as production, with synthetic OS data only.
+        let priorNativeRead = "[]\n本 App 闹钟总数：0，返回前 20 项"
+        var priorNativeEvidence = TaskCompletionEvidence(goal: nativeSource.effectiveGoal)
+        guard let nativeReadProof = TaskCompletionEvidence.successfulTool(operation: "alarm_list", result: priorNativeRead,
+            title: nil, start: nil, end: nil, query: nil, artifactReference: nil, content: nil,
+            eventID: nativeSource.id.uuidString + ":prior-read") else { preconditionFailure("Synthetic native SDK receipt must pass the production evidence parser") }
+        priorNativeEvidence.add(nativeReadProof); nativeSource.completionEvidence = priorNativeEvidence
         nativeVM.history.upsert(nativeSource)
         expect(nativeVM.continueTask(nativeSource.id) && nativeVM.engine.running && nativeVM.engine.currentRecord?.id == mainIdentity,
                "Native history recovery starts independently without replacing or pausing the active main task")
@@ -232,6 +242,8 @@ import Foundation
         }
         expect(nativeVM.backgroundTasks.record(nativeSource.id)?.id == nativeSource.id && nativeVM.history.records.first(where: { $0.id == nativeSource.id })?.executionLane == "native",
                "Native recovery returns its own result and preserves lane/identity in history")
+        expect(nativeVM.backgroundTasks.record(nativeSource.id)?.completionEvidence?.tools.map(\.operation) == ["alarm_list"],
+               "Native recovery retains the original actual-format read evidence instead of accepting a bare model finish")
         try await settled(nativeVM)
         var blockedNative = nativeSource; blockedNative.id = UUID(); nativeVM.history.upsert(blockedNative)
         nativeVM.tools.unresolved.insert(blockedNative.id)

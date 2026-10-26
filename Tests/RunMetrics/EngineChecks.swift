@@ -28,8 +28,12 @@ import Foundation
         let engine = AgentEngine(capture: CaptureService(), executor: MouseExecutor())
         engine.metricsDirectory = directory
         var settings = AgentSettings(); settings.startDelay = 0; settings.stepInterval = 0.4
+        // The production capture fake delivers fresh synthetic frames. A real
+        // observation can satisfy this read-only task without inventing input
+        // or bypassing the host's completion-evidence policy.
+        let observationTask = "查看当前画面并告诉我显示内容（离线计时夹具）"
         ModelProbe.delay = 0; ModelProbe.calls = 0; ModelProbe.action = AgentAction(kind: .finish, reason: "offline completion claim")
-        PrivacyConsent.revoke(); engine.start(task: "offline trace", settings: settings)
+        PrivacyConsent.revoke(); engine.start(task: observationTask, settings: settings)
         expect(!engine.running && ModelProbe.calls == 0, "preflight failure dispatches nothing")
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         func attempts() throws -> [AgentRunMetrics] {
@@ -38,10 +42,13 @@ import Foundation
         let rejected = try attempts()
         expect(rejected.count == 1 && rejected[0].outcome == .failed, "preflight failure counted durably")
         expect(rejected[0].spans.contains { $0.category == .preparation && $0.outcome == .failed }, "readiness timing includes failure")
-        PrivacyConsent.grant(settings); engine.start(task: "offline trace", settings: settings)
+        PrivacyConsent.grant(settings); engine.start(task: observationTask, settings: settings)
         try await waitUntil { engine.executionSettled }
         let complete = engine.runMetrics!.snapshot
         expect(complete.outcome == .completed && complete.finishedAt != nil, "task terminal result closes attempt")
+        expect((engine.currentRecord?.completionEvidence?.observations ?? 0) > 0 &&
+               engine.currentRecord?.completionEvidence?.inputs == 0 && engine.executor.actions.isEmpty,
+               "Read-only completion is backed by actual production frame observation, never artificial input")
         expect(complete.modelRequests == 1, "engine passes recorder to model transport")
         expect(complete.correctness == .unknown && !complete.isVerifiedSuccess, "model finish does not prove correctness")
         expect(complete.versions.executionKind == .offlineReplay, "offline engine cannot impersonate device evidence")
@@ -54,7 +61,7 @@ import Foundation
         fixed.initialPage = "fixture-home"; fixed.searchState = "clear"; fixed.clipboardState = "none"; fixed.bodyPreparation = "none"
         fixed.connectedToMac = true; fixed.confirmed = true
         engine.initialRunConditions = fixed
-        engine.start(task: "offline cancelled trace", settings: settings)
+        engine.start(task: "查看当前画面并告诉我显示内容（取消与恢复计时夹具）", settings: settings)
         try await waitUntil { ModelProbe.calls == 2 }
         let cancelledID = engine.runMetrics!.snapshot.id, taskID = engine.currentRecord!.id
         expect(engine.runMetrics!.snapshot.conditions == fixed, "confirmed UI conditions copied into only this attempt")
@@ -65,6 +72,7 @@ import Foundation
         expect(cancelled.spans.contains { $0.category == .model && $0.outcome == .cancelled }, "in-flight model cancellation counted")
         ModelProbe.delay = 0; engine.resume(delay: 2); try await waitUntil { engine.executionSettled }
         let resumed = engine.runMetrics!.snapshot
+        expect(resumed.outcome == .completed && resumed.finishedAt != nil, "Resumed read-only task also closes its terminal attempt with observed evidence")
         expect(!resumed.conditions.confirmed, "resume requires fresh initial-state confirmation")
         expect(resumed.id != cancelledID && resumed.taskID == taskID, "resume is another attempt with the same task ID")
         expect(resumed.spans.contains { $0.category == .wait }, "real resume delay included")

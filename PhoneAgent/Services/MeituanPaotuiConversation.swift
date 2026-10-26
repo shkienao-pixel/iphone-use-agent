@@ -24,6 +24,7 @@ import UIKit
     }
     private struct State {
         var draft = PaotuiDraft()
+        var request: MeituanPaotuiStore.ConversationRequest?
         var serviceChosen = false
         var keyword = ""
         var city = ""
@@ -49,8 +50,26 @@ import UIKit
     }
     private var account: String { store.chatAccount }
     func isCurrent(_ card: PaotuiChatCard) -> Bool {
-        guard let state = states[card.conversationID] else { return false }
-        return state.cardID == card.id && state.account == account
+        guard let state = states[card.conversationID], state.cardID == card.id, state.account == account,
+              let request = state.request, store.isCurrent(request) else { return false }
+        if let id = card.quoteID {
+            guard let quote = state.quotes.first(where: { $0.id == id }), store.owns(quote, for: request) else { return false }
+            // Expired cards keep their refresh action; the UI separately disables expired submission.
+            if card.kind == "confirm", card.canCreateOrder, !quote.expired { return store.canSubmit(quote, for: request) }
+        }
+        return true
+    }
+    private func validate(_ state: State, id: UUID) throws {
+        try Task.checkCancellation()
+        guard state.account == account, let request = state.request,
+              states[id]?.request == request, store.isCurrent(request) else {
+            throw AgentError.message("本次跑腿需求或授权已改变，请使用当前对话继续")
+        }
+    }
+    private func save(_ state: State, id: UUID) throws {
+        try validate(state, id: id)
+        try store.updateConversationDraft(state.draft, for: state.request!)
+        states[id] = state
     }
     func respond(question: String, history: [AssistantMessage], conversationID: UUID,
                  settings: AgentSettings, apiKey: String, routingInput: ConversationRoutingInput? = nil) async throws -> PaotuiChatReply {
@@ -71,9 +90,10 @@ import UIKit
             }
         }
         state.cardID = nil // A new human turn invalidates prior confirmation.
+        state.request = store.beginConversationRequest(conversationID, draft: state.draft)
         states[conversationID] = state
         let selectedRecipient = store.addresses.first { $0.id == state.draft.recipientID }
-        let selectedSender = store.knownLocations.first { $0.id == state.draft.senderID }
+        let selectedSender = store.locations(for: state.request!).first { $0.id == state.draft.senderID }
         let context: [String: Any] = ["service": state.serviceChosen ? state.draft.service.rawValue : "unknown",
             "goods": state.draft.goods, "store": state.keyword, "city": state.city,
             "recipient": selectedRecipient?.fullAddress ?? "", "sender": selectedSender?.title ?? "",
@@ -103,7 +123,7 @@ import UIKit
         if let planner { raw = try await planner(question, prompt, history) }
         else { raw = try await VisionClient(settings: settings, apiKey: apiKey).routeConversation(input: input, instructions: prompt) }
         try Task.checkCancellation()
-        guard state.account == account else { throw AgentError.message("跑腿授权已改变，请重新选择地址") }
+        try validate(state, id: conversationID)
         guard let bytes = raw.data(using: .utf8), bytes.count <= 16000,
               let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
               Set(object.keys).isSubset(of: ["intent", "service", "goods", "store", "city", "recipient", "sender", "nearby", "remark", "clarification", "edit", "inquiryOnly", "weight", "category"]),
@@ -111,9 +131,16 @@ import UIKit
               plan.intent == nil || ["continue", "new", "cancel", "ordinary_food"].contains(plan.intent!),
               plan.weight.map({ $0.isFinite && (0.1...50).contains($0) }) ?? true,
               [(plan.goods, 500), (plan.store, 120), (plan.city, 40), (plan.recipient, 120), (plan.sender, 120), (plan.remark, 500), (plan.clarification, 500)].allSatisfy({ text, limit in text.map { $0.count <= limit && $0.lowercased() != "null" } ?? true }) else { throw AgentError.message("未能确定跑腿需求，请再描述一下要买／送什么") }
-        if plan.intent == "cancel" { states.removeValue(forKey: conversationID); return .init(text: "已停止这次跑腿准备。已有订单请在美团核对。") }
+        if plan.intent == "cancel" {
+            if let request = state.request { store.discardConversationRequest(request) }
+            states.removeValue(forKey: conversationID)
+            return .init(text: "已停止这次跑腿准备。已有订单请在美团核对。")
+        }
         if let inquiryOnly = plan.inquiryOnly { state.inquiryOnly = inquiryOnly }
-        if ["new", "ordinary_food"].contains(plan.intent ?? "") { let inquiryOnly = state.inquiryOnly; state = State(); state.account = account; state.inquiryOnly = inquiryOnly }
+        if ["new", "ordinary_food"].contains(plan.intent ?? "") {
+            let inquiryOnly = state.inquiryOnly, request = state.request
+            state = State(); state.account = account; state.inquiryOnly = inquiryOnly; state.request = request
+        }
         if let service = plan.service {
             if state.draft.service != service {
                 state.draft.senderID = ""; state.draft.nearby = false; state.searchResults = []
@@ -144,7 +171,7 @@ import UIKit
         if let category = plan.category { state.draft.category = category }
         state.quotes = []; state.selectedQuote = nil
         state.highFeePrompted = false
-        states[conversationID] = state
+        try save(state, id: conversationID)
         if plan.intent == "ordinary_food" {
             return reply("目前接入的是跑腿代买，还没有普通外卖的菜单和购物车接口。你可以选择用跑腿帮买，或打开美团正常点餐。", kind: "mode", conversationID,
                 options: [.init(id: "buy", title: "使用跑腿帮买"), .init(id: "open_meituan", title: "打开美团点外卖")])
@@ -180,7 +207,7 @@ import UIKit
         var card = PaotuiChatCard(conversationID: id, kind: kind, title: text, options: options)
         if let state = states[id] {
             card.goods = state.draft.goods; card.service = state.draft.service.title
-            let sender = store.knownLocations.first { $0.id == state.draft.senderID }
+            let sender = state.request.flatMap { request in store.locations(for: request).first { $0.id == state.draft.senderID } }
             let recipient = store.addresses.first { $0.id == state.draft.recipientID }
             card.purchaseAddress = state.draft.nearby ? "骑手就近购买" : sender?.fullAddress ?? ""
             card.recipientAddress = recipient?.fullAddress ?? ""
@@ -198,7 +225,7 @@ import UIKit
             card.distance = quote.distance; card.service = quote.serviceTitle; card.note = quote.goodsPaymentNote
             if quote.draft.service == .send { card.goodsPrice = 0; card.goodsPriceNote = "帮取送不含代购商品" }
             card.validUntil = quote.quotedAt.addingTimeInterval(5 * 60)
-            card.canCreateOrder = store.canSubmit(quote) && states[id]?.inquiryOnly != true
+            card.canCreateOrder = states[id]?.request.map { store.canSubmit(quote, for: $0) } == true && states[id]?.inquiryOnly != true
         }
         if states[id]?.inquiryOnly == true { card.note += "\n本次只询价，不创建订单。如需下单，请在对话里说明。" }
         if store.hasUnresolvedSubmission { card.note += "\n上一笔跑腿提交结果尚待核验。本次可询价，暂不能重复创建订单。" }
@@ -208,6 +235,7 @@ import UIKit
     }
     private func advance(_ id: UUID) async throws -> PaotuiChatReply {
         guard var state = states[id] else { throw AgentError.message("这次跑腿对话已结束") }
+        try validate(state, id: id)
         if !state.serviceChosen {
             return reply("这次需要骑手帮你做什么？", kind: "mode", id,
                 options: [.init(id: "buy", title: "帮我买东西／买饭"), .init(id: "send", title: "从一个地址取件送到另一个地址")])
@@ -218,41 +246,39 @@ import UIKit
                 options: [.init(id: "0.5", title: "约 0.5 公斤"), .init(id: "1", title: "约 1 公斤"), .init(id: "3", title: "约 3 公斤")])
         }
         if store.addresses.isEmpty { try await store.loadAddresses() }
-        guard state.account == account else { throw AgentError.message("跑腿授权已改变") }
+        try validate(state, id: id)
         if state.draft.recipientID.isEmpty {
             let matches = addressMatches(state, sender: false)
             if matches.count == 1 && !state.recipientKeyword.isEmpty { state.draft.recipientID = matches[0].id }
             else {
-                states[id] = state
+                try save(state, id: id)
                 return addressCard(matches, sender: false, id: id)
             }
         }
-        guard let recipient = store.addresses.first(where: { $0.id == state.draft.recipientID }) else { state.draft.recipientID = ""; states[id] = state; return addressCard(store.addresses, sender: false, id: id) }
+        guard let recipient = store.addresses.first(where: { $0.id == state.draft.recipientID }) else { state.draft.recipientID = ""; try save(state, id: id); return addressCard(store.addresses, sender: false, id: id) }
         let searchCity = state.city.isEmpty ? recipient.city : state.city
         if state.draft.service == .send {
             state.draft.nearby = false
             if state.draft.senderID.isEmpty {
                 let matches = addressMatches(state, sender: true)
                 if matches.count == 1 && !state.senderKeyword.isEmpty { state.draft.senderID = matches[0].id }
-                else { states[id] = state; return addressCard(matches, sender: true, id: id) }
+                else { try save(state, id: id); return addressCard(matches, sender: true, id: id) }
             }
         } else if !state.draft.nearby && state.draft.senderID.isEmpty {
             if state.keyword.isEmpty {
-                states[id] = state
+                try save(state, id: id)
                 return reply("有指定的购买门店吗？可以直接告诉我店名，也可以让骑手就近购买。", kind: "method", id,
                     options: [.init(id: "nearby", title: "骑手就近购买")])
             }
-            if searchCity.isEmpty { states[id] = state; return reply("购买门店在哪个城市？", kind: "info", id) }
-            store.draft = state.draft
-            try await store.search(keyword: state.keyword, city: searchCity)
-            guard state.account == account else { throw AgentError.message("跑腿授权已改变") }
-            state.searchResults = store.places
-            states[id] = state
+            if searchCity.isEmpty { try save(state, id: id); return reply("购买门店在哪个城市？", kind: "info", id) }
+            try save(state, id: id)
+            state.searchResults = try await store.search(keyword: state.keyword, city: searchCity, for: state.request!)
+            try save(state, id: id)
             if state.searchResults.isEmpty { return reply("没有找到这家店，请补充具体店名或分店位置。", kind: "info", id) }
             return reply("选哪一家购买？下面按与收货地址的直线距离排序，营业和库存仍需核实。", kind: "places", id,
                 options: state.searchResults.prefix(5).map { .init(id: $0.id, title: $0.title, detail: $0.address) })
         }
-        states[id] = state
+        try save(state, id: id)
         return reply("先核对这些信息，正确后我再向美团查询实际跑腿费。", kind: "request", id)
     }
     private func addressCard(_ addresses: [PaotuiAddress], sender: Bool, id: UUID) -> PaotuiChatReply {
@@ -290,50 +316,58 @@ import UIKit
                 guard state.searchResults.contains(where: { $0.id == selection.value }) else { throw AgentError.message("门店已改变，请重新查询") }
                 state.draft.senderID = selection.value
             case "quotes":
-                guard let quoteID = UUID(uuidString: selection.value), let quote = state.quotes.first(where: { $0.id == quoteID }), !quote.expired else { throw AgentError.message("报价已过期，请重新询价") }
-                state.selectedQuote = quoteID; states[conversationID] = state
+                guard let quoteID = UUID(uuidString: selection.value), let quote = state.quotes.first(where: { $0.id == quoteID }), !quote.expired,
+                      store.owns(quote, for: state.request!) else { throw AgentError.message("报价已过期，请重新询价") }
+                state.selectedQuote = quoteID; try save(state, id: conversationID)
                 return reply(confirmationText(state), kind: "confirm", conversationID, quote: quote)
             default: throw AgentError.message("这张卡片不接受此选择")
             }
-            states[conversationID] = state
+            try save(state, id: conversationID)
             return try await advance(conversationID)
         case .more:
             guard ["addresses", "senderAddresses"].contains(card.kind) else { throw AgentError.message("请在地址卡片中选择其他地址") }
             let matches = addressMatches(state, sender: card.kind == "senderAddresses")
             state.addressOffset += state.addressOffset == 0 ? 3 : 10
             if state.addressOffset >= matches.count { state.addressOffset = 0 }
-            states[conversationID] = state
+            try save(state, id: conversationID)
             return addressCard(matches, sender: card.kind == "senderAddresses", id: conversationID)
         case .quote:
             guard ["request", "quotes", "confirm"].contains(card.kind) else { throw AgentError.message("请先核对本次跑腿信息") }
             state.selectedQuote = nil; state.highFeePrompted = false
-            store.draft = state.draft
-            state.quotes = try await store.preview()
+            state.request = store.beginConversationRequest(conversationID, draft: state.draft)
             states[conversationID] = state
+            state.quotes = try await store.preview(for: state.request!)
+            try save(state, id: conversationID)
             let options = state.quotes.map { PaotuiChatOption(id: $0.id.uuidString, title: $0.serviceTitle + " · " + $0.feeText, detail: [$0.estimate, state.inquiryOnly ? "查看询价明细" : "查看明细，再确认订单"].filter { !$0.isEmpty }.joined(separator: " · ")) }
             return reply(state.draft.service == .buy ? "这是美团返回的实际跑腿方案。商品费尚未确定，因此完整总价仍待确认。" : "这是美团返回的实际取送方案，费用合计见下方。", kind: "quotes", conversationID, options: options, quote: state.quotes.first)
         case .review:
-            guard let quoteID = card.quoteID, let quote = state.quotes.first(where: { $0.id == quoteID }), !quote.expired else { throw AgentError.message("请重新查询当前报价") }
-            state.selectedQuote = quoteID; states[conversationID] = state
+            guard let quoteID = card.quoteID, let quote = state.quotes.first(where: { $0.id == quoteID }), !quote.expired,
+                  store.owns(quote, for: state.request!) else { throw AgentError.message("请重新查询当前报价") }
+            state.selectedQuote = quoteID; try save(state, id: conversationID)
             return reply(confirmationText(state), kind: "confirm", conversationID, quote: quote)
         case .confirm:
             guard card.kind == "confirm", !state.inquiryOnly, let quoteID = card.quoteID, state.selectedQuote == quoteID,
-                  let quote = state.quotes.first(where: { $0.id == quoteID }), store.canSubmit(quote) else { throw AgentError.message("报价或订单状态已改变，请重新查询；没有重复创建订单") }
+                  let quote = state.quotes.first(where: { $0.id == quoteID }), store.canSubmit(quote, for: state.request!) else { throw AgentError.message("报价或订单状态已改变，请重新查询；没有重复创建订单") }
             guard quote.fee <= 100 || state.highFeePrompted else {
                 state.highFeePrompted = true; states[conversationID] = state
                 var result = reply("本次跑腿费超过 100 元，请再次确认是否接受。", kind: "confirm", conversationID, quote: quote)
                 result.card?.note += "\n超过100元再次确认"
                 return result
             }
-            await store.submitConfirmed(quote)
+            await store.submitConfirmed(quote, for: state.request!)
             guard state.account == account else { throw AgentError.message("跑腿连接已改变，本次提交请在原美团账号核对，勿重复下单。") }
+            do { try validate(state, id: conversationID) }
+            catch is CancellationError { throw CancellationError() }
+            catch { throw AgentError.message("跑腿提交期间需求或授权已改变，请先在美团核对这次结果，勿重复下单。新需求没有自动提交。") }
             let orderURL = store.orderURL(quoteID: quote.id)
             var result = reply(store.message.isEmpty ? "本次未获得订单回执，请先核对订单状态。" : store.message, kind: orderURL == nil ? "info" : "receipt", conversationID, quote: quote)
             result.card?.orderURL = orderURL?.absoluteString
             result.card?.note = orderURL == nil ? "请重新核对当前订单信息。" : store.hasUnresolvedSubmission ? "提交结果需要在美团核对。不要重复下单。" : "请在美团核对并完成支付，Sela 不会自动付款。"
             return result
         case .edit:
-            state.quotes = []; state.selectedQuote = nil; states[conversationID] = state
+            state.quotes = []; state.selectedQuote = nil
+            state.request = store.beginConversationRequest(conversationID, draft: state.draft)
+            try save(state, id: conversationID)
             return reply("想修改商品、门店还是送达地址？直接在这里告诉我。", kind: "info", conversationID)
         }
     }

@@ -14,9 +14,10 @@ struct SelaConversationAvatar: View {
 
 struct SelaTopChrome<Bar: View>: ViewModifier {
     let conversation: Bool
+    private let background: Color
     private let bar: Bar
-    init(conversation: Bool, @ViewBuilder bar: () -> Bar) {
-        self.conversation = conversation; self.bar = bar()
+    init(conversation: Bool, background: Color = AgentPalette.background, @ViewBuilder bar: () -> Bar) {
+        self.conversation = conversation; self.background = background; self.bar = bar()
     }
     @ViewBuilder func body(content: Content) -> some View {
         if conversation {
@@ -25,7 +26,7 @@ struct SelaTopChrome<Bar: View>: ViewModifier {
                     GeometryReader { geometry in
                         // Fade the page's own background; Material adds a
                         // pale tint that looks like a separate white panel.
-                        Rectangle().fill(AgentPalette.background)
+                        Rectangle().fill(background)
                             .frame(height: geometry.safeAreaInsets.top)
                             .mask {
                                 LinearGradient(stops: [

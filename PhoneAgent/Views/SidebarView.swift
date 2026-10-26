@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-private enum SelaSidebarPalette {
+enum SelaSidebarPalette {
     static let background = adaptive(light: 0xFAFAFA, dark: 0x111111)
     static let accent = adaptive(light: 0x282828, dark: 0xEEEEEE)
     static let selection = adaptive(light: 0xEAEAEA, dark: 0x282828)
@@ -115,6 +115,8 @@ struct SidebarView: View {
                     }
                     if !model.history.error.isEmpty {
                         AgentNotice(text: model.history.error, error: true).padding(.horizontal, 12)
+                        Button("重试保存任务记录") { model.retryTaskRecordPersistence() }
+                            .font(.caption).padding(.horizontal, 12)
                     }
                     if !model.conversation.storageError.isEmpty {
                         AgentNotice(text: model.conversation.storageError, error: true).padding(.horizontal, 12)

@@ -24,6 +24,7 @@ struct SettingsView: View {
     @State private var advancedConnection = false
     @State private var clearHistory = false
     @State private var clearReceipts = false
+    @State private var receiptNotice = ""
     @State private var exportingReceipts = false
     @State private var receiptDocument: ArtifactDocument?
     @State private var receiptError = ""
@@ -102,12 +103,15 @@ struct SettingsView: View {
         .fileExporter(isPresented: $exportingReceipts, document: receiptDocument, contentType: .json, defaultFilename: "Sela 工具回执.json") { result in
             if case .failure(let failure) = result { receiptError = failure.localizedDescription }; receiptDocument = nil
         }
-        .confirmationDialog("清除本机工具回执？", isPresented: $clearReceipts, titleVisibility: .visible) {
-            Button("清除", role: .destructive) {
-                guard !model.engine.hasCurrentTask, !model.engine.releasing else { receiptError = "请先结束当前的可恢复任务"; return }
-                do { try model.tools.clearReceipts(); receiptError = "" } catch { receiptError = error.localizedDescription }
+        .confirmationDialog("清理已结束任务的工具回执？", isPresented: $clearReceipts, titleVisibility: .visible) {
+            Button("清理", role: .destructive) {
+                do {
+                    let result = try model.cleanEndedTaskReceipts()
+                    receiptError = ""
+                    receiptNotice = "已清理 \(result.removed) 条回执，保留 \(result.retained) 条恢复或核验记录"
+                } catch { receiptNotice = ""; receiptError = error.localizedDescription }
             }
-        } message: { Text("不会删除系统里已创建的日程、提醒或闹钟。重复提交防护记录将删除；请先核对所有未确认结果。当前有可恢复任务时不能清理。") }
+        } message: { Text("只清理已结束任务的回执，保留可恢复任务和结果未确认的记录。系统里已创建的日程、提醒或闹钟不会删除。") }
         .confirmationDialog("删除全部任务和行动记录？", isPresented: $clearHistory, titleVisibility: .visible) {
             Button("删除全部历史", role: .destructive) { model.clearHistory() }
         }
@@ -374,13 +378,15 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("本机保存提交记录用于防止同一任务重复创建；它独立于任务历史。清理前请核对系统中的实际结果。") .font(.caption).foregroundStyle(AgentPalette.secondaryText)
                             Button("导出工具回执") { do { receiptDocument = ArtifactDocument(data: try model.tools.exportReceipts()); exportingReceipts = true } catch { receiptError = error.localizedDescription } }.frame(minHeight: 44)
-                            Button("清除工具回执", role: .destructive) { clearReceipts = true }.frame(minHeight: 44).disabled(model.engine.hasCurrentTask || model.engine.releasing)
+                            Button("清理已结束任务回执", role: .destructive) { clearReceipts = true }.frame(minHeight: 44).disabled(model.toolReceiptMaintenanceBlockedReason != nil)
+                            if let reason = model.toolReceiptMaintenanceBlockedReason { Text(reason).font(.caption).foregroundStyle(AgentPalette.secondaryText) }
+                            if !receiptNotice.isEmpty { Text(receiptNotice).font(.caption).foregroundStyle(AgentPalette.secondaryText) }
                             if !receiptError.isEmpty { AgentNotice(text: receiptError, error: true) }
                             if !model.tools.error.isEmpty { AgentNotice(text: model.tools.error, error: true) }
                         }.padding(.top, 12)
                     }
                     Button("清除任务历史", role: .destructive) { clearHistory = true }
-                        .foregroundStyle(.red).frame(minHeight: 44).disabled(model.history.records.isEmpty || model.engine.running || model.engine.releasing)
+                        .foregroundStyle(.red).frame(minHeight: 44).disabled(model.history.records.isEmpty || model.toolReceiptMaintenanceContext.executionInFlight)
                     Text("删除本机记录不会删除服务商已接收的数据。")
                         .font(.caption).foregroundStyle(AgentPalette.secondaryText)
                 }
