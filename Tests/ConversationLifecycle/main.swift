@@ -212,6 +212,83 @@ import Foundation
         let reopenedPresentedText = conversation("presentation-background-text")
         expect(!reopenedPresentedText.ownsPresentation(textOwner) && reopenedPresentedText.messages.last?.text == "离开页面后的文本回答", "Presentation ownership is process-local and is never restored from the conversation archive")
 
+        // Real SwiftUI navigation can briefly mount B after the surviving C.
+        // When B leaves, C must regain its existing composer and send authority.
+        let surviving = conversation("presentation-transient-fallback"), survivor = UUID(), transient = UUID()
+        surviving.claimPresentation(survivor)
+        surviving.claimPresentation(survivor)
+        expect(surviving.claimPresentation(transient) && !surviving.ownsPresentation(survivor), "A transient presenter temporarily owns the shared view boundary")
+        let transientReleased = surviving.releasePresentation(transient)
+        if transientReleased { surviving.cancelScreenBoundRequest() }
+        expect(!transientReleased && surviving.ownsPresentation(survivor), "A transient exit restores the still-present composer without shared cleanup")
+        let survivingStart = model.requests.count
+        surviving.draft = "导航返回后由原页面发送的文本"
+        let survivorSent = surviving.ownsPresentation(survivor) && surviving.send(settings: settings, apiKey: "", memories: memories)
+        expect(survivorSent, "The restored presenter passes the actual send ownership gate and submits its retained draft")
+        try await settle { model.requests.count == survivingStart + 1 }
+        surviving.claimPresentation(transient)
+        let pendingTransientReleased = surviving.releasePresentation(transient)
+        if pendingTransientReleased { surviving.cancelScreenBoundRequest() }
+        expect(!pendingTransientReleased && surviving.ownsPresentation(survivor) && surviving.loading && surviving.messages.last?.text == "导航返回后由原页面发送的文本", "A second transient exit cannot cancel the surviving presenter's real pending turn")
+        model.complete(survivingStart, answer: "原页面本轮回答")
+        try await settle { !surviving.loading }
+        expect(surviving.messages.map(\.text) == ["导航返回后由原页面发送的文本", "原页面本轮回答"], "The resumed composer receives only its own completed user turn and answer")
+        expect(surviving.releasePresentation(survivor) && !surviving.ownsPresentation(survivor), "One final release cleans up a repeatedly claimed presenter without leaving duplicate registrations")
+        expect(!surviving.releasePresentation(survivor), "A repeated final release cannot clean up another presentation")
+
+        let removed = conversation("presentation-remove-hidden-owner"), removedOld = UUID(), visible = UUID(), overlay = UUID()
+        removed.claimPresentation(removedOld); removed.claimPresentation(visible); removed.claimPresentation(overlay)
+        expect(!removed.releasePresentation(removedOld) && removed.ownsPresentation(overlay), "An older hidden presenter unregisters without disturbing the current one")
+        expect(!removed.releasePresentation(overlay) && removed.ownsPresentation(visible), "A transient presenter falls back to the remaining visible view")
+        expect(removed.releasePresentation(visible) && !removed.ownsPresentation(removedOld), "The last live release cleans up and never resurrects an older view that already disappeared")
+        expect(!removed.releasePresentation(removedOld), "The removed older owner cannot later acquire cleanup authority")
+
+        // Revoking access cancels every real request, including routers that
+        // ignore cancellation until their local continuations are resumed.
+        let cancelledAll = conversation("cancel-all-late-routes"), cancelledAllStart = model.requests.count
+        let cancelledAllA = cancelledAll.currentConversationID
+        let cancelledQuestionA = "撤销授权前等待路由的 A 原问题"
+        let cancelledQuestionB = "撤销授权前等待路由的 B 原问题"
+        var cancelledRoutes: [String: CheckedContinuation<ConversationRoute, Never>] = [:]
+        var returnedCancelledRoutes: Set<String> = []
+        cancelledAll.unifiedRoute = { input in
+            let route = await withCheckedContinuation { cancelledRoutes[input.question] = $0 }
+            returnedCancelledRoutes.insert(input.question)
+            return route
+        }
+        cancelledAll.draft = cancelledQuestionA
+        expect(cancelledAll.send(settings: settings, apiKey: "", memories: memories), "Cancel-all fixture starts its first production conversation request")
+        try await settle { cancelledRoutes[cancelledQuestionA] != nil }
+        cancelledAll.newConversation(); let cancelledAllB = cancelledAll.currentConversationID
+        cancelledAll.draft = cancelledQuestionB
+        expect(cancelledAll.send(settings: settings, apiKey: "", memories: memories), "Cancel-all fixture starts a second production request while the first router waits")
+        try await settle { cancelledRoutes[cancelledQuestionB] != nil }
+        expect(cancelledAll.processingConversationIDs == [cancelledAllA, cancelledAllB] && model.requests.count == cancelledAllStart, "Both conversations are waiting in the router before any ordinary answer is requested")
+
+        cancelledAll.cancelAllRequests()
+        expect(cancelledAll.currentConversationID == cancelledAllB && !cancelledAll.loading && cancelledAll.messages.isEmpty && cancelledAll.draft == cancelledQuestionB, "Cancel-all synchronously restores the active question without a phantom turn or navigation")
+        expect(cancelledAll.processingConversationIDs == [cancelledAllA] && cancelledAll.backgroundRequestCount == 1 && cancelledAll.conversations.first(where: { $0.id == cancelledAllA })?.messages.map(\.text) == [cancelledQuestionA], "Cancel-all retains the cancelled background handle until its own failure handler can restore its question")
+
+        cancelledRoutes.removeValue(forKey: cancelledQuestionB)!.resume(returning: .init(mode: .chat, request: "", message: ""))
+        try await settle { returnedCancelledRoutes.contains(cancelledQuestionB) }
+        await drain()
+        expect(cancelledAll.currentConversationID == cancelledAllB && cancelledAll.messages.isEmpty && cancelledAll.draft == cancelledQuestionB && cancelledAll.processingConversationIDs == [cancelledAllA] && model.requests.count == cancelledAllStart, "The active conversation's late chat route cannot restart an answer or consume its restored question")
+
+        cancelledRoutes.removeValue(forKey: cancelledQuestionA)!.resume(returning: .init(mode: .chat, request: "", message: ""))
+        try await settle { returnedCancelledRoutes.count == 2 }
+        await drain()
+        expect(model.requests.count == cancelledAllStart, "Neither cancelled late chat route starts an ordinary model answer")
+        // Release an unexpected boundary request after recording its failure so
+        // a regression reports assertions instead of leaking a continuation.
+        if model.requests.count > cancelledAllStart {
+            for index in cancelledAllStart..<model.requests.count { model.complete(index, answer: "不得采用的取消后回答") }
+        }
+        try await settle { cancelledAll.processingConversationIDs.isEmpty }
+        expect(cancelledAll.currentConversationID == cancelledAllB && !cancelledAll.loading && cancelledAll.messages.isEmpty && cancelledAll.draft == cancelledQuestionB, "Both late returns leave the current conversation and its exact draft untouched")
+        expect(cancelledAll.conversations.first(where: { $0.id == cancelledAllA })?.draft == cancelledQuestionA && cancelledAll.conversations.first(where: { $0.id == cancelledAllA })?.messages.isEmpty == true, "The background cancellation handler restores only its own exact draft and removes its pending user turn")
+        let cancelledAllArchive = AssistantConversationStore(url: folder.appendingPathComponent("cancel-all-late-routes.json"))
+        expect(cancelledAllArchive.error.isEmpty && cancelledAllArchive.currentConversationID == cancelledAllB && cancelledAllArchive.records.first(where: { $0.id == cancelledAllA })?.draft == cancelledQuestionA && cancelledAllArchive.records.first(where: { $0.id == cancelledAllB })?.draft == cancelledQuestionB && cancelledAllArchive.records.allSatisfy({ $0.messages.isEmpty }), "The real archive retains both cancelled drafts, no phantom messages and the unchanged current conversation")
+
         let bounded = conversation("bounded-parallelism"), boundedStart = model.requests.count
         for i in 0..<AssistantConversation.maximumParallelConversations {
             bounded.draft = "等待查询 \(i)"

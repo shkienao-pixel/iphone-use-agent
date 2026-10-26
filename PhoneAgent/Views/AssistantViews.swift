@@ -485,14 +485,10 @@ struct AssistantView: View {
         .confirmationDialog("清空本次对话？", isPresented: $clear, titleVisibility: .visible) {
             Button("清空", role: .destructive) { resetConversation() }
         }
-        .onChange(of: model.conversation.currentConversationID) { _, conversationID in
+        .onChange(of: model.conversation.currentConversationID) { _, _ in
+            synchronizeConversationDraft()
             guard model.conversation.ownsPresentation(presentationID) else { return }
-            attachmentConversationID = conversationID
-            attachmentDraft.replace(model.conversation.retryAttachments)
-            showAttachmentPhotos = false; showAttachmentFiles = false
             stopConversationMedia()
-            followingConversation = true
-            lastSpokenMessage = model.conversation.messages.last?.id
         }
         .onChange(of: model.conversation.retryAttachments, initial: true) { _, attachments in
             if !attachments.isEmpty, attachmentDraft.items.isEmpty { attachmentDraft.replace(attachments) }
@@ -505,9 +501,9 @@ struct AssistantView: View {
         }
         .onAppear {
             let questionRequested = model.voiceMode == .question
+            synchronizeConversationDraft()
             if model.conversation.claimPresentation(presentationID) { stopConversationMedia() }
             model.assistantInputActive = composing || dictating
-            attachmentConversationID = model.conversation.currentConversationID
             if questionRequested { model.voiceMode = .question; startListening() }
         }
         .onChange(of: model.voiceMode) { _, mode in
@@ -747,8 +743,21 @@ struct AssistantView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("conversation.response.actions." + message.id.uuidString)
     }
+    /// Local drafts follow the selected chat even while another mounted view
+    /// owns shared media. Replacing invalidates any old picker/import generation.
+    private func synchronizeConversationDraft() {
+        let conversationID = model.conversation.currentConversationID
+        guard attachmentConversationID != conversationID else { return }
+        attachmentConversationID = conversationID
+        attachmentDraft.replace(model.conversation.retryAttachments)
+        showAttachmentPhotos = false; showAttachmentFiles = false
+        followingConversation = true
+        lastSpokenMessage = model.conversation.messages.last?.id
+    }
+
     private func send() {
         guard model.conversation.ownsPresentation(presentationID) else { return }
+        synchronizeConversationDraft()
         composing = false
         if model.speech.listening { finishAndSend(); return }
         guard !attachmentDraft.importing, !showAttachmentPhotos, !showAttachmentFiles else { return }

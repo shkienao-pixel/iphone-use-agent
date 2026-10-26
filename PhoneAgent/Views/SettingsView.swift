@@ -17,7 +17,9 @@ struct SettingsView: View {
     var focusedPage: SettingsPage? = nil
     @State private var path: [SettingsPage] = []
     let onBack: () -> Void
-    @State private var apiKey = ""
+    @State private var keyDraft = ModelCredentialDraft()
+    @State private var connectionDraftLoaded = false
+    @State private var removeKeyEndpoint: String?
     @State private var showKey = false
     @State private var checking = false
     @State private var providerSelection = "custom"
@@ -34,6 +36,10 @@ struct SettingsView: View {
     private var locked: Bool { model.engine.running || model.engine.releasing || model.voicePending }
     private var modelSummary: String {
         model.modelReady ? "\(PrivacyConsent.recipient(model.settings)) · \(model.settings.model)" : "连接你使用的 AI 服务"
+    }
+    private var apiKey: String { keyDraft.value }
+    private var apiKeyBinding: Binding<String> {
+        Binding(get: { keyDraft.value }, set: { keyDraft.edit($0); connectionMessage = "" })
     }
     var body: some View {
         NavigationStack(path: $path) {
@@ -118,6 +124,20 @@ struct SettingsView: View {
         .confirmationDialog("撤回后会停止任务和屏幕共享。", isPresented: $revoke, titleVisibility: .visible) {
             Button("撤回 AI 数据授权", role: .destructive) { model.revokeConsent() }
         }
+        .confirmationDialog("移除此接口的 API Key？", isPresented: Binding(
+            get: { removeKeyEndpoint != nil }, set: { if !$0 { removeKeyEndpoint = nil } }),
+            titleVisibility: .visible, presenting: removeKeyEndpoint) { endpoint in
+            Button("移除 Key", role: .destructive) {
+                connectionFailed = !model.removeModelKey(for: endpoint)
+                connectionMessage = model.notice
+                if !connectionFailed, endpoint == model.settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines) {
+                    keyDraft.loadSaved("", for: endpoint)
+                }
+                removeKeyEndpoint = nil
+            }
+        } message: { endpoint in
+            Text("只移除 \(endpoint) 的 Key，其他接口的 Key 保留。当前执行会暂停；已发送给服务的请求无法撤回。")
+        }
         .onAppear {
             loadConnectionDraft()
             #if DEBUG
@@ -128,7 +148,7 @@ struct SettingsView: View {
             #endif
         }
         .onChange(of: model.settings.endpoint) { _, _ in
-            apiKey = SettingsStore.apiKey(for: model.settings.endpoint)
+            updateConnectionEndpointDraft()
             connectionMessage = ""
         }
     }
@@ -216,13 +236,18 @@ struct SettingsView: View {
                     field("API Key") {
                         HStack(spacing: 8) {
                             Group {
-                                if showKey { TextField("粘贴 API Key", text: $apiKey, prompt: Text("粘贴 API Key").foregroundStyle(AgentPalette.placeholder)) }
-                                else { SecureField("粘贴 API Key", text: $apiKey, prompt: Text("粘贴 API Key").foregroundStyle(AgentPalette.placeholder)) }
+                                if showKey { TextField("粘贴 API Key", text: apiKeyBinding, prompt: Text("粘贴 API Key").foregroundStyle(AgentPalette.placeholder)) }
+                                else { SecureField("粘贴 API Key", text: apiKeyBinding, prompt: Text("粘贴 API Key").foregroundStyle(AgentPalette.placeholder)) }
                             }.textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("API Key")
                             Button { showKey.toggle() } label: {
                                 Image(systemName: showKey ? "eye.slash" : "eye").frame(width: 44, height: 44)
                             }.buttonStyle(.plain).accessibilityLabel(showKey ? "隐藏 API Key" : "显示 API Key")
                         }.agentField()
+                    }
+                    if keyDraft.retainedAfterEndpointChange {
+                        Text("未保存的 Key 已保留。点击保存或测试时，将用于当前接口：\(model.settings.endpoint.isEmpty ? "尚未填写" : model.settings.endpoint)")
+                            .font(.caption).foregroundStyle(AgentPalette.secondaryText)
+                            .accessibilityIdentifier("model.keyDraftDestination")
                     }
                     Text("模型接口必须使用有效 HTTPS 地址。请填写完整的 Chat Completions URL。")
                         .font(.caption).foregroundStyle(AgentPalette.secondaryText)
@@ -233,13 +258,23 @@ struct SettingsView: View {
             GlassEffectContainer(spacing: 12) {
                 let actionLayout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
                 actionLayout {
-                    Button("保存配置") { model.saveKey(apiKey); connectionFailed = false; connectionMessage = model.notice }
+                    Button("保存配置") {
+                        updateConnectionEndpointDraft()
+                        connectionFailed = !model.saveKey(apiKey)
+                        connectionMessage = model.notice
+                        if !connectionFailed { keyDraft.loadSaved(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: model.settings.endpoint) }
+                    }
                         .buttonStyle(AgentButtonStyle())
                     Button(checking ? "连接中…" : "测试连接") { checkConnection() }
                         .buttonStyle(AgentButtonStyle(primary: false))
                         .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            Button("移除当前接口的 Key", role: .destructive) {
+                removeKeyEndpoint = model.settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .frame(minHeight: 44).accessibilityIdentifier("model.removeKey")
+            .disabled(SettingsStore.apiKey(for: model.settings.endpoint).isEmpty)
             if !connectionMessage.isEmpty { AgentNotice(text: connectionMessage, error: connectionFailed) }
             AgentCard {
                 DisclosureGroup("兼容性与回复长度", isExpanded: $advancedConnection) {
@@ -432,8 +467,14 @@ struct SettingsView: View {
     private func loadConnectionDraft() {
         // The destination may appear independently of the settings root (for
         // example a Debug review route). Populate its local draft when visible.
-        apiKey = model.settings.usesChatGPTPlan ? "" : SettingsStore.apiKey(for: model.settings.endpoint)
+        guard !connectionDraftLoaded else { updateConnectionEndpointDraft(); return }
+        connectionDraftLoaded = true
+        keyDraft.loadSaved(model.settings.usesChatGPTPlan ? "" : SettingsStore.apiKey(for: model.settings.endpoint), for: model.settings.endpoint)
         providerSelection = inferredService
+    }
+    private func updateConnectionEndpointDraft() {
+        keyDraft.endpointChanged(to: model.settings.endpoint,
+            savedKey: model.settings.usesChatGPTPlan ? "" : SettingsStore.apiKey(for: model.settings.endpoint))
     }
     private func chooseService(_ value: String) {
         guard value != providerSelection else { return }
@@ -444,7 +485,7 @@ struct SettingsView: View {
             model.settings.endpoint = ChatGPTPlanProtocol.endpoint
             model.settings.providerName = "ChatGPT 计划"
             model.settings.jsonMode = true; model.settings.legacyTokenLimit = false
-            apiKey = ""; return
+            updateConnectionEndpointDraft(); return
         }
         model.settings.modelAuthentication = nil
         switch value {
@@ -459,17 +500,31 @@ struct SettingsView: View {
         default:
             model.settings.endpoint = ""; model.settings.model = ""; model.settings.providerName = nil
         }
-        if wasPlan { apiKey = SettingsStore.apiKey(for: model.settings.endpoint) }
-        else { apiKey = ""; model.saveKey("") }
+        updateConnectionEndpointDraft()
     }
     private func checkConnection() {
+        updateConnectionEndpointDraft()
+        let configuration = model.settings
+        let request: ModelConnectionSaveRequest
+        do {
+            request = try ModelConnectionSaveRequest(endpoint: configuration.endpoint, model: configuration.model,
+                key: apiKey, validateEndpoint: ModelEndpointPolicy.url)
+        } catch {
+            connectionFailed = true; connectionMessage = error.localizedDescription; return
+        }
         checking = true; connectionMessage = ""
         Task {
             defer { checking = false }
             do {
-                try await VisionClient(settings: model.settings, apiKey: apiKey).checkConnection()
+                try await VisionClient(settings: configuration, apiKey: request.key).checkConnection()
+                guard model.settings.endpoint == configuration.endpoint, model.settings.model == configuration.model,
+                      apiKey.trimmingCharacters(in: .whitespacesAndNewlines) == request.key else { return }
                 connectionFailed = false; connectionMessage = "接口连接成功。图像与动作能力会在实际任务中确认。"
-            } catch { connectionFailed = true; connectionMessage = error.localizedDescription }
+            } catch {
+                guard model.settings.endpoint == configuration.endpoint, model.settings.model == configuration.model,
+                      apiKey.trimmingCharacters(in: .whitespacesAndNewlines) == request.key else { return }
+                connectionFailed = true; connectionMessage = error.localizedDescription
+            }
         }
     }
 }

@@ -284,7 +284,7 @@ final class PhoneAgentViewModel: ObservableObject {
         if preparingAutomatically { cancelAutomaticPreparation(message: "未授权模型处理数据，准备已停止") }
     }
     func revokeConsent() {
-        stop(); backgroundTasks.pauseAll(); capture.stop(); PrivacyConsent.revoke(); objectWillChange.send()
+        stop(); conversation.cancelAllRequests(); backgroundTasks.pauseAll(); capture.stop(); PrivacyConsent.revoke(); objectWillChange.send()
         notice = "已撤回 AI 数据授权并停止屏幕共享"
     }
     func resumeAgent() {
@@ -1203,9 +1203,26 @@ final class PhoneAgentViewModel: ObservableObject {
             await ble.release(expectedConnection: inputConnection); manualBusy = false; manualScreenWorkflow = false; manual = nil
         }
     }
-    func saveKey(_ key: String) {
-        do { try SettingsStore.saveAPIKey(key.trimmingCharacters(in: .whitespacesAndNewlines)); notice = "模型配置已保存" }
-        catch { notice = error.localizedDescription }
+    @discardableResult
+    func saveKey(_ key: String) -> Bool {
+        do {
+            let request = try ModelConnectionSaveRequest(endpoint: settings.endpoint, model: settings.model,
+                key: key, validateEndpoint: ModelEndpointPolicy.url)
+            try SettingsStore.saveAPIKey(request.key, for: request.endpoint)
+            if settings.endpoint != request.endpoint { settings.endpoint = request.endpoint }
+            if settings.model != request.model { settings.model = request.model }
+            notice = "模型配置已保存"; return true
+        } catch { notice = error.localizedDescription; return false }
+    }
+    @discardableResult
+    func removeModelKey(for endpoint: String) -> Bool {
+        do {
+            try SettingsStore.removeAPIKey(for: endpoint)
+            if endpoint.trimmingCharacters(in: .whitespacesAndNewlines) == settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines) {
+                backgroundTasks.pauseAll(); _ = pauseTask(); liveCamera.stop(); conversation.cancelAllRequests()
+            }
+            notice = "已移除此接口的 API Key，其他接口的 Key 已保留"; return true
+        } catch { notice = error.localizedDescription; return false }
     }
 }
 
