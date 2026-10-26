@@ -100,14 +100,66 @@ final class PhoneAgentViewModel: ObservableObject {
             guard let self else { fatalError("Task coordinator outlived its owner") }
             return self.makeBackgroundEngine(settings: config)
         }
+        pool.persistRecord = { [weak self] record in
+            guard let self else { return false }
+            let saved = self.history.upsert(record)
+            if !saved { self.notice = self.history.error }
+            return saved
+        }
         pool.onRecord = { [weak self] record, _ in
             guard let self else { return }
-            self.history.upsert(record)
             self.conversation.retainTaskResult(record.nativeConversationSnapshot)
             self.objectWillChange.send()
         }
         return pool
     }()
+    var toolReceiptMaintenanceContext: ToolReceiptMaintenanceContext {
+        var protected = Set(history.records.filter { $0.outcome.retainsRecoveryCheckpoint }.map(\.id))
+        protected.formUnion(taskQueue.items.filter(\.resumable).map(\.id))
+        protected.formUnion(backgroundTasks.checkpointRecords.filter { $0.outcome.retainsRecoveryCheckpoint }.map(\.id))
+        if let record = engine.currentRecord, record.outcome.retainsRecoveryCheckpoint { protected.insert(record.id) }
+        return ToolReceiptMaintenanceContext(protectedTaskIDs: protected,
+            executionInFlight: !engine.executionSettled || backgroundTasks.hasUnsettledExecution || queueRunning || queueSwitching || preparingAutomatically,
+            taskStorageAvailable: history.error.isEmpty && taskQueue.error.isEmpty)
+    }
+    var toolReceiptMaintenanceBlockedReason: String? {
+        tools.receiptMaintenanceBlockedReason(toolReceiptMaintenanceContext)
+    }
+    @discardableResult
+    func cleanEndedTaskReceipts() throws -> ToolReceiptCleanupResult {
+        try tools.clearReceipts(context: toolReceiptMaintenanceContext)
+    }
+    func retryTaskRecordPersistence() {
+        guard engine.executionSettled, !backgroundTasks.hasUnsettledExecution,
+              !queueRunning, !queueSwitching, !preparingAutomatically else {
+            notice = "请先暂停正在执行的任务，再重试保存记录"; return
+        }
+        var checkpoints = Dictionary(uniqueKeysWithValues: backgroundTasks.checkpointRecords.map { ($0.id, $0) })
+        if let current = engine.currentRecord { checkpoints[current.id] = current }
+        let ordered = checkpoints.values.sorted { $0.updatedAt == $1.updatedAt ? $0.id.uuidString < $1.id.uuidString : $0.updatedAt > $1.updatedAt }
+        guard history.saveCheckpoints(ordered) else { notice = history.error; return }
+        guard backgroundTasks.acknowledgeSavedCheckpoints(ordered) else {
+            notice = "记录已保存，但当前任务检查点又有变化，请重新核对后重试保存"; return
+        }
+        if !taskQueue.error.isEmpty {
+            do {
+                try taskQueue.transaction { items in
+                    for index in items.indices where items[index].state == .running {
+                        items[index].state = .suspended
+                        items[index].note = "记录已重新保存；请核对实际结果后手动继续"
+                        if items[index].record.outcome == .running { items[index].record.outcome = .interrupted }
+                    }
+                }
+            } catch {
+                notice = "任务历史已保存，队列仍未能保存：" + error.localizedDescription
+                return
+            }
+        }
+        // Re-establish the original conversation handoff only after its task is
+        // durable. This callback does not start or resume an execution session.
+        if let current = engine.currentRecord { engine.onRecord?(current) }
+        notice = history.error.isEmpty && taskQueue.error.isEmpty ? "任务记录已保存；请手动确认是否继续任务" : (history.error.isEmpty ? taskQueue.error : history.error)
+    }
     let contentStore = PhoneContentStore.shared
     let camera = CameraService()
     let liveCamera = LiveCameraObserver()
@@ -232,7 +284,7 @@ final class PhoneAgentViewModel: ObservableObject {
         if preparingAutomatically { cancelAutomaticPreparation(message: "未授权模型处理数据，准备已停止") }
     }
     func revokeConsent() {
-        stop(); backgroundTasks.pauseAll(); capture.stop(); PrivacyConsent.revoke(); objectWillChange.send()
+        stop(); conversation.cancelAllRequests(); backgroundTasks.pauseAll(); capture.stop(); PrivacyConsent.revoke(); objectWillChange.send()
         notice = "已撤回 AI 数据授权并停止屏幕共享"
     }
     func resumeAgent() {
@@ -253,6 +305,8 @@ final class PhoneAgentViewModel: ObservableObject {
         let selected: PhoneTaskRecord?
         if engine.currentRecord?.id == id {
             selected = engine.currentRecord
+        } else if let native = backgroundTasks.record(id) {
+            selected = native
         } else if let historical, let queued {
             let historyStep = historical.checkpointStep ?? max(0, historical.logs.map(\.step).max() ?? 0)
             let queueStep = max(queued.step, queued.record.checkpointStep ?? max(0, queued.record.logs.map(\.step).max() ?? 0))
@@ -324,13 +378,13 @@ final class PhoneAgentViewModel: ObservableObject {
         }
     }
     func removeTask(_ id: UUID) {
-        guard !queueRunning, !queueSwitching, !engine.running, !engine.releasing else { return }
-        if engine.currentRecord?.id == id { engine.discardCurrent() }
-        history.remove(id)
+        guard !toolReceiptMaintenanceContext.executionInFlight else { return }
+        if history.remove(id), engine.currentRecord?.id == id { engine.discardCurrent() }
     }
     func clearHistory() {
-        guard !queueRunning, !queueSwitching, !engine.running, !engine.releasing else { return }
-        engine.discardCurrent(); history.clear()
+        guard !toolReceiptMaintenanceContext.executionInFlight else { return }
+        history.clear()
+        if history.error.isEmpty { engine.discardCurrent() }
     }
     @Published var manualBusy = false {
         didSet { if oldValue != manualBusy { conversationInteractionID = UUID() } }
@@ -549,9 +603,25 @@ final class PhoneAgentViewModel: ObservableObject {
             self.taskNotifications.observe(taskID: record?.id, title: record?.title ?? "",
                 sessionID: self.engine.activityControlSessionID, phase: phase.rawValue, releasing: releasing)
         }.store(in: &observers)
+        engine.persistRecord = { [weak self] record in
+            guard let self else { return false }
+            let saved = self.history.upsert(record)
+            if !saved { self.notice = self.history.error }
+            return saved
+        }
+        engine.executionPersistenceReady = { [weak self] in
+            guard let self else { return false }
+            return self.history.error.isEmpty && (self.queueActiveID == nil || self.taskQueue.error.isEmpty)
+        }
+        engine.completedToolReceipts = { [weak self] taskID in
+            guard let self, self.consentReady else { return [] }
+            return self.tools.completedTaskReceipts(taskID: taskID)
+        }
         engine.onRecord = { [weak self] record in
-            self?.history.upsert(record); self?.recordQueueProgress(record)
-            if let self, let pending = self.pendingConversationTask, pending.taskID == record.id {
+            guard let self else { return }
+            guard self.history.error.isEmpty else { self.notice = self.history.error; return }
+            self.recordQueueProgress(record)
+            if let pending = self.pendingConversationTask, pending.taskID == record.id {
                 self.pendingConversationTask = nil
                 if self.conversation.linkTask(record.id, to: pending.messageID, in: pending.conversationID) {
                     self.conversation.reportTaskHandoff(text: "任务已启动。", to: pending.messageID, in: pending.conversationID, onlyIfUnlinked: false)
@@ -559,7 +629,7 @@ final class PhoneAgentViewModel: ObservableObject {
                     self.conversation.reportTaskHandoff(text: "任务已启动，但任务卡未能保存关联，请到任务记录查看。", to: pending.messageID, in: pending.conversationID, onlyIfUnlinked: false)
                 }
             }
-            self?.conversation.retainTaskResult(record.nativeConversationSnapshot)
+            self.conversation.retainTaskResult(record.nativeConversationSnapshot)
         }
         engine.$phase.removeDuplicates().sink { [weak self] phase in
             guard let self, self.recordingAudioOwner == nil, self.settings.spokenFeedback == true, UIApplication.shared.applicationState == .active else { return }
@@ -573,7 +643,10 @@ final class PhoneAgentViewModel: ObservableObject {
         }
         speech.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         conversation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
-        conversation.retainTaskResults(history.records.map(\.nativeConversationSnapshot))
+        for offset in stride(from: 0, to: history.records.count, by: 50) {
+            let batch = Array(history.records[offset..<min(offset + 50, history.records.count)])
+            conversation.retainTaskResults(batch.map(\.nativeConversationSnapshot))
+        }
         Publishers.Merge(
             NotificationCenter.default.publisher(for: UIAccessibility.assistiveTouchStatusDidChangeNotification),
             NotificationCenter.default.publisher(for: UIAccessibility.guidedAccessStatusDidChangeNotification))
@@ -1130,9 +1203,26 @@ final class PhoneAgentViewModel: ObservableObject {
             await ble.release(expectedConnection: inputConnection); manualBusy = false; manualScreenWorkflow = false; manual = nil
         }
     }
-    func saveKey(_ key: String) {
-        do { try SettingsStore.saveAPIKey(key.trimmingCharacters(in: .whitespacesAndNewlines)); notice = "模型配置已保存" }
-        catch { notice = error.localizedDescription }
+    @discardableResult
+    func saveKey(_ key: String) -> Bool {
+        do {
+            let request = try ModelConnectionSaveRequest(endpoint: settings.endpoint, model: settings.model,
+                key: key, validateEndpoint: ModelEndpointPolicy.url)
+            try SettingsStore.saveAPIKey(request.key, for: request.endpoint)
+            if settings.endpoint != request.endpoint { settings.endpoint = request.endpoint }
+            if settings.model != request.model { settings.model = request.model }
+            notice = "模型配置已保存"; return true
+        } catch { notice = error.localizedDescription; return false }
+    }
+    @discardableResult
+    func removeModelKey(for endpoint: String) -> Bool {
+        do {
+            try SettingsStore.removeAPIKey(for: endpoint)
+            if endpoint.trimmingCharacters(in: .whitespacesAndNewlines) == settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines) {
+                backgroundTasks.pauseAll(); _ = pauseTask(); liveCamera.stop(); conversation.cancelAllRequests()
+            }
+            notice = "已移除此接口的 API Key，其他接口的 Key 已保留"; return true
+        } catch { notice = error.localizedDescription; return false }
     }
 }
 

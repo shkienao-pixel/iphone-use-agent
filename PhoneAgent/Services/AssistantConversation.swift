@@ -60,6 +60,7 @@ final class AssistantConversation: ObservableObject {
     }
     private var liveRequests: [UUID: LiveRequest] = [:]
     private var transientStates: [UUID: TransientState] = [:]
+    private var presentationOwners: [UUID] = []
     static let maximumParallelConversations = 4
 
     var backgroundRequestCount: Int { processingConversationIDs.filter { $0 != currentConversationID }.count }
@@ -67,6 +68,30 @@ final class AssistantConversation: ObservableObject {
     private func isLiveRequest(_ token: UUID, in id: UUID) -> Bool { liveRequests[id]?.token == token }
 
     private func updateProcessingIDs() { processingConversationIDs = Set(liveRequests.keys) }
+
+    /// View lifetime is independent of a conversation ID: the same composer can
+    /// open another conversation, and a replacement can appear before its
+    /// predecessor disappears. Transient replacement views can also leave while
+    /// their predecessor remains visible, so retain each still-present view.
+    @discardableResult
+    func claimPresentation(_ owner: UUID) -> Bool {
+        let previous = presentationOwners.last
+        let replacing = previous != nil && previous != owner
+        presentationOwners.removeAll { $0 == owner }
+        presentationOwners.append(owner)
+        return replacing
+    }
+
+    func ownsPresentation(_ owner: UUID) -> Bool { presentationOwners.last == owner }
+
+    /// Only the final presenter may clean up shared media and screen-bound work.
+    /// Other exits remove their registration without disturbing a surviving view.
+    @discardableResult
+    func releasePresentation(_ owner: UUID) -> Bool {
+        let wasCurrent = ownsPresentation(owner)
+        presentationOwners.removeAll { $0 == owner }
+        return wasCurrent && presentationOwners.isEmpty
+    }
 
     /// Navigation must not terminate a text/cloud request. Camera observation,
     /// card confirmation and legacy answer retry remain foreground operations.
@@ -367,6 +392,13 @@ final class AssistantConversation: ObservableObject {
         loading = false
         saveCurrent()
         transientStates[currentConversationID] = .init(error: error, attachments: retryAttachments, route: lastRoute, replyID: lastRoutedReplyID)
+    }
+
+    /// Keep background entries until their cancellation handlers restore each
+    /// originating draft. Late routing results must still pass cancellation.
+    func cancelAllRequests() {
+        for live in liveRequests.values { live.task?.cancel() }
+        cancel()
     }
 
     /// Keep unmatched legacy input reachable without asserting it was never executed.

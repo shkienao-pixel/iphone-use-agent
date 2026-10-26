@@ -42,9 +42,10 @@ for name, signature in {
 }.items():
     members[name] = member(vm, signature)
 record = member(vm, "        engine.onRecord = { [weak self] record in")
+persistence = member(vm, "        engine.persistRecord = { [weak self] record in")
 context = member(vm, "        conversation.taskContext = { [weak self] in")
 routing_context = member(vm, "        conversation.routingTaskContext = { [weak self] question, history in") if "        conversation.routingTaskContext = {" in vm else ""
-members["installCallbacks"] = "    func installCallbacks() {\n" + record + "\n" + context + "\n" + routing_context + "\n    }"
+members["installCallbacks"] = "    func installCallbacks() {\n" + persistence + "\n" + record + "\n" + context + "\n" + routing_context + "\n    }"
 modern = "ConversationTaskSubmission?" in members["pending"]
 adapter = """
     @discardableResult

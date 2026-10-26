@@ -3,6 +3,15 @@ import Combine
 
 enum TaskOutcome: String, Codable {
     case running, paused, needsUser, completed, failed, stopped, interrupted, preview
+    /// The existing recovery contract includes stopped/failed tasks. Display
+    /// retention must never discard their exact checkpoints without an explicit
+    /// user deletion; loading a checkpoint still grants no execution authority.
+    var retainsRecoveryCheckpoint: Bool {
+        switch self {
+        case .completed, .preview: return false
+        default: return true
+        }
+    }
     var label: String {
         switch self {
         case .running: return "进行中"
@@ -40,6 +49,9 @@ struct PhoneTaskRecord: Identifiable, Codable {
     var logs: [AgentLogEntry] = []
     // Actual completed native results for conversation cards; absent in old records.
     var nativeResults: [NativeTaskResult]? = nil
+    /// Optional for backward-compatible version-one archives. A model's finish
+    /// proposal is distinct from independently checked task completion.
+    var completionEvidence: TaskCompletionEvidence? = nil
     var nativeConversationSnapshot: NativeTaskSnapshot? {
         NativeTaskSnapshot(taskID: id, title: title, summary: summary, outcome: outcome.rawValue,
                            updatedAt: updatedAt, results: nativeResults ?? [])
@@ -64,6 +76,21 @@ struct PhoneTaskRecord: Identifiable, Codable {
         let additions = (amendments ?? []).enumerated().map { "\($0.offset + 1). \($0.element.text)" }
         guard !additions.isEmpty else { return goal }
         return goal + "\n\n用户后续补充（与前文冲突时，以较新的明确要求为准）：\n" + additions.joined(separator: "\n")
+    }
+}
+
+/// One repository policy for both legacy archive loading and new commits.
+/// Recoverable checkpoints are durable working state, independent of the
+/// bounded completed/preview history shown beside them.
+enum TaskHistoryRetentionPolicy {
+    static let maximumFinishedRecords = 50
+    static func retained(_ records: [PhoneTaskRecord]) -> [PhoneTaskRecord] {
+        var finished = 0
+        return records.filter { record in
+            if record.outcome.retainsRecoveryCheckpoint { return true }
+            finished += 1
+            return finished <= maximumFinishedRecords
+        }
     }
 }
 
@@ -123,7 +150,7 @@ final class TaskHistoryStore: ObservableObject {
                 try ComposerAttachmentPolicy.validate(record.attachments ?? [])
                 guard record.validConversationReference else { throw CocoaError(.fileReadCorruptFile) }
             }
-            records = Array(document.records.prefix(50)).map { record in
+            records = TaskHistoryRetentionPolicy.retained(document.records).map { record in
                 var value = record
                 if [.running, .paused, .needsUser].contains(value.outcome) {
                     value.outcome = .interrupted
@@ -133,46 +160,73 @@ final class TaskHistoryStore: ObservableObject {
             }
         } catch {
             readable = false
-            self.error = "历史记录暂时无法读取，原文件已保留。你仍可执行新任务。"
+            self.error = "历史记录暂时无法读取，原文件已保留。请先导出并处理存储问题，再执行任务。"
         }
     }
-    func upsert(_ record: PhoneTaskRecord) {
-        guard readable else { return }
+    /// Success means the exact checkpoint has reached durable storage. Callers
+    /// must pause before further side effects when this returns false.
+    @discardableResult
+    func upsert(_ record: PhoneTaskRecord) -> Bool {
+        saveCheckpoints([record])
+    }
+    /// Explicitly retry current checkpoints in one durable transaction. This
+    /// only saves data; it never grants execution authority or resumes engines.
+    /// An empty batch retries the last readable repository snapshot.
+    @discardableResult
+    func saveCheckpoints(_ updates: [PhoneTaskRecord]) -> Bool {
+        guard readable else { return false }
         do {
-            try ComposerAttachmentPolicy.validate(record.attachments ?? [])
-            guard record.validConversationReference else { throw CocoaError(.fileReadCorruptFile) }
+            guard Set(updates.map(\.id)).count == updates.count else { throw CocoaError(.fileReadCorruptFile) }
+            for record in updates {
+                try ComposerAttachmentPolicy.validate(record.attachments ?? [])
+                guard record.validConversationReference else { throw CocoaError(.fileReadCorruptFile) }
+            }
         }
-        catch { self.error = error.localizedDescription; return }
-        records.removeAll { $0.id == record.id }; records.insert(record, at: 0)
-        records = Array(records.prefix(50)); save()
+        catch { self.error = error.localizedDescription; return false }
+        let identities = Set(updates.map(\.id))
+        let updated = updates + records.filter { !identities.contains($0.id) }
+        return commit(TaskHistoryRetentionPolicy.retained(updated))
     }
-    func rename(_ id: UUID, title: String) {
+    @discardableResult
+    func rename(_ id: UUID, title: String) -> Bool {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, let index = records.firstIndex(where: { $0.id == id }) else { return }
-        records[index].title = String(title.prefix(80)); save()
+        guard readable, !title.isEmpty, let index = records.firstIndex(where: { $0.id == id }) else { return false }
+        var updated = records
+        updated[index].title = String(title.prefix(80))
+        return commit(updated)
     }
-    func remove(_ id: UUID) { records.removeAll { $0.id == id }; save() }
+    @discardableResult
+    func remove(_ id: UUID) -> Bool {
+        guard readable else { return false }
+        return commit(records.filter { $0.id != id })
+    }
     func clear() {
         do {
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
             records = []; readable = true; error = ""
         } catch { self.error = "未能删除历史记录，请稍后重试。" }
     }
-    private func save() {
-        guard readable else { return }
+    /// No published record changes before the atomic checkpoint commit. A
+    /// failed write leaves both the previous in-memory snapshot and file intact.
+    private func commit(_ updated: [PhoneTaskRecord]) -> Bool {
+        guard readable else { return false }
         do {
             let folder = url.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             var values = URLResourceValues(); values.isExcludedFromBackup = true
             var excluded = folder; try excluded.setResourceValues(values)
-            let data = try JSONEncoder().encode(Document(records: records))
+            let data = try JSONEncoder().encode(Document(records: updated))
             guard data.count <= 64_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
             #if os(iOS)
             try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             #else
             try data.write(to: url, options: .atomic)
             #endif
-            error = ""
-        } catch { self.error = "历史记录保存失败，请检查设备剩余空间。" }
+            records = updated; error = ""
+            return true
+        } catch {
+            self.error = "历史记录保存失败，未发布新的检查点。请检查设备剩余空间后重试。"
+            return false
+        }
     }
 }

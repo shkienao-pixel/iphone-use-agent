@@ -77,10 +77,28 @@ final class SystemTools: ObservableObject {
         }
         return try JSONEncoder().encode(receipts)
     }
-    func clearReceipts() throws {
-        guard pending == nil else { throw AgentError.message("请先结束当前工具请求") }
-        if FileManager.default.fileExists(atPath: receiptURL.path) { try FileManager.default.removeItem(at: receiptURL) }
-        receipts = [:]; readable = true; error = ""
+    func receiptMaintenanceBlockedReason(_ context: ToolReceiptMaintenanceContext) -> String? {
+        ToolReceiptMaintenancePolicy.blockedReason(context: context, approvalPending: pending != nil,
+                                                   receiptsReadable: readable)
+    }
+    @discardableResult
+    func clearReceipts(context: ToolReceiptMaintenanceContext) throws -> ToolReceiptCleanupResult {
+        if let reason = receiptMaintenanceBlockedReason(context) { throw AgentError.message(reason) }
+        let retained = receipts.filter { !ToolReceiptMaintenancePolicy.mayRemove(key: $0.key, state: $0.value.state, context: context) }
+        let removed = receipts.count - retained.count
+        // Unknown writes and every recoverable task retain their original keys
+        // and payloads. Publish only after the atomic replacement succeeds.
+        if removed > 0 { try persistReceipts(retained) }
+        error = ""
+        return ToolReceiptCleanupResult(removed: removed, retained: retained.count)
+    }
+    func completedTaskReceipts(taskID: UUID) -> [String] {
+        guard readable else { return [] }
+        let prefix = taskID.uuidString + ":"
+        return receipts.sorted { $0.key < $1.key }.compactMap { key, receipt in
+            guard key.hasPrefix(prefix), receipt.state == "completed" else { return nil }
+            return receipt.result
+        }
     }
     func decide(_ accepted: Bool, expectedID: UUID? = nil) {
         guard expectedID == nil || pending?.id == expectedID else { return }
@@ -354,10 +372,21 @@ final class SystemTools: ObservableObject {
     }
     private func save(_ key: String, _ receipt: Receipt) throws {
         var updated = receipts; updated[key] = receipt
+        try persistReceipts(updated)
+    }
+    private func persistReceipts(_ updated: [String: Receipt]) throws {
+        let data = try JSONEncoder().encode(updated)
+        guard updated.count <= 2000, data.count <= 5_000_000 else {
+            throw AgentError.message("工具回执达到容量上限，请先导出并清理已结束任务的回执；未删除未核验记录")
+        }
         let folder = receiptURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var values = URLResourceValues(); values.isExcludedFromBackup = true; var excluded = folder; try excluded.setResourceValues(values)
-        try JSONEncoder().encode(updated).write(to: receiptURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        #if os(iOS)
+        try data.write(to: receiptURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        #else
+        try data.write(to: receiptURL, options: .atomic)
+        #endif
         receipts = updated
     }
     private func iso(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }

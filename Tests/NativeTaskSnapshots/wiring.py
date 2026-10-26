@@ -12,8 +12,10 @@ assert "历史结果" in saved
 screen = (root / "PhoneAgent/Views/AssistantViews.swift").read_text()
 assert "ConversationTaskCard(taskID: taskID, savedResult: message.nativeTaskResult)" in screen
 vm = (root / "PhoneAgent/PhoneAgentViewModel.swift").read_text()
-assert "self?.conversation.retainTaskResult(record.nativeConversationSnapshot)" in vm
-assert "conversation.retainTaskResults(history.records.map(\\.nativeConversationSnapshot))" in vm
+assert "conversation.retainTaskResult(record.nativeConversationSnapshot)" in vm
+assert "stride(from: 0, to: history.records.count, by: 50)" in vm
+assert "conversation.retainTaskResults(batch.map(\\.nativeConversationSnapshot))" in vm
+assert "history.records.prefix(50)" not in vm
 snapshot = (root / "Shared/NativeTaskResult.swift").read_text().split("struct NativeTaskSnapshot:", 1)[1]
 for field in ("let goal:", "let logs:", "let checkpointStep:", "let token:", "let executionLane:"):
     assert field not in snapshot, field

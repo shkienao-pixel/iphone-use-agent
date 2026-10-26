@@ -4,6 +4,17 @@ import UIKit
 @MainActor extension PhoneAgentViewModel {
     func makeBackgroundEngine(settings: AgentSettings) -> AgentEngine {
         let worker = AgentEngine(capture: capture, executor: executor, ownsScreenInput: false)
+        worker.persistRecord = { [weak self] record in
+            guard let self else { return false }
+            let saved = self.history.upsert(record)
+            if !saved { self.notice = self.history.error }
+            return saved
+        }
+        worker.executionPersistenceReady = { [weak self] in self?.history.error.isEmpty == true }
+        worker.completedToolReceipts = { [weak self] taskID in
+            guard let self, self.consentReady else { return [] }
+            return self.tools.completedTaskReceipts(taskID: taskID)
+        }
         worker.memoryContext = { [weak self] query, config in
             await self?.memories.context(for: query, settings: config) ?? ""
         }

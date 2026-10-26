@@ -58,7 +58,7 @@ import Foundation
             var config = AgentSettings()
             config.startDelay = 0; config.stepInterval = 1; config.maxSteps = 2; config.continuousExecution = false
             PrivacyConsent.grant(config)
-            engine.start(task: "Reuse the locally verified screen", settings: config)
+            engine.start(task: "Inspect the locally verified screen", settings: config)
             let deadline = Date().addingTimeInterval(5)
             while !engine.executionSettled && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
             PrivacyConsent.revoke()

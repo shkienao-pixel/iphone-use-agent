@@ -23,6 +23,19 @@ import UIKit
     @Published private(set) var orderStatus = ""
     private var authorizationSession: MeituanPaotuiAuthorization.Session?
     private var revision = UUID()
+    /// Runtime-only authority for one conversation request. Persisted cards cannot recreate it.
+    struct ConversationRequest: Equatable {
+        fileprivate let conversationID: UUID
+        fileprivate let id: UUID
+        fileprivate let revision: UUID
+    }
+    private struct ConversationScope {
+        let request: ConversationRequest
+        var draft: PaotuiDraft
+        var places: [PaotuiAddress]
+        var quotes: [PaotuiQuote] = []
+    }
+    private var conversationScopes: [UUID: ConversationScope] = [:]
     private var receiptReadable = true
     private var receipts: [OrderReceipt] = []
     private let clientFactory: (String) -> MeituanPaotuiClient
@@ -53,6 +66,41 @@ import UIKit
     }
     var knownLocations: [PaotuiAddress] { addresses + cachedPlaces }
     var statusLabel: String { ready ? "跑腿已连接" : configured ? "跑腿待检测" : "跑腿未连接" }
+    func beginConversationRequest(_ id: UUID, draft: PaotuiDraft) -> ConversationRequest {
+        let request = ConversationRequest(conversationID: id, id: UUID(), revision: revision)
+        let verifiedPlaces = conversationScopes[id]?.request.revision == revision ? conversationScopes[id]?.places ?? [] : []
+        conversationScopes[id] = ConversationScope(request: request, draft: draft, places: verifiedPlaces)
+        objectWillChange.send()
+        return request
+    }
+    func isCurrent(_ request: ConversationRequest) -> Bool {
+        configured && request.revision == revision && conversationScopes[request.conversationID]?.request == request
+    }
+    private func scope(_ request: ConversationRequest) throws -> ConversationScope {
+        try Task.checkCancellation()
+        guard isCurrent(request), let value = conversationScopes[request.conversationID] else {
+            throw AgentError.message("本次跑腿需求或授权已改变，请使用当前对话继续")
+        }
+        return value
+    }
+    func updateConversationDraft(_ draft: PaotuiDraft, for request: ConversationRequest) throws {
+        var current = try scope(request)
+        if current.draft != draft { current.draft = draft; current.quotes = [] }
+        conversationScopes[request.conversationID] = current
+    }
+    func discardConversationRequest(_ request: ConversationRequest) {
+        guard isCurrent(request) else { return }
+        conversationScopes.removeValue(forKey: request.conversationID)
+        objectWillChange.send()
+    }
+    func owns(_ quote: PaotuiQuote, for request: ConversationRequest) -> Bool {
+        guard isCurrent(request), let current = conversationScopes[request.conversationID] else { return false }
+        return current.draft == quote.draft && quote.account == account && current.quotes.contains { $0.id == quote.id }
+    }
+    func locations(for request: ConversationRequest) -> [PaotuiAddress] {
+        guard isCurrent(request), let current = conversationScopes[request.conversationID] else { return [] }
+        return addresses + current.places
+    }
     func selectService(_ service: PaotuiService) {
         guard service != draft.service else { return }
         var next = draft
@@ -75,15 +123,17 @@ import UIKit
         guard !value.isEmpty, value.utf8.count <= 8192, value.unicodeScalars.allSatisfy({ (33...126).contains($0.value) }) else { throw AgentError.message("跑腿授权格式无效") }
         try ConnectionCredentialStore.save(value, account: "meituan-paotui-token")
         revision = UUID(); ready = false; addresses = []; places = []; cachedPlaces = []; quotes = []; paymentURL = nil
+        conversationScopes = [:]
         authorizationSession = nil; authorizationLink = nil
     }
     func disconnect() throws {
         try ConnectionCredentialStore.save("", account: "meituan-paotui-token")
         revision = UUID(); ready = false; addresses = []; places = []; cachedPlaces = []; quotes = []; paymentURL = nil
+        conversationScopes = [:]
         authorizationSession = nil; authorizationLink = nil; draft = PaotuiDraft(); message = "已断开跑腿连接"; failed = false
         // Uncertain order receipts deliberately survive logout/re-authorization.
     }
-    func cancelAuthorization() { authorizationSession = nil; authorizationLink = nil; revision = UUID() }
+    func cancelAuthorization() { authorizationSession = nil; authorizationLink = nil; revision = UUID(); conversationScopes = [:] }
     func startAuthorization() async {
         await perform {
             let generation = self.revision
@@ -132,18 +182,49 @@ import UIKit
         message = result.isEmpty ? "没有找到匹配地址，请补充店名或街道。" : "请选择购买或取件地址。"
     }
     func searchFromUI(keyword: String, city: String) async { await perform { try await self.search(keyword: keyword, city: city) } }
+    func search(keyword: String, city: String, for request: ConversationRequest) async throws -> [PaotuiAddress] {
+        let current = try scope(request), key = credential, generation = revision
+        let near = addresses.first { $0.id == current.draft.recipientID }
+        let result = try await client().search(keyword: keyword, city: city, near: near)
+        try unchanged(key, generation)
+        var latest = try scope(request)
+        guard latest.draft == current.draft else { throw AgentError.message("跑腿信息已修改，请重新查询门店") }
+        latest.places = Array((result + latest.places.filter { old in !result.contains { $0.id == old.id } }).prefix(200))
+        conversationScopes[request.conversationID] = latest
+        cachedPlaces = Array((result + cachedPlaces.filter { old in !result.contains { $0.id == old.id } }).prefix(200))
+        return result
+    }
     func preview() async throws -> [PaotuiQuote] {
-        try draft.validate()
-        let current = draft, key = credential, generation = revision, tag = account
+        let current = draft
+        let results = try await preview(draft: current, locations: knownLocations) {
+            guard current == self.draft else { throw AgentError.message("跑腿信息已修改，请重新查询费用") }
+        }
+        quotes = results; message = "请核对费用和地址。尚未下单。"
+        return results
+    }
+    func preview(for request: ConversationRequest) async throws -> [PaotuiQuote] {
+        let current = try scope(request)
+        let results = try await preview(draft: current.draft, locations: addresses + current.places) {
+            guard try self.scope(request).draft == current.draft else { throw AgentError.message("跑腿信息已修改，请重新查询费用") }
+        }
+        var latest = try scope(request)
+        latest.quotes = results
+        conversationScopes[request.conversationID] = latest
+        objectWillChange.send()
+        return results
+    }
+    private func preview(draft current: PaotuiDraft, locations: [PaotuiAddress], validate: () throws -> Void) async throws -> [PaotuiQuote] {
+        try current.validate(); try validate()
+        let key = credential, generation = revision, tag = account
         guard let recipient = addresses.first(where: { $0.id == current.recipientID }),
-              let sender = current.nearby ? recipient : knownLocations.first(where: { $0.id == current.senderID }) else { throw AgentError.message("请从真实地址结果中选择购买／取送地址") }
+              let sender = current.nearby ? recipient : locations.first(where: { $0.id == current.senderID }) else { throw AgentError.message("请从真实地址结果中选择购买／取送地址") }
         guard sender.cityID == recipient.cityID else { throw AgentError.message("购买／取件地址与送达地址不在同一城市，请重新选择同城地址。") }
         let client = try client()
-        let recipientPhone = try await client.phone(recipient); try unchanged(key, generation)
+        let recipientPhone = try await client.phone(recipient); try unchanged(key, generation); try validate()
         let senderPhone: String
         if sender.savedID != nil, sender.id != recipient.id { senderPhone = try await client.phone(sender) }
         else { senderPhone = recipientPhone }
-        try unchanged(key, generation)
+        try unchanged(key, generation); try validate()
         let senderWire = try sender.wire(phone: senderPhone, fallback: recipient)
         let recipientWire = try recipient.wire(phone: recipientPhone)
         var base: [String: Any] = ["sender": senderWire, "recipient": recipientWire,
@@ -164,16 +245,20 @@ import UIKit
         for service in services {
             var payload = base; if let service { payload["serviceType"] = service }
             let data = try await client.call(.preview, payload); try unchanged(key, generation)
-            guard current == draft else { throw AgentError.message("跑腿信息已修改，请重新查询费用") }
+            try validate()
             results.append(try MeituanPaotuiClient.quote(data: data, draft: current, sender: sender, recipient: recipient,
                                                        request: payload, account: tag, service: service))
         }
-        quotes = results; message = "请核对费用和地址。尚未下单。"
         return results
     }
     func previewFromUI() async { await perform { _ = try await self.preview() } }
     func canSubmit(_ quote: PaotuiQuote) -> Bool {
         !busy && quotes.contains(where: { $0.id == quote.id }) && quote.canSubmit(draft: draft, account: account, unresolved: hasUnresolvedSubmission)
+    }
+    func canSubmit(_ quote: PaotuiQuote, for request: ConversationRequest) -> Bool {
+        guard !busy, owns(quote, for: request), let current = conversationScopes[request.conversationID],
+              let canonical = current.quotes.first(where: { $0.id == quote.id }) else { return false }
+        return canonical.canSubmit(draft: current.draft, account: account, unresolved: hasUnresolvedSubmission)
     }
     private func persist(_ updated: [OrderReceipt]) throws {
         guard receiptReadable, updated.count <= 2000 else { throw AgentError.message("跑腿订单记录不可写，未创建订单") }
@@ -197,8 +282,28 @@ import UIKit
     /// Called only by a current conversation confirmation card. The AI-facing tool has no
     /// submit operation and cannot supply a replacement phone, price or token.
     func submitConfirmed(_ quote: PaotuiQuote) async {
-        guard canSubmit(quote) else { message = "报价或连接已改变，请重新查询费用"; failed = true; return }
+        guard canSubmit(quote), let canonical = quotes.first(where: { $0.id == quote.id }) else { message = "报价或连接已改变，请重新查询费用"; failed = true; return }
+        await submitConfirmed(canonical, validate: {
+            guard self.quotes.contains(where: { $0.id == canonical.id }), canonical.canSubmit(draft: self.draft, account: self.account, unresolved: self.hasUnresolvedSubmission) else {
+                throw AgentError.message("报价或连接已改变，请重新查询费用")
+            }
+        }, invalidate: { self.quotes = [] })
+    }
+    func submitConfirmed(_ quote: PaotuiQuote, for request: ConversationRequest) async {
+        guard canSubmit(quote, for: request), let canonical = conversationScopes[request.conversationID]?.quotes.first(where: { $0.id == quote.id }) else { message = "报价或连接已改变，请重新查询费用"; failed = true; return }
+        await submitConfirmed(canonical, validate: {
+            let current = try self.scope(request)
+            guard self.owns(canonical, for: request), canonical.canSubmit(draft: current.draft, account: self.account, unresolved: self.hasUnresolvedSubmission) else {
+                throw AgentError.message("报价或连接已改变，请重新查询费用")
+            }
+        }, invalidate: {
+            guard self.isCurrent(request) else { return }
+            self.conversationScopes[request.conversationID]?.quotes = []
+        })
+    }
+    private func submitConfirmed(_ quote: PaotuiQuote, validate: () throws -> Void, invalidate: () -> Void) async {
         await perform {
+            try Task.checkCancellation(); try validate()
             let key = self.credential, tag = self.account
             var payload = quote.request
             payload["orderToken"] = quote.orderToken
@@ -208,7 +313,7 @@ import UIKit
             var updated = self.receipts
             updated.append(OrderReceipt(quoteID: quote.id, account: tag, state: "pending", orderID: nil, createdAt: Date()))
             try self.persist(updated) // Durable BEFORE the only submit attempt.
-            self.quotes = []
+            invalidate()
             let data: [String: Any]
             do { data = try await self.clientFactory(key).call(.submit, payload) }
             catch {
@@ -252,7 +357,11 @@ import UIKit
         guard !busy, receiptReadable, hasUnresolvedSubmission else { return }
         var updated = receipts
         for index in updated.indices where updated[index].state == "pending" { updated[index].state = "reviewed" }
-        do { try persist(updated); quotes = []; message = "已记录你在美团的人工核对，请重新查询费用后再下单。"; failed = false }
+        do {
+            try persist(updated); quotes = []
+            for id in conversationScopes.keys { conversationScopes[id]?.quotes = [] }
+            message = "已记录你在美团的人工核对，请重新查询费用后再下单。"; failed = false
+        }
         catch { message = "未能保存核对记录，请稍后重试。"; failed = true }
     }
     private func perform(_ action: () async throws -> Void) async {

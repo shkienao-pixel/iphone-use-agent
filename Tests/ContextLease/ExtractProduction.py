@@ -11,7 +11,7 @@ INPUTS = [
     "Tests/ProductState/Environment.swift", "Shared/FrameReadiness.swift", "Shared/RunMetrics.swift",
     "Shared/PhonePageAdapters.swift", "Shared/XiaohongshuPageAdapter.swift", "Shared/SystemToolRequest.swift",
     "Shared/PhoneHarness.swift", "Shared/AgentModels.swift", "Shared/MouseProtocol.swift",
-    "Shared/ComposerAttachment.swift",
+    "Shared/ComposerAttachment.swift", "Shared/NativeTaskResult.swift",
     "Shared/PhoneVisualControls.swift", "Shared/PhoneOverlayClassifier.swift",
     "Tests/ContextLease/ExtractProduction.py", "Tests/ContextLease/main.swift", "Tests/ContextLease/run.sh",
 ]
@@ -69,9 +69,13 @@ def main():
     idle = capture[start:end]
     (out / "IdleConstructor.swift").write_text("import Foundation\n// Explicit synthetic delivery; never called by the frame getter.\nfunc contextAuditIdle(previous: ScreenFrame, now: Date, captureID: UUID, isFullDisplay: Bool) -> ScreenFrame {\n" + idle + "\n return frame\n}\n")
     method = member(engine, "    private func observeAction(goal: String, settings: AgentSettings, client: VisionClient, token: UUID,")
+    evidence_methods = {signature: member(engine, signature) for signature in [
+        "    private func completionEvidence(includeReceipts: Bool = true)",
+        "    private func recordObservation(_ frame: ScreenFrame)",
+    ]}
     scaffold = '''import Foundation
-// Only observeAction below is production Engine code. Acquisition, logging,
-// model and Mouse boundaries are explicit synthetic offline fixtures.
+// observeAction and its completion-evidence helpers below are production Engine
+// code. Acquisition, logging, model and Mouse remain synthetic offline fixtures.
 @MainActor final class ActualObserveActionProbe {
  let capture: CaptureService, executor: MouseExecutor
  var phoneHarness: PhoneHarnessDriving?
@@ -79,9 +83,18 @@ def main():
  var memoryContext: ((String, AgentSettings) async -> String)?
  var logs: [AgentLogEntry] = []
  var taskContext = ""
+ var savedGoal = "Synthetic readonly context test"
+ var completedToolReceipts: ((UUID) -> [String])?
  // This observation-only fixture has no submitted attachments; retain the
- // same optional checkpoint boundary as a full production task record.
- struct AttachmentCheckpoint { var attachments: [ComposerAttachment]?; var conversationReference: String? = nil }
+ // optional checkpoint and evidence boundary without simulating a full task.
+ struct AttachmentCheckpoint {
+  var id = UUID()
+  var effectiveGoal = "Synthetic readonly context test"
+  var attachments: [ComposerAttachment]?
+  var conversationReference: String? = nil
+  var completionEvidence: TaskCompletionEvidence?
+  var nativeResults: [NativeTaskResult]?
+ }
  var currentRecord: AttachmentCheckpoint?
  var taskAttachments: [ComposerAttachment] { currentRecord?.attachments ?? [] }
  let operation = UUID()
@@ -109,13 +122,14 @@ def main():
    step: 1, after: after, remainingRecoveries: &recoveries, responseLimit: &responseLimit)
  }
 '''
-    (out / "ObserveAction.swift").write_text(scaffold + method + "\n}\n")
+    (out / "ObserveAction.swift").write_text(scaffold + "\n".join(evidence_methods.values()) + "\n" + method + "\n}\n")
     proof = {
         "productionObserveActionSHA256": sha(method.encode()),
+        "productionCompletionEvidenceMethodsSHA256": {signature: sha(source.encode()) for signature, source in evidence_methods.items()},
         "productionScreenFrameSHA256": sha(frame.encode()),
         "nativeIdleConstructorSHA256": sha(idle.encode()),
         "hostBoundaries": ["reference UIImage around actual CGImage", "synthetic producer slot; getter never creates confirmations",
-                           "synthetic BLE generation/Mouse/model", "complete production observeAction; synthetic acquisition and outer lifecycle"],
+                           "synthetic BLE generation/Mouse/model", "complete production observeAction and completion-evidence helpers; synthetic acquisition, optional checkpoint and outer lifecycle"],
         "notClaimed": ["actual ScreenCaptureKit idle callback", "real Vision latency", "real model or input"],
     }
     proof["generatedSHA256"] = {name: sha((out / name).read_bytes()) for name in

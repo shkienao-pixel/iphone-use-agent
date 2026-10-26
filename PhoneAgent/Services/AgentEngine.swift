@@ -62,6 +62,14 @@ final class AgentEngine: ObservableObject {
     var memoryContext: ((String, AgentSettings) async -> String)?
     var systemTool: ((UUID, SystemToolRequest) async throws -> String)?
     var systemToolEvidence: ((UUID) -> String)?
+    /// Actual completed host receipts only; pending writes and model logs are excluded.
+    var completedToolReceipts: ((UUID) -> [String])?
+    /// The host checks all durable stores before another execution step.
+    var executionPersistenceReady: (() -> Bool)?
+    /// Durable commit happens before publishing a terminal success to UI/voice.
+    var persistRecord: ((PhoneTaskRecord) -> Bool)?
+    /// Volatile checkpoint notification; never a committed history projection.
+    var onPersistenceFailure: ((PhoneTaskRecord) -> Void)?
     var phoneHarness: PhoneHarnessDriving?
     private(set) var runMetrics: RunMetricsRecorder?
     // Benchmark callers must explicitly attest starting conditions. Ordinary
@@ -122,14 +130,42 @@ final class AgentEngine: ObservableObject {
     var executionSettled: Bool { !running && !releasing && loop == nil }
     var currentSettings: AgentSettings? { savedSettings }
     var hasCurrentTask: Bool { savedSettings != nil && currentRecord != nil }
-    private func transition(_ phase: AgentPhase, _ message: String) {
-        self.phase = phase; state = message; publishRecord()
+    private var recordPublication = UUID()
+    private var persistenceBlocked = false
+    @discardableResult private func transition(_ phase: AgentPhase, _ message: String) -> Bool {
+        commitRecord(phase: phase, message: message, publishPhase: true)
     }
-    private func publishRecord() {
-        guard var record = currentRecord else { return }
-        record.updatedAt = Date(); record.outcome = phase.outcome; record.summary = state; record.logs = logs
+    private func publishRecord() { _ = commitRecord(phase: phase, message: state, publishPhase: false) }
+    @discardableResult private func commitRecord(phase nextPhase: AgentPhase, message: String, publishPhase: Bool) -> Bool {
+        let publication = UUID(), originSession = session
+        recordPublication = publication
+        guard var record = currentRecord else {
+            if publishPhase { phase = nextPhase; state = message }; return true
+        }
+        record.updatedAt = Date(); record.outcome = nextPhase.outcome; record.summary = message; record.logs = logs
         record.checkpointStep = currentStep; record.attemptStartStep = attemptStartStep
+        if persistenceBlocked {
+            // End-of-loop bookkeeping must not automatically retry a failed
+            // commit. Explicit launch/recovery reopens the durable boundary.
+            if nextPhase == .stopped { phase = .stopped; state = message; currentRecord = record }
+            return false
+        }
+        let committed = persistRecord?(record) ?? true
+        // A synchronous store subscriber may Stop/Pause while committing.
+        // Never let the old terminal candidate overwrite that newer session.
+        guard publication == recordPublication, originSession == session else { return false }
+        guard committed else {
+            persistenceBlocked = true
+            let explanation = PersistencePaused().localizedDescription
+            record.outcome = .paused; record.summary = explanation
+            running = false; taskIndicator = .idle; error = explanation
+            phase = .paused; state = explanation; currentRecord = record
+            onPersistenceFailure?(record)
+            return false
+        }
+        if publishPhase { phase = nextPhase; state = message }
         currentRecord = record; onRecord?(record)
+        return publication == recordPublication && originSession == session && phase == nextPhase
     }
     func renameCurrent(_ title: String) {
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -258,6 +294,7 @@ final class AgentEngine: ObservableObject {
         }
     }
     private func checkReady(_ settings: AgentSettings) throws {
+        guard executionPersistenceReady?() != false else { throw PersistencePaused() }
         guard ownsScreenInput || settings.toolsOnly == true else { throw AgentError.message("后台任务只允许原生工具，不能操作手机屏幕") }
         guard settings.validStepConfiguration else { throw AgentError.message("行动步数配置无效，请在设置中重新选择") }
         guard phoneHarness?.hasPendingReview != true else {
@@ -300,6 +337,7 @@ final class AgentEngine: ObservableObject {
         resetActionRepetition()
         currentRecord = PhoneTaskRecord(id: attempt.snapshot.taskID, title: String(goal.prefix(36)), goal: goal, subtasks: subtasks.isEmpty ? nil : subtasks.map { TaskSubtask(goal: $0) }, attachments: attachments.isEmpty ? nil : attachments,
             conversationReference: conversationReference.isEmpty ? nil : conversationReference)
+        currentRecord?.completionEvidence = TaskCompletionEvidence(goal: goal)
         launch(goal: goal, settings: settings, resumed: false, metrics: attempt)
     }
     // Queue restores preserve the same task ID, amendments, receipts and completed
@@ -380,6 +418,10 @@ final class AgentEngine: ObservableObject {
         launch(goal: savedGoal, settings: savedSettings, resumed: true, resumeDelay: delay, metrics: attempt)
     }
     private func launch(goal: String, settings: AgentSettings, resumed: Bool, resumeDelay: Double? = nil, metrics: RunMetricsRecorder? = nil) {
+        persistenceBlocked = false
+        // Import old task-bound host receipts before the first new operation.
+        // Later request/result validation cannot erase this recovered proof.
+        currentRecord?.completionEvidence = completionEvidence()
         runMetrics = metrics ?? makeRunMetrics(settings: settings, taskID: currentRecord?.id ?? UUID())
         phoneHarness?.metrics = runMetrics
         phoneHarness?.taskScopeID = currentRecord?.id
@@ -427,6 +469,49 @@ final class AgentEngine: ObservableObject {
     private func stillCurrent(_ token: UUID) throws {
         try Task.checkCancellation()
         guard token == session && running else { throw CancellationError() }
+        guard executionPersistenceReady?() != false else { throw PersistencePaused() }
+    }
+    private struct PersistencePaused: LocalizedError {
+        var errorDescription: String? { "任务记录暂时无法安全保存，已暂停后续执行；已发生的操作与回执保留，请处理存储问题后继续。" }
+    }
+    private func completionEvidence(includeReceipts: Bool = true) -> TaskCompletionEvidence {
+        guard let record = currentRecord else { return TaskCompletionEvidence(goal: savedGoal) }
+        return TaskCompletionEvidence.restore(goal: record.effectiveGoal, persisted: record.completionEvidence,
+            legacyResults: record.nativeResults ?? [], receipts: includeReceipts ? completedToolReceipts?(record.id) ?? [] : [])
+    }
+    private func recordObservation(_ frame: ScreenFrame) {
+        var evidence = completionEvidence(); evidence.observe(confirmedAt: frame.confirmedAt)
+        currentRecord?.completionEvidence = evidence
+    }
+    private func recordInput(completedAt: Date) {
+        var evidence = completionEvidence(); evidence.input(completedAt: completedAt)
+        currentRecord?.completionEvidence = evidence
+    }
+    private func finish(_ action: AgentAction, settings: AgentSettings) throws {
+        if settings.previewOnly {
+            pendingAction = action; running = false; taskIndicator = .idle
+            transition(.preview, "仅生成结束建议，未执行或核验任务。"); savedSettings = nil; return
+        }
+        try finishAllowed()
+        let evidence = completionEvidence(); currentRecord?.completionEvidence = evidence
+        switch TaskCompletionPolicy.decide(goal: currentRecord?.effectiveGoal ?? savedGoal,
+            toolsOnly: settings.toolsOnly == true, evidence: evidence) {
+        case .needsUser(let explanation):
+            running = false; taskIndicator = .idle; pendingAction = nil
+            log("模型结束声明（尚未核验）", action.completionSummary)
+            transition(.needsUser, explanation)
+        case .tools:
+            running = false
+            if transition(.completed, "已取得匹配的实际工具回执。\n" + action.completionSummary), phase == .completed {
+                taskIndicator = .completed; savedSettings = nil
+            }
+        case .observed:
+            running = false
+            let scope = evidence.inputs == 0 ? "已观察当前画面；以下为基于画面的模型结果：" : "已执行并观察后续画面；以下业务结果为模型判断，尚未独立核验："
+            if transition(.completed, scope + "\n" + action.completionSummary), phase == .completed {
+                taskIndicator = .completed; savedSettings = nil
+            }
+        }
     }
     private func recentFrame(after: Date) -> ScreenFrame? {
         guard let frame = capture.frame, frame.fullDisplay, frame.confirmedAt > after else { return nil }
@@ -546,10 +631,27 @@ final class AgentEngine: ObservableObject {
         pendingAction = action; approved = false; transition(.awaitingApproval, "请确认子任务已完成：" + (record.subtasks?[index].goal ?? ""))
         try await awaitApproval(token: token)
         try stillCurrent(token); pendingAction = nil
+        } else {
+            var available = completionEvidence()
+            available.tools.removeAll { available.subtaskReceiptIDs.contains($0.receiptID) }
+            if available.observations <= available.subtaskObservationBoundary { available.observations = 0; available.postInputObservations = 0 }
+            let subtaskGoal = record.subtasks?[index].goal ?? ""
+            available.goalSHA256 = TaskCompletionEvidence.digest(subtaskGoal)
+            if case .needsUser(let explanation) = TaskCompletionPolicy.decide(goal: subtaskGoal,
+                toolsOnly: savedSettings?.toolsOnly == true, evidence: available) {
+                running = false; taskIndicator = .idle; pendingAction = nil
+                transition(.needsUser, "子任务尚待核验：" + explanation); return
+            }
         }
         try stillCurrent(token)
         guard let latest = currentRecord else { throw CancellationError() }; record = latest
-        record.subtasks?[index].completed = true; record.subtasks?[index].evidence = action.reason
+        var evidence = completionEvidence()
+        evidence.subtaskReceiptIDs = Array(Set(evidence.subtaskReceiptIDs + evidence.tools.map(\.receiptID)))
+        evidence.subtaskObservationBoundary = evidence.observations
+        record.completionEvidence = evidence
+        record.subtasks?[index].completed = true
+        record.subtasks?[index].evidence = requiresConfirmation ? "用户已确认完成；模型说明：" + action.reason
+            : "宿主已有实际工具或画面依据；模型说明：" + action.reason
         currentRecord = record; log("子任务完成", action.reason)
     }
     private func observeAction(goal: String, settings: AgentSettings, client: VisionClient, token: UUID,
@@ -562,6 +664,7 @@ final class AgentEngine: ObservableObject {
             transition(.observing, "正在观察并规划当前步骤")
             let captureStarted = Date()
             let frame = try await freshFrame(after: after, token: token, allowPointerWake: !settings.previewOnly)
+            if !settings.previewOnly { recordObservation(frame) }
             log("取屏耗时", String(format: "%.2f 秒", Date().timeIntervalSince(captureStarted)))
             if !settings.previewOnly { _ = try executor.validateCalibration(frame: frame) }
             do {
@@ -623,6 +726,18 @@ final class AgentEngine: ObservableObject {
         if let metrics = runMetrics {
             result = try await metrics.measureAsync(.systemTool, label: "system tool including user approval") { try await systemTool(id, request) }
         } else { result = try await systemTool(id, request) }
+        // A real completed return may race Stop; preserve its evidence for this
+        // same task before checking the cancelled execution session.
+        if currentRecord?.id == id {
+            var evidence = completionEvidence(includeReceipts: false)
+            // This invocation has an actual request/result pair. A contradictory
+            // response must not be re-imported later as a title-only legacy card.
+            evidence.allowsReceiptRecovery = false
+            if let proof = TaskCompletionEvidence.successfulTool(operation: request.operation.rawValue,
+                result: result, title: request.title, start: request.start, end: request.end, query: request.query,
+                artifactReference: request.artifact_ref, content: request.content, eventID: id.uuidString + ":" + String(currentStep)) { evidence.add(proof) }
+            currentRecord?.completionEvidence = evidence
+        }
         try stillCurrent(token)
         if let card = NativeTaskResult.completed(operation: request.operation.rawValue, result: result,
                                                  title: request.title, start: request.start,
@@ -671,7 +786,7 @@ final class AgentEngine: ObservableObject {
                 formatRetry = false
                 try stillCurrent(token); log(action.label, action.reason); try stillCurrent(token)
                 switch action.kind {
-                case .finish: try finishAllowed(); running = false; taskIndicator = .completed; transition(.completed, action.completionSummary); savedSettings = nil
+                case .finish: try finish(action, settings: settings)
                 case .complete_subtask:
                     if settings.previewOnly { pendingAction = action; running = false; transition(.preview, action.reason); savedSettings = nil }
                     else { readProgress.reset(); try await completeSubtask(action, token: token, requiresConfirmation: settings.confirmEachStep) }
@@ -705,9 +820,10 @@ final class AgentEngine: ObservableObject {
             }
             if running && token == session { pauseAtStepLimit(settings) }
         } catch is CancellationError {}
+        catch let issue as PersistencePaused { if token == session { executingAction = nil; running = false; taskIndicator = .idle; transition(.paused, issue.localizedDescription) } }
         catch let decision as ToolDecisionError { if token == session { executingAction = nil; running = false; error = ""; taskIndicator = .idle; transition(.paused, decision.localizedDescription) } }
         catch { if token == session { self.error = error.localizedDescription; executingAction = nil; running = false; taskIndicator = .failed; transition(.failed, error.localizedDescription); log("工具任务中断", error.localizedDescription) } }
-        if token == session { finishRunMetrics(runMetrics); loop = nil; publishRecord() }
+        if token == session { finishRunMetrics(runMetrics); loop = nil; if !persistenceBlocked { publishRecord() } }
     }
     private func run(goal: String, settings: AgentSettings, client: VisionClient, token: UUID) async {
         do {
@@ -742,7 +858,7 @@ final class AgentEngine: ObservableObject {
                 consecutiveFrameRejections = 0
                 let identity = "\(action.kind.rawValue)|\(action.x ?? -1)|\(action.y ?? -1)|\(action.x2 ?? -1)|\(action.y2 ?? -1)|\(action.text ?? "")|\(action.amount ?? 0)"
                 log(action.label, action.reason); try stillCurrent(token)
-                if action.kind == .finish { try finishAllowed(); running = false; taskIndicator = .completed; transition(.completed, action.completionSummary); savedSettings = nil; break }
+                if action.kind == .finish { try finish(action, settings: settings); break }
                 if action.kind == .ask_user {
                     pendingAction = action; running = false; taskIndicator = .idle; transition(.needsUser, action.reason); break
                 }
@@ -809,6 +925,8 @@ final class AgentEngine: ObservableObject {
                             transition(.needsUser, "本地流程结果待核验。请先检查手机实际结果，并到设备页处理回执。")
                             break
                         }
+                        if let at = receipt.lastInputCompletedAt { recordInput(completedAt: at) }
+                        if let verified = receipt.verifiedFrame { recordObservation(verified) }
                         verifiedInputBoundary = reusableInputBoundary(receipt, from: executionFrame)
                         log("手机工具耗时", String(format: "%.2f 秒", Date().timeIntervalSince(toolStarted)))
                     } catch let issue as PhoneHarnessFallback {
@@ -828,6 +946,7 @@ final class AgentEngine: ObservableObject {
                             mappedHomeAvailable: settings.homeButtonIsMapped(to: executor.ble.selectedID))
                     }
                     try stillCurrent(token)
+                    if action.kind != .wait { recordInput(completedAt: Date()) }
                     log("输入执行耗时", String(format: "%.2f 秒", Date().timeIntervalSince(inputStarted)))
                     await phoneHarness?.didExecute(action, frame: executionFrame)
                 }
@@ -850,6 +969,8 @@ final class AgentEngine: ObservableObject {
                 try await awaitFrameEvent(after: after, timeout: max(0.4, min(5, settings.stepInterval)))
             }
             if running && token == session { pauseAtStepLimit(settings) }
+        } catch let issue as PersistencePaused {
+            if token == session { executingAction = nil; running = false; taskIndicator = .idle; transition(.paused, issue.localizedDescription) }
         } catch let decision as ToolDecisionError {
             if token == session { executingAction = nil; running = false; error = ""; taskIndicator = .idle; transition(.paused, decision.localizedDescription) }
         } catch is CancellationError {
@@ -865,7 +986,7 @@ final class AgentEngine: ObservableObject {
             await executor.ble.release()
             if token == session { releasing = false }
         }
-        if token == session { finishRunMetrics(runMetrics); loop = nil; publishRecord() }
+        if token == session { finishRunMetrics(runMetrics); loop = nil; if !persistenceBlocked { publishRecord() } }
     }
     private func localImageChanged(_ before: UIImage, _ after: UIImage, action: AgentAction?) -> Bool {
         let width = 96, height = 192

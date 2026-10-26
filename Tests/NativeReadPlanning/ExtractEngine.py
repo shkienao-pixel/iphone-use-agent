@@ -12,7 +12,10 @@ def method(signature):
         depth += (source[cursor] == "{") - (source[cursor] == "}")
         cursor += 1
     return source[start:cursor]
-methods = [method("    @discardableResult private func executeTool("),
+methods = [method("    private struct PersistencePaused:"),
+           method("    private func completionEvidence("),
+           method("    private func finish(_ action:"),
+           method("    @discardableResult private func executeTool("),
            method("    private func runTools(")]
 prefix = (root / "Tests/NativeReadPlanning/EngineEnvironment.swift").read_text()
 (output / "ProductionToolsLoop.swift").write_text(prefix + "\n" + "\n".join(methods) + "\n}\n")

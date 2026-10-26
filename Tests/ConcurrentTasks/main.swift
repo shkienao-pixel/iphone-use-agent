@@ -16,7 +16,7 @@ import Foundation
         var workers: [AgentEngine] = [], receipts: [(UUID, UUID?)] = []
         let pool = BackgroundTaskCoordinator(maximumConcurrent: 3) { _ in
             let engine = AgentEngine(capture: capture, executor: executor, ownsScreenInput: false)
-            engine.systemTool = { _, _ in "offline receipt" }; workers.append(engine); return engine
+            engine.systemTool = { _, _ in "{\"matches\":[{\"name\":\"Alice\"}],\"matched_count\":1,\"returned_count\":1}" }; workers.append(engine); return engine
         }
         pool.onRecord = { record, origin in receipts.append((record.id, origin?.conversationID)) }
         let origins = (0..<4).map { _ in BackgroundTaskCoordinator.Origin(conversationID: UUID(), messageID: UUID()) }
@@ -61,7 +61,8 @@ import Foundation
                     toolCount += 1; peakToolCount = max(peakToolCount, toolCount); toolIDs.insert(id)
                     defer { toolCount -= 1 }
                     try await Task.sleep(for: .milliseconds(100))
-                    return "offline completed tool receipt for " + id.uuidString
+                    if request.operation == .ctrip_query { return "来源：携程问道官方接口\n离线查询回执 " + id.uuidString }
+                    return "{\"matches\":[{\"name\":\"" + id.uuidString + "\"}],\"matched_count\":1,\"returned_count\":1}"
                 }
             }
             return engine
@@ -81,6 +82,10 @@ import Foundation
 
         let checkpoint = pool.record(ids[0])!
         let previousStep = checkpoint.checkpointStep ?? 0
+        ModelProbe.calls = 0
+        ModelProbe.actionProvider = { call in call == 1
+            ? AgentAction(kind: .system_tool, text: "{\"operation\":\"contact_search\",\"query\":\"Alice\"}", reason: "恢复后取得实际格式查询回执")
+            : AgentAction(kind: .finish, reason: "基于查询回执结束") }
         let recovered = try pool.recover(checkpoint, settings: config, mode: .continueTask)
         try await wait { pool.record(ids[0])?.outcome == .completed }
         expect(recovered && pool.record(ids[0])?.id == checkpoint.id && (pool.record(ids[0])?.checkpointStep ?? 0) > previousStep,
@@ -99,7 +104,10 @@ import Foundation
         let approvalPool = BackgroundTaskCoordinator { _ in
             let engine = AgentEngine(capture: capture, executor: executor, ownsScreenInput: false)
             engine.systemTool = { id, request in
-                try await approvalGate.withResources(["toolApproval"]) { try await approval.executeApproval(request, taskID: id) }
+                try await approvalGate.withResources(["toolApproval"]) {
+                    _ = try await approval.executeApproval(request, taskID: id)
+                    return "{\"matches\":[{\"name\":\"Alice\"}],\"matched_count\":1,\"returned_count\":1}"
+                }
             }
             return engine
         }
