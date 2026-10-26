@@ -1,0 +1,2882 @@
+<!doctype html>
+<html lang="en" data-visualize-standalone>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Sela 项目架构图</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+
+</head>
+<body>
+<iframe id="codex-visualization" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Sela 项目架构图" data-srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot; data-visualize-standalone&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;Sela 项目架构图&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 16px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans:
+    -apple-system-body, ui-sans-serif, -apple-system, system-ui, &quot;Segoe UI&quot;,
+    Helvetica, &quot;Apple Color Emoji&quot;, Arial, sans-serif, &quot;Segoe UI Emoji&quot;,
+    &quot;Segoe UI Symbol&quot;;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --icon-size: 16px;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --corner-shape: round;
+  --radius: var(--border-radius-lg, 8px);
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 2);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: var(--visualize-paint-gutter, 0px);
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  -webkit-font-smoothing: antialiased;
+  font-size: var(--font-size-base);
+  line-height: calc(var(--font-size-base) * 1.625);
+  font-weight: var(--font-weight-normal);
+}
+
+.cursor-interaction {
+  cursor: var(--cursor-interaction, pointer);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: var(--cursor-interaction, pointer);
+  text-decoration: none;
+  text-underline-offset: 2px;
+  font-weight: inherit;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+li,
+.table {
+  font-family: var(--font-sans);
+}
+
+h1 {
+  font-size: calc(var(--font-size-base) * 1.5);
+  line-height: 1.3333333333;
+}
+
+h2 {
+  font-size: calc(var(--font-size-base) * 1.25);
+  line-height: 1.4;
+}
+h3 {
+  font-size: calc(var(--font-size-base) * 1.125);
+  line-height: 1.5555555556;
+}
+h4 {
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+h5,
+h6 {
+  font-size: var(--font-size-base);
+  line-height: calc(var(--font-size-base) * 1.625);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+b,
+strong,
+th {
+  font-weight: 600;
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: var(--corner-shape);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+pre,
+pre code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: calc(var(--font-size-base) * 0.875);
+  line-height: calc(var(--font-size-base) * 1.625);
+  font-family: var(--font-sans);
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.table :is(th, td):not(:last-child) {
+  padding-inline-end: calc(var(--font-size-base) * 1.5);
+}
+
+.table-responsive &gt; .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead :is(th, td) {
+  border-bottom-color: var(--border-strong, var(--input));
+  padding-block: calc(var(--font-size-base) / 2);
+  line-height: var(--font-size-base);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+.table tbody :is(th, td) {
+  padding-block: calc(var(--font-size-base) * 0.625);
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 8px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align=&quot;right&quot;]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align=&quot;center&quot;]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: var(--corner-shape);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+.widget {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-lg);
+  corner-shape: var(--corner-shape);
+  box-shadow: 0 0 0 0.5px var(--border-strong, var(--border));
+  color: var(--foreground);
+  background: var(--background);
+}
+
+#widget &gt; :not(.card, .widget, .progress) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  border: 1px solid var(--border);
+  corner-shape: var(--corner-shape);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--font-sans);
+  padding: 5px 12px;
+  border-color: color-mix(
+    in oklab,
+    light-dark(var(--primary-foreground), var(--foreground)) 5%,
+    transparent
+  );
+  border-radius: var(--radius-2xl);
+  color: light-dark(var(--primary-foreground), var(--foreground));
+  background: light-dark(var(--foreground), var(--popover));
+  box-shadow: 0 8px 18px rgb(15 23 42 / 20%);
+  letter-spacing: -0.15px;
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+hr {
+  width: 100%;
+  height: 1px;
+  margin-block: 6px;
+  border: 0;
+  background: var(--border);
+}
+
+.nav {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.progress {
+  display: flex;
+  height: 8px;
+  margin-block: calc((var(--line-height-normal, 1.5em) - 8px) / 2);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.progress-bar:only-child {
+  border-radius: var(--radius-full);
+}
+
+.progress-bar {
+  height: 100%;
+  flex-shrink: 0;
+  border: 0;
+  background: var(--viz-series-1);
+}
+
+.viz-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  color: color-mix(in srgb, var(--foreground) 40%, var(--muted-foreground));
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  font-family: var(--font-sans);
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: var(--font-weight-normal);
+  line-height: 1;
+}
+
+small,
+.text-small {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.nav-link,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+/* Match inline alignment without overriding a containing flex or grid layout. */
+.btn,
+.nav-link,
+.form-control,
+.form-select,
+.form-range,
+.form-check {
+  vertical-align: middle;
+}
+
+.btn,
+.nav-link {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  corner-shape: var(--corner-shape);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: inherit;
+  font-family: var(--font-sans);
+  height: fit-content;
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  padding-inline: var(--control-spacing, 12px);
+  border-color: transparent;
+  border-radius: var(--radius-full);
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: var(--font-weight-normal);
+  line-height: 18px;
+}
+
+.btn {
+  border-color: var(--border);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: var(--cursor-interaction, pointer);
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: light-dark(
+    color-mix(in srgb, var(--foreground) 5.5%, transparent),
+    color-mix(in srgb, var(--foreground) 8%, transparent)
+  );
+}
+
+.nav-link:not(:disabled):not([aria-disabled=&quot;true&quot;]):hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.btn-primary {
+  border-color: var(--border);
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: border-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: border-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--muted-foreground);
+  background: light-dark(
+    color-mix(in srgb, var(--foreground) 5.5%, transparent),
+    color-mix(in srgb, var(--foreground) 8%, transparent)
+  );
+}
+
+.nav-pills .nav-link {
+  min-width: 0;
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.nav-justified .nav-link {
+  flex: 1 1 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.nav-pills .nav-link.active {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+/* Shared preview chrome; product styles stay inside each variant. */
+.viz-dotted-background {
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--foreground) 14%, transparent) 0.8px,
+    transparent 0.8px
+  );
+  background-position: center;
+  background-size: 16px 16px;
+}
+
+.viz-carousel {
+  position: relative;
+  min-width: 0;
+}
+
+.viz-carousel:has(&gt; .viz-carousel-controls) {
+  min-height: calc(60px + var(--viz-carousel-picker-height, 0px));
+  padding-bottom: 60px;
+}
+
+.viz-carousel &gt; [data-variant][hidden] {
+  display: none !important;
+}
+
+.viz-carousel &gt; [data-variant] {
+  isolation: isolate;
+}
+
+.viz-carousel-controls {
+  --viz-carousel-hover: light-dark(
+    color-mix(in srgb, var(--foreground) 5.4%, transparent),
+    color-mix(in srgb, var(--foreground) 7.8%, transparent)
+  );
+  position: absolute;
+  z-index: 2;
+  bottom: 8px;
+  left: 50%;
+  display: flex;
+  width: max-content;
+  /* Leave room for the host&#x27;s design-controls launcher at the trailing edge. */
+  max-width: calc(100% - 96px);
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans);
+  /* Match the settings dropdown chrome independently of the content font size. */
+  font-size: 13px;
+  font-weight: var(--font-weight-normal);
+  line-height: 18px;
+  transform: translateX(-50%);
+  user-select: none;
+}
+
+/* Keep authored mockup button styles out of the shared carousel chrome. */
+.viz-carousel-controls button,
+.viz-carousel-picker &gt; summary {
+  display: flex !important;
+  height: auto !important;
+  min-height: 30px;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px;
+  padding: 0 6px !important;
+  -webkit-app-region: no-drag;
+  border: 0 !important;
+  border-radius: 14px !important;
+  color: inherit !important;
+  background: transparent !important;
+  font: inherit !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.viz-carousel-controls &gt; button,
+.viz-carousel-picker &gt; summary {
+  position: relative;
+  isolation: isolate;
+}
+
+.viz-carousel-controls &gt; button {
+  --icon-size: 16px;
+  width: 30px !important;
+  padding: 0 !important;
+}
+
+.viz-carousel-picker &gt; summary {
+  padding-inline: 12px !important;
+}
+
+.viz-carousel-controls .viz-carousel-caret {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin: 0;
+  color: inherit;
+  transform: rotate(180deg);
+}
+
+.viz-carousel-controls &gt; button &gt; svg,
+.viz-carousel-controls .viz-carousel-caret,
+.viz-carousel-count {
+  opacity: 0.5;
+}
+
+.viz-carousel-controls &gt; button::before,
+.viz-carousel-picker &gt; summary::before {
+  position: absolute;
+  z-index: -1;
+  inset: 3px;
+  border-radius: 12px;
+  content: &quot;&quot;;
+  pointer-events: none;
+}
+
+.viz-carousel-controls &gt; button:hover::before,
+.viz-carousel-picker &gt; summary:hover::before {
+  background: var(--viz-carousel-hover);
+}
+
+.viz-carousel-controls &gt; button,
+.viz-carousel-controls [data-lucide],
+.viz-carousel-controls .lucide {
+  flex-shrink: 0;
+}
+
+.viz-carousel-picker {
+  min-width: 0;
+}
+
+.viz-carousel-picker &gt; summary {
+  min-width: 0;
+  list-style: none;
+}
+
+.viz-carousel-picker &gt; summary::-webkit-details-marker {
+  display: none;
+}
+
+.viz-carousel-count {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.viz-carousel-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-carousel-options {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  max-height: 240px;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--background);
+  box-shadow: 0 4px 12px light-dark(rgb(0 0 0 / 6%), rgb(0 0 0 / 25%));
+}
+
+.viz-carousel-options &gt; button {
+  border-radius: max(0px, calc(var(--radius-lg) - 5px)) !important;
+  width: 100% !important;
+  min-height: 28px;
+  justify-content: flex-start !important;
+  padding: 4px 8px !important;
+  font-size: var(--font-size-small) !important;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.viz-carousel-options &gt; [aria-current=&quot;true&quot;],
+.viz-carousel-options &gt; button:hover {
+  background: var(--viz-carousel-hover) !important;
+}
+
+.btn:disabled,
+.nav-link:disabled,
+.nav-link[aria-disabled=&quot;true&quot;] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  height: calc(12px + 2 * var(--control-spacing, 12px));
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  padding-inline: calc(4px + var(--control-spacing, 12px) / 2);
+  border-color: var(--input);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--popover) 96%, transparent);
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.4285714286;
+}
+.form-control:is(
+  [type=&quot;file&quot;],
+  [type=&quot;date&quot;],
+  [type=&quot;datetime-local&quot;],
+  [type=&quot;month&quot;],
+  [type=&quot;week&quot;],
+  [type=&quot;color&quot;]
+) {
+  height: calc(12px + 2 * var(--control-spacing, 12px));
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  line-height: 18px;
+}
+.form-control:is(
+  [type=&quot;date&quot;],
+  [type=&quot;datetime-local&quot;],
+  [type=&quot;month&quot;],
+  [type=&quot;week&quot;]
+) {
+  padding-inline: var(--control-spacing, 12px);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+  padding: 0;
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+  min-height: calc(10px + 2 * var(--control-spacing, 12px));
+  padding-inline: var(--control-spacing, 12px);
+  margin-inline-end: var(--control-spacing, 12px);
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: calc(12px + 2 * var(--control-spacing, 12px));
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: var(--corner-shape);
+}
+
+textarea.form-control {
+  height: auto;
+  resize: vertical;
+  min-height: 96px;
+  padding: 8px 10px;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: none;
+}
+.form-control:disabled {
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  opacity: 1;
+}
+.form-control[aria-invalid=&quot;true&quot;] {
+  border-color: var(--red);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 20%, transparent);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: fit-content;
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  margin: 0;
+  /* The secondary icon role is 14px at compact density and 16px at web density. */
+  --icon-size: calc(10px + var(--control-spacing, 12px) / 2);
+  /* Settings dropdowns retain a 12px inset and a 4px text-to-chevron gap. */
+  padding: 0 calc(16px + var(--icon-size)) 0 12px;
+  outline: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(
+      45deg,
+      transparent calc(50% - 0.6px),
+      var(--muted-foreground) calc(50% - 0.6px) calc(50% + 0.6px),
+      transparent calc(50% + 0.6px)
+    ),
+    linear-gradient(
+      135deg,
+      transparent calc(50% - 0.6px),
+      var(--muted-foreground) calc(50% - 0.6px) calc(50% + 0.6px),
+      transparent calc(50% + 0.6px)
+    );
+  background-position:
+    calc(100% - 12px - var(--icon-size) / 2) 50%,
+    calc(100% - 12px - var(--icon-size) * 0.18) 50%;
+  background-repeat: no-repeat;
+  background-size: calc(var(--icon-size) * 0.32) calc(var(--icon-size) * 0.32);
+  cursor: var(--cursor-interaction, default);
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: var(--font-weight-normal);
+  line-height: 18px;
+}
+
+.form-select option {
+  color: var(--popover-foreground);
+  background-color: var(--popover);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: light-dark(
+    color-mix(in srgb, var(--foreground) 5.5%, transparent),
+    color-mix(in srgb, var(--foreground) 8%, transparent)
+  );
+}
+
+.form-select:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.form-select:disabled {
+  opacity: 0.4;
+}
+
+.form-check {
+  display: flex;
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  corner-shape: round;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  width: calc(10px + var(--control-spacing, 12px) / 2);
+  height: calc(10px + var(--control-spacing, 12px) / 2);
+  border-color: var(--border-strong, var(--input));
+  border-radius: calc(var(--radius-sm) / 2);
+  background-color: transparent;
+  color: var(--foreground);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:is(:checked, :indeterminate) {
+  border-color: var(--border-strong, var(--input));
+  background-color: color-mix(in srgb, var(--popover) 96%, transparent);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+  background-color: var(--foreground);
+}
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:indeterminate::before {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 65%;
+  height: 6.65%;
+  margin: auto;
+  border-radius: var(--radius-full);
+  background: var(--foreground);
+  mask: none;
+  content: &quot;&quot;;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  border-radius: var(--radius-full);
+  width: 16px;
+  height: 16px;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--input);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 0;
+  background: radial-gradient(
+    circle,
+    var(--primary-foreground) 0 3px,
+    var(--foreground) 3px
+  );
+  box-shadow: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:focus-visible {
+  border-color: var(--ring);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+.form-check:not(.form-switch) .form-check-input[type=&quot;radio&quot;]:disabled,
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;radio&quot;]:disabled
+  + .form-check-label {
+  opacity: 0.5;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+  border-color: #fff;
+  background: #fff;
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--blue);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+  outline: none;
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  accent-color: var(--primary);
+  height: calc(12px + 2 * var(--control-spacing, 12px));
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  outline: none;
+  border-radius: var(--radius-full);
+  color: var(--foreground);
+  background: transparent;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  background: var(--form-range-track, var(--border));
+  height: 2px;
+  border-radius: var(--radius-full);
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  margin-top: -9px;
+  border-color: transparent;
+  background: currentColor;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Outline the native track and thumb, preserving the larger input hit area. */
+.form-range:focus-visible::-webkit-slider-runnable-track {
+  outline: 2px auto Highlight;
+  outline-color: -webkit-focus-ring-color;
+}
+
+.form-range::-moz-range-track {
+  background: var(--form-range-track, var(--border));
+  height: 2px;
+  border-radius: var(--radius-full);
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  border-color: transparent;
+  background: currentColor;
+  box-shadow: var(--shadow-sm);
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
+}
+
+.form-range:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+  [aria-pressed=&quot;true&quot;],
+  [aria-selected=&quot;true&quot;],
+  .is-selected
+) {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--blue);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible,
+.nav-link:focus-visible {
+  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.viz-carousel-controls :is(button, summary):focus-visible {
+  outline: 2px solid var(--ring) !important;
+  outline-offset: 2px !important;
+}
+
+/* Web recipes are the default, including on renderers without inline style queries. */
+@supports (border-radius: if(style(--corner-shape: round): 1px; else: 2px)) {
+  /* Match the host&#x27;s proportional text-sm scale at every text preference. */
+  .tooltip,
+  .viz-badge,
+  .btn,
+  .nav-link,
+  .form-control,
+  .form-select {
+    font-size: if(
+      style(--corner-shape: round): round(
+          nearest,
+          calc(var(--font-size-base) * 14 / 16),
+          1px
+        );
+        else: round(nearest, calc(var(--font-size-base) * 13 / 14), 1px)
+    );
+  }
+
+  .btn,
+  .nav-link,
+  .form-select {
+    border-radius: if(
+      style(--corner-shape: round): var(--radius-full); else: var(--radius-lg)
+    );
+  }
+
+  .form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+    border-radius: if(
+      style(--corner-shape: round): calc(var(--radius-sm) / 2);
+        else: calc(var(--radius-lg) * 0.4)
+    );
+  }
+
+  .tooltip {
+    font-weight: if(
+      style(--corner-shape: round): 600; else: var(--font-weight-normal)
+    );
+  }
+}
+
+@media (pointer: coarse) {
+  .viz-carousel:has(&gt; .viz-carousel-controls) {
+    min-height: calc(76px + var(--viz-carousel-picker-height, 0px));
+    padding-bottom: 76px;
+  }
+
+  .btn,
+  .nav-link,
+  .viz-carousel-controls button,
+  .viz-carousel-picker &gt; summary,
+  .form-control,
+  .form-select {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Keep small-screen WebKit from zooming when a text field receives focus. */
+  .form-control,
+  .form-select {
+    font-size: max(16px, calc(var(--font-size-base) * 14 / 16));
+    font-size: max(
+      16px,
+      round(nearest, calc(var(--font-size-base) * 14 / 16), 1px)
+    );
+  }
+  .form-control:is(
+    [type=&quot;file&quot;],
+    [type=&quot;date&quot;],
+    [type=&quot;datetime-local&quot;],
+    [type=&quot;month&quot;],
+    [type=&quot;week&quot;],
+    [type=&quot;time&quot;],
+    [type=&quot;color&quot;]
+  ) {
+    height: 44px;
+    min-height: 44px;
+    font-size: max(16px, calc(var(--font-size-base) * 14 / 16));
+    font-size: max(
+      16px,
+      round(nearest, calc(var(--font-size-base) * 14 / 16), 1px)
+    );
+  }
+
+  .form-control[type=&quot;file&quot;]::file-selector-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control-color[type=&quot;color&quot;] {
+    width: 44px;
+    height: 44px;
+  }
+
+  .form-control:is(
+    [type=&quot;date&quot;],
+    [type=&quot;datetime-local&quot;],
+    [type=&quot;month&quot;],
+    [type=&quot;time&quot;],
+    [type=&quot;week&quot;]
+  ) {
+    min-width: 0;
+    max-width: 100%;
+    padding-block: 8px;
+  }
+
+  .form-check {
+    min-height: 44px;
+    padding-inline: 15px;
+  }
+
+  .form-check-input {
+    position: relative;
+  }
+
+  .form-check-input::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    content: &quot;&quot;;
+    transform: translate(-50%, -50%);
+  }
+
+  .form-check-label {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .form-range {
+    height: 44px;
+    touch-action: pan-y;
+  }
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: var(--icon-size) !important;
+  height: var(--icon-size) !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;script type=&quot;application/json&quot; id=&quot;codex-visualization-widget-state&quot;&gt;__CODEX_VISUALIZATION_WIDGET_STATE__&lt;/script&gt;
+&lt;script&gt;(() =&gt; {
+  const root = document.documentElement;
+  const mediaQuery = globalThis.matchMedia(&quot;(prefers-color-scheme: dark)&quot;);
+  const apply = Reflect.apply;
+  const isArray = Array.isArray;
+  const hasOwn = Object.hasOwn;
+  const parentWindow = globalThis.parent;
+  const stringify = JSON.stringify;
+  const parse = JSON.parse;
+  const encode = TextEncoder.prototype.encode.bind(new TextEncoder());
+  const initialStateElement = document.getElementById(
+    &quot;codex-visualization-widget-state&quot;,
+  );
+  const initialGlobals = parse(initialStateElement?.textContent ?? &quot;{}&quot;);
+  initialStateElement?.remove();
+  /** @type {Record&lt;string, unknown&gt; | null} */
+  let state = initialGlobals.widgetState ?? null;
+  const statePersistence = initialGlobals.statePersistence ?? &quot;none&quot;;
+  let nextStateRequestId = 0;
+  /** @type {Map&lt;number, { resolve: () =&gt; void; reject: (error: Error) =&gt; void; timeout: ReturnType&lt;typeof globalThis.setTimeout&gt;; serializedState: string }&gt;} */
+  const pendingStateWrites = new Map();
+  const persistenceError = () =&gt;
+    Object.assign(
+      new Error(&quot;The host could not persist the widget state update&quot;),
+      {
+        code: -32000,
+        data: { code: &quot;widget_state_persistence_failed&quot;, retryable: false },
+      },
+    );
+  /**
+   * @param {object} prototype
+   * @param {string} property
+   */
+  const getPrototypeGetter = (prototype, property) =&gt; {
+    // oxlint-disable-next-line typescript/unbound-method -- invoked through captured Reflect.apply
+    const getter = Object.getOwnPropertyDescriptor(prototype, property)?.get;
+    if (getter == null) {
+      throw new Error(`Missing ${property} getter`);
+    }
+    return getter;
+  };
+  const getMessageData = getPrototypeGetter(MessageEvent.prototype, &quot;data&quot;);
+  const getMessagePorts = getPrototypeGetter(MessageEvent.prototype, &quot;ports&quot;);
+  const getMessageSource = getPrototypeGetter(MessageEvent.prototype, &quot;source&quot;);
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const addHostMessageListener = MessagePort.prototype.addEventListener;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const postHostMessage = MessagePort.prototype.postMessage;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const startHostPort = MessagePort.prototype.start;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const stopMessagePropagation = Event.prototype.stopImmediatePropagation;
+  /** @type {MessagePort | null} */
+  let hostPort = null;
+  const postToHost = (type, payload) =&gt; {
+    if (hostPort != null) {
+      apply(postHostMessage, hostPort, [{ type, ...payload }]);
+    }
+  };
+  const openExternal = ({ href }) =&gt; {
+    if (globalThis.navigator.userActivation?.isActive === true) {
+      postToHost(&quot;open-external&quot;, { href });
+    }
+  };
+  const sendFollowUpMessage = ({ context, prompt, title }) =&gt; {
+    if (globalThis.navigator.userActivation?.isActive === true) {
+      postToHost(&quot;follow-up&quot;, { context, prompt, title });
+    }
+    return Promise.resolve();
+  };
+  /**
+   * @param {Record&lt;string, unknown&gt; | ((previous: Record&lt;string, unknown&gt; | null) =&gt; Record&lt;string, unknown&gt;)} next
+   * @returns {Promise&lt;void&gt;}
+   */
+  const setWidgetState = async (next) =&gt; {
+    const nextState = typeof next === &quot;function&quot; ? next(state) : next;
+    if (
+      nextState == null ||
+      typeof nextState !== &quot;object&quot; ||
+      isArray(nextState)
+    ) {
+      throw new TypeError(&quot;Widget state must be a JSON object&quot;);
+    }
+    const inputState = stringify(
+      nextState,
+      (_key, /** @type {unknown} */ value) =&gt; {
+        if (
+          typeof value === &quot;undefined&quot; ||
+          typeof value === &quot;function&quot; ||
+          typeof value === &quot;symbol&quot; ||
+          (typeof value === &quot;number&quot; &amp;&amp; !Number.isFinite(value))
+        ) {
+          throw new TypeError(&quot;Widget state must be a JSON object&quot;);
+        }
+        return value;
+      },
+    );
+    const parsedState = parse(inputState);
+    if (
+      parsedState == null ||
+      typeof parsedState !== &quot;object&quot; ||
+      isArray(parsedState)
+    ) {
+      throw new TypeError(&quot;Widget state must be a JSON object&quot;);
+    }
+    const storedState = {
+      modelContent: null,
+      privateContent: null,
+      ...parsedState,
+    };
+    const serializedState = stringify(storedState);
+    if (encode(serializedState).length &gt; 16 * 1024) {
+      throw new TypeError(
+        &quot;Widget state must be a JSON object of at most 16 KiB&quot;,
+      );
+    }
+    if (
+      hasOwn(storedState, &quot;imageIds&quot;) &amp;&amp;
+      (!isArray(storedState.imageIds) ||
+        storedState.imageIds.some(
+          (/** @type {unknown} */ id) =&gt; typeof id !== &quot;string&quot;,
+        ))
+    ) {
+      throw new TypeError(&quot;Widget state imageIds must be an array of strings&quot;);
+    }
+    if (storedState.imageIds?.length &gt; 0) {
+      throw Object.assign(
+        new TypeError(&quot;Visualization state does not support image attachments&quot;),
+        { code: -32602, data: { code: &quot;images_unsupported&quot; } },
+      );
+    }
+    state = storedState;
+    globalThis.openai.widgetState = state;
+    globalThis.dispatchEvent(
+      new CustomEvent(&quot;openai:set_globals&quot;, {
+        detail: { globals: { widgetState: state } },
+      }),
+    );
+    if (statePersistence === &quot;none&quot;) {
+      throw persistenceError();
+    }
+    const id = ++nextStateRequestId;
+    return new Promise((resolve, reject) =&gt; {
+      const timeout = globalThis.setTimeout(() =&gt; {
+        pendingStateWrites.delete(id);
+        reject(persistenceError());
+      }, 30_000);
+      pendingStateWrites.set(id, { resolve, reject, timeout, serializedState });
+      postToHost(&quot;widget-state-write&quot;, { id, state: serializedState });
+    });
+  };
+  const syncTheme = () =&gt; {
+    const theme = mediaQuery.matches ? &quot;dark&quot; : &quot;light&quot;;
+    root.dataset.theme = theme;
+    globalThis.openai = {
+      ...globalThis.openai,
+      openExternal,
+      sendFollowUpMessage,
+      setWidgetState,
+      theme,
+      visualizationStyleVariables: {},
+      visualizationTheme: theme,
+      widgetState: state,
+      statePersistence,
+      stateModelContext: &quot;none&quot;,
+    };
+    globalThis.dispatchEvent(
+      new CustomEvent(&quot;openai:set_globals&quot;, {
+        detail: { globals: globalThis.openai },
+      }),
+    );
+  };
+  const sendHeight = () =&gt; {
+    postToHost(&quot;height&quot;, {
+      height: Math.ceil(
+        Math.max(
+          document.body.scrollHeight,
+          document.body.getBoundingClientRect().height,
+        ),
+      ),
+    });
+  };
+
+  globalThis.addEventListener(
+    &quot;message&quot;,
+    (event) =&gt; {
+      const data = apply(getMessageData, event, []);
+      const ports = apply(getMessagePorts, event, []);
+      const source = apply(getMessageSource, event, []);
+      if (
+        hostPort != null ||
+        source !== parentWindow ||
+        typeof data !== &quot;object&quot; ||
+        data?.type !== &quot;codex-visualization-initialize&quot; ||
+        !isArray(ports) ||
+        ports.length !== 1
+      ) {
+        return;
+      }
+      apply(stopMessagePropagation, event, []);
+      const nextHostPort = ports[0];
+      try {
+        apply(addHostMessageListener, nextHostPort, [
+          &quot;message&quot;,
+          (event) =&gt; {
+            const data = apply(getMessageData, event, []);
+            if (typeof data === &quot;object&quot; &amp;&amp; data?.type === &quot;measure&quot;) {
+              sendHeight();
+            } else if (
+              typeof data === &quot;object&quot; &amp;&amp;
+              data?.type === &quot;widget-state-result&quot;
+            ) {
+              /** @type {unknown} */
+              const id = data.id;
+              if (typeof id !== &quot;number&quot;) {
+                return;
+              }
+              const pending = pendingStateWrites.get(id);
+              if (pending != null) {
+                pendingStateWrites.delete(id);
+                globalThis.clearTimeout(pending.timeout);
+                if (data.ok === true) {
+                  pending.resolve();
+                } else {
+                  pending.reject(persistenceError());
+                }
+              }
+            }
+          },
+        ]);
+        apply(startHostPort, nextHostPort, []);
+      } catch {
+        return;
+      }
+      hostPort = nextHostPort;
+      for (const [id, { serializedState }] of pendingStateWrites) {
+        postToHost(&quot;widget-state-write&quot;, { id, state: serializedState });
+      }
+      sendHeight();
+    },
+    { capture: true },
+  );
+  document.currentScript?.remove();
+  mediaQuery.addEventListener(&quot;change&quot;, syncTheme);
+  globalThis.addEventListener(&quot;click&quot;, (event) =&gt; {
+    if (event.defaultPrevented) {
+      return;
+    }
+    let element = null;
+    if (event.target instanceof globalThis.Element) {
+      element = event.target;
+    } else if (event.target instanceof globalThis.Node) {
+      element = event.target.parentElement;
+    }
+    const link = element?.closest(&quot;a[href]&quot;);
+    const href = link?.getAttribute(&quot;href&quot;);
+    if (href == null) {
+      return;
+    }
+    if (href.startsWith(&quot;#&quot;)) {
+      let id;
+      try {
+        id = decodeURIComponent(href.slice(1));
+      } catch {
+        return;
+      }
+      const target = id.length === 0 ? root : document.getElementById(id);
+      if (
+        target == null ||
+        globalThis.navigator.userActivation?.isActive !== true
+      ) {
+        return;
+      }
+      event.preventDefault();
+      postToHost(&quot;scroll-to&quot;, {
+        top: target.getBoundingClientRect().top + globalThis.scrollY,
+      });
+      return;
+    }
+    event.preventDefault();
+    openExternal({ href });
+  });
+  new ResizeObserver(sendHeight).observe(document.body);
+  syncTheme();
+})();
+&lt;/script&gt;
+&lt;div id=&quot;sela-architecture-v2&quot;&gt;
+  &lt;h2&gt;Sela · 项目架构&lt;/h2&gt;
+  &lt;div class=&quot;text-small text-muted v2-caption&quot;&gt;iPhone 自主运行 · 三条执行通道 · 本机证据与恢复&lt;/div&gt;
+  &lt;div class=&quot;v2-tabs&quot;&gt;&lt;div class=&quot;nav nav-pills viz-row&quot; role=&quot;tablist&quot; aria-label=&quot;架构专题&quot; data-v2-tabs&gt;&lt;/div&gt;&lt;/div&gt;
+  &lt;div data-v2-panels&gt;&lt;/div&gt;
+  &lt;details class=&quot;v2-appendix&quot;&gt;&lt;summary&gt;版本、实验分支与验收边界&lt;/summary&gt;&lt;div data-v2-appendix&gt;&lt;/div&gt;&lt;/details&gt;
+  &lt;div class=&quot;text-small text-muted v2-provenance&quot;&gt;依据 2026-10-26 Sela 主线工作副本。源码接线与设备验收分别记录。&lt;/div&gt;
+&lt;/div&gt;
+&lt;style&gt;
+#sela-architecture-v2 { color:var(--foreground); overflow-wrap:anywhere; }
+#sela-architecture-v2 .v2-caption { margin-bottom:18px; padding-right:90px; }
+#sela-architecture-v2 .v2-tabs { margin-bottom:24px; }
+#sela-architecture-v2 .v2-subtitle { margin:4px 0 18px; }
+#sela-architecture-v2 .v2-diagram { width:100%; }
+#sela-architecture-v2 .v2-diagram svg { display:block; max-width:100%; }
+#sela-architecture-v2 .v2-map { margin-top:18px; }
+#sela-architecture-v2 .v2-map details, #sela-architecture-v2 .v2-appendix details { margin:10px 0; }
+#sela-architecture-v2 .v2-map ul, #sela-architecture-v2 .v2-appendix ul { padding-left:22px; }
+#sela-architecture-v2 .v2-map li, #sela-architecture-v2 .v2-appendix li { margin:7px 0; }
+#sela-architecture-v2 .v2-source { padding-right:8px; margin:10px 0 18px; }
+#sela-architecture-v2 .v2-source code { white-space:normal; }
+#sela-architecture-v2 .v2-appendix { margin-top:22px; }
+#sela-architecture-v2 .v2-provenance { margin-top:18px; }
+&lt;/style&gt;
+&lt;script type=&quot;application/json&quot; id=&quot;sela-v2-source-data&quot;&gt;{&quot;workspace&quot;:&quot;.&quot;,&quot;appendix&quot;:{&quot;system&quot;:[{&quot;id&quot;:&quot;entry&quot;,&quot;title&quot;:&quot;用户与系统入口&quot;,&quot;subtitle&quot;:&quot;文字 / 语音 / Siri / 附件&quot;,&quot;details&quot;:[&quot;用户以文字、语音、Siri / 快捷指令或显式选择的附件提出要求。&quot;,&quot;新操作的授权来自本轮人类要求；历史内容、网页与附件正文仅作为资料。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentApp.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentIntents.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:187},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentIntents.swift&quot;,&quot;line&quot;:4}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;composition&quot;,&quot;title&quot;:&quot;Sela iPhone App&quot;,&quot;subtitle&quot;:&quot;交互 · 理解 · 协调 · 执行&quot;,&quot;details&quot;:[&quot;Sela 是在 iPhone 内运行的原生 App，负责理解请求、协调任务、调用能力和呈现结果。&quot;,&quot;运行时不依赖 Mac 常开；Mac 在主线中只承担开发、模拟器和安装工作。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:430},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentApp.swift&quot;,&quot;line&quot;:7},{&quot;path&quot;:&quot;PhoneAgent/ContentView.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Models/WorkspaceNavigation.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:872},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:4}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;model&quot;,&quot;title&quot;:&quot;配置的模型服务&quot;,&quot;subtitle&quot;:&quot;任务理解 / 视觉决策 / 文字分析&quot;,&quot;details&quot;:[&quot;文字、图片和相关任务上下文发给用户配置且获授权的模型服务。&quot;,&quot;自定义 HTTPS API Key 与显式选择的 ChatGPT 计划连接是两条认证路径；输出由手机宿主校验后采用。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:101},{&quot;path&quot;:&quot;PhoneAgent/Services/ConnectedConversationClient.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/ConnectedConversationClient.swift&quot;,&quot;line&quot;:9},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:30},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:114},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:190},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:204}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;direct&quot;,&quot;title&quot;:&quot;第三方业务服务&quot;,&quot;subtitle&quot;:&quot;携程 / 美团跑腿 / 其他显式连接&quot;,&quot;details&quot;:[&quot;携程和美团跑腿由手机中的专属客户端调用，返回查询、报价或提交回执。&quot;,&quot;真实连接状态、实时报价、库存和业务成功分别核对；服务返回不自动等于订单或付款成功。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:575},{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:973},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:218},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:224}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;tools&quot;,&quot;title&quot;:&quot;iOS 系统能力&quot;,&quot;subtitle&quot;:&quot;本机 API / 权限 / Shortcuts 桥&quot;,&quot;details&quot;:[&quot;获授权的日历、提醒、联系人、照片、健康、音乐、位置等能力由 iPhone 本机系统接口执行。&quot;,&quot;前台条件、系统权限、资源互斥与工具回执在手机宿主中检查。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;Shared/SystemToolRequest.swift&quot;,&quot;line&quot;:9},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:121},{&quot;path&quot;:&quot;PhoneAgent/Services/NativeConnectionsStore.swift&quot;,&quot;line&quot;:13},{&quot;path&quot;:&quot;PhoneAgent/Models/NativeAppConnection.swift&quot;,&quot;line&quot;:3}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;esp&quot;,&quot;title&quot;:&quot;ESP32-S3 配件&quot;,&quot;subtitle&quot;:&quot;自定义 BLE 控制服务 + HID&quot;,&quot;details&quot;:[&quot;ESP32-S3 接收 App 的 BLE 控制命令，再向 iOS 系统发送键鼠 HID 报告。&quot;,&quot;本路线中配件不采集屏幕，也不运行模型；控制连接与系统 HID 连接分别跟踪。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:73},{&quot;path&quot;:&quot;Shared/MouseProtocol.swift&quot;,&quot;line&quot;:12},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:12},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:56},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:72},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:431},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:452},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:457}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;target&quot;,&quot;title&quot;:&quot;同一台 iPhone 的目标 App&quot;,&quot;subtitle&quot;:&quot;iOS HID / AssistiveTouch&quot;,&quot;details&quot;:[&quot;iOS 通过系统 HID / AssistiveTouch 将配件输入作用于同一台 iPhone 的前台目标 App。&quot;,&quot;用户授权的整屏共享把结果画面送回 Sela；Sela 不直接读取目标 App 的私有数据库。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:477},{&quot;path&quot;:&quot;Shared/InputReleaseController.swift&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;docs/firmware.md&quot;,&quot;line&quot;:44},{&quot;path&quot;:&quot;docs/architecture.md&quot;,&quot;line&quot;:47},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/WorkflowObservationLease.swift&quot;,&quot;line&quot;:29}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;local&quot;,&quot;title&quot;:&quot;本机数据与证据&quot;,&quot;subtitle&quot;:&quot;Stores · SelaMemoryCore · Keychain&quot;,&quot;details&quot;:[&quot;对话、任务、记忆、证据与产物由本机 Store 保存，凭据放在独立 Keychain 条目。&quot;,&quot;持久记录是回看和显式恢复资料，不会从磁盘自动恢复执行权限。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/SettingsStore.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:139},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskCoordinator.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Stores/SettingsStore.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Stores/RealtimeStore.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Stores/WebSearchStore.swift&quot;,&quot;line&quot;:4}],&quot;status&quot;:&quot;main&quot;}],&quot;layers&quot;:[{&quot;id&quot;:&quot;ui&quot;,&quot;title&quot;:&quot;交互与输入层&quot;,&quot;subtitle&quot;:&quot;ContentView / Views / Voice / Siri&quot;,&quot;details&quot;:[&quot;SwiftUI 工作区负责对话、草稿、附件、任务卡片和设置；语音与 Siri 复用同一应用协调入口。&quot;,&quot;View 发出事件并呈现服务状态，不直接绕过执行器发送 HID 输入。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/ContentView.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Models/WorkspaceNavigation.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentApp.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentIntents.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:872},{&quot;path&quot;:&quot;PhoneAgent/Stores/ComposerAttachmentStore.swift&quot;,&quot;line&quot;:15},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentIntents.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Services/VoiceController.swift&quot;,&quot;line&quot;:85},{&quot;path&quot;:&quot;PhoneAgent/Views/WorkbenchView.swift&quot;,&quot;line&quot;:251},{&quot;path&quot;:&quot;PhoneAgent/Services/ComposerAttachmentImport.swift&quot;,&quot;line&quot;:16},{&quot;path&quot;:&quot;PhoneAgent/Services/SpreadsheetFiles.swift&quot;,&quot;line&quot;:4}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;intelligence&quot;,&quot;title&quot;:&quot;对话理解层&quot;,&quot;subtitle&quot;:&quot;AssistantConversation / UnifiedConversationRouter&quot;,&quot;details&quot;:[&quot;组合本轮消息、有限历史、显式附件、待补充意图和带来源的记忆，输出结构化意图。&quot;,&quot;校验来源、任务范围和配置版本；聊天与追问不获得执行权限，迟到结果不能污染另一会话。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:872},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;Shared/ConversationUnderstanding.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:499},{&quot;path&quot;:&quot;PhoneAgent/Stores/MemoryStore.swift&quot;,&quot;line&quot;:173},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:12},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:99},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:125},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:117},{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:973},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:153},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:187}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;composition&quot;,&quot;title&quot;:&quot;应用协调层&quot;,&quot;subtitle&quot;:&quot;PhoneAgentViewModel / ConversationCoordinator&quot;,&quot;details&quot;:[&quot;应用组合根连接采集、模型、执行器、工具、存储与系统状态，并决定启动、入队、暂停或恢复。&quot;,&quot;任务与原 conversationID / messageID / taskID 绑定；控制还必须匹配当前执行会话 token。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:430},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentApp.swift&quot;,&quot;line&quot;:7},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:447},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:75},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:97},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:8},{&quot;path&quot;:&quot;Shared/AssistantConversationContext.swift&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:117},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:256},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:184}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;screen&quot;,&quot;title&quot;:&quot;屏幕执行通道&quot;,&quot;subtitle&quot;:&quot;AgentEngine / Screen Queue&quot;,&quot;details&quot;:[&quot;屏幕任务采用单一 GUI 输入所有者，其他屏幕任务保存到队列。&quot;,&quot;AgentEngine 协调观察、模型动作、复核、执行和结果证据；恢复重新观察，不重放旧动作。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:828},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:1531},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:38},{&quot;path&quot;:&quot;Shared/AgentModels.swift&quot;,&quot;line&quot;:38},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:1043},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:1440}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;native&quot;,&quot;title&quot;:&quot;原生执行通道&quot;,&quot;subtitle&quot;:&quot;BackgroundTaskCoordinator / Worker Pool&quot;,&quot;details&quot;:[&quot;原生任务每项拥有独立 tools-only AgentEngine，最多同时运行 3 项。&quot;,&quot;不需要 BLE 或共享屏幕；同资源互斥、不同资源可以并行，磁盘记录不能自动重建运行会话。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskCoordinator.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskExecution.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskCoordinator.swift&quot;,&quot;line&quot;:6}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;direct&quot;,&quot;title&quot;:&quot;专属服务通道&quot;,&quot;subtitle&quot;:&quot;Ctrip / MeituanPaotui Conversation + Client&quot;,&quot;details&quot;:[&quot;航班与跑腿多轮对话有独立客户端与卡片状态；部分查询直接由对话服务调用。&quot;,&quot;任务的 system_tool 也可以调用相关客户端；不能把所有专属查询都画成 GUI 点击。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:575},{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:973},{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:985},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:66},{&quot;path&quot;:&quot;PhoneAgent/Services/CtripClient.swift&quot;,&quot;line&quot;:35},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:477},{&quot;path&quot;:&quot;docs/ctrip-connection.md&quot;,&quot;line&quot;:36},{&quot;path&quot;:&quot;PhoneAgent/Services/MeituanPaotuiConversation.swift&quot;,&quot;line&quot;:25},{&quot;path&quot;:&quot;PhoneAgent/Services/MeituanPaotuiConversation.swift&quot;,&quot;line&quot;:293},{&quot;path&quot;:&quot;PhoneAgent/Services/MeituanPaotuiStore.swift&quot;,&quot;line&quot;:1}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;perception&quot;,&quot;title&quot;:&quot;能力与适配层&quot;,&quot;subtitle&quot;:&quot;Capture / Harness / Model / SystemTools / BLE&quot;,&quot;details&quot;:[&quot;采集、OCR、模型连接、系统工具和 BLE/HID 适配作为执行通道的基础设施。&quot;,&quot;观察绑定、输入释放与真实回执由宿主掌握，模型不能直接取得配件或系统权限。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/WorkflowObservationLease.swift&quot;,&quot;line&quot;:29},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:56},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:101},{&quot;path&quot;:&quot;PhoneAgent/Services/ConnectedConversationClient.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneHarnessRuntime.swift&quot;,&quot;line&quot;:76},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneHarnessRuntime.swift&quot;,&quot;line&quot;:607},{&quot;path&quot;:&quot;Shared/PhoneHarness.swift&quot;,&quot;line&quot;:188},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:35},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:89},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:120},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:720},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskExecution.swift&quot;,&quot;line&quot;:38},{&quot;path&quot;:&quot;PhoneAgent/Services/TaskResourceGate.swift&quot;,&quot;line&quot;:44}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;local&quot;,&quot;title&quot;:&quot;数据与证据层&quot;,&quot;subtitle&quot;:&quot;Stores / SelaMemoryCore / Journals&quot;,&quot;details&quot;:[&quot;共享存储层保存会话、任务检查点、记忆、业务证据、产物与独立工具回执。&quot;,&quot;关键成功状态先持久化再发布；写盘失败会暂停继续执行。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/SettingsStore.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:139},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskCoordinator.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Stores/MemoryStore.swift&quot;,&quot;line&quot;:173},{&quot;path&quot;:&quot;PhoneAgent/Stores/TaskHistoryStore.swift&quot;,&quot;line&quot;:135},{&quot;path&quot;:&quot;PhoneAgent/Stores/AssistantConversationStore.swift&quot;,&quot;line&quot;:17},{&quot;path&quot;:&quot;PhoneAgent/Stores/ChatEvidenceStore.swift&quot;,&quot;line&quot;:6},{&quot;path&quot;:&quot;PhoneAgent/Stores/XiaohongshuCollectionStore.swift&quot;,&quot;line&quot;:6},{&quot;path&quot;:&quot;PhoneAgent/Stores/WorkflowDiagnosticsStore.swift&quot;,&quot;line&quot;:14}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;surface&quot;,&quot;title&quot;:&quot;系统运行与状态层&quot;,&quot;subtitle&quot;:&quot;BackgroundExecution / Activity / Notifications / PiP&quot;,&quot;details&quot;:[&quot;Live Activity、灵动岛、通知和 PiP 是任务状态的投影；展示不会授予新的任务控制权。&quot;,&quot;后台执行控制器只维持进程内已经启动的工作；系统到期时暂停并保存检查点，当前相关真机边界仍需单独验收。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundExecutionController.swift&quot;,&quot;line&quot;:6},{&quot;path&quot;:&quot;PhoneAgent/Services/TaskActivityController.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/TaskActivityController.swift&quot;,&quot;line&quot;:134},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:710},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:771},{&quot;path&quot;:&quot;Activity/TaskActivityWidget.swift&quot;,&quot;line&quot;:10},{&quot;path&quot;:&quot;Shared/AgentActivityControls.swift&quot;,&quot;line&quot;:10},{&quot;path&quot;:&quot;PhoneAgent/Services/TaskNotificationsController.swift&quot;,&quot;line&quot;:84},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentPiPController.swift&quot;,&quot;line&quot;:19}],&quot;status&quot;:&quot;pending&quot;}],&quot;loop&quot;:[{&quot;id&quot;:&quot;ex-preflight&quot;,&quot;title&quot;:&quot;准备检查&quot;,&quot;subtitle&quot;:&quot;授权 · 模型 · 整屏 · 校准&quot;,&quot;details&quot;:[&quot;启动前检查模型、数据同意、整屏共享、当前配件就绪、校准和输入所有权。&quot;,&quot;工具模式不要求截图或 BLE；预览模式不发送输入，模式不能互相借用准备条件。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:296},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:35},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:89},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:104}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-observe&quot;,&quot;title&quot;:&quot;取得当前整屏&quot;,&quot;subtitle&quot;:&quot;CaptureService / ScreenFrame / FrameReadinessGate&quot;,&quot;details&quot;:[&quot;系统共享选择器与 SCStream 把真实像素转换为 JPEG / ScreenFrame，采集时间和系统确认时间分别保存。&quot;,&quot;完整帧及有效 started 像素可更新图像；idle 只确认同一流已有完整像素，空白、暂停或旧流不能冒充新画面。&quot;,&quot;执行帧必须晚于输入边界、最近 1.5 秒内被系统确认；有界事件等待最多 6 秒，预览仅请求新帧。&quot;,&quot;刷新采用独立流代次；刷新失败可保留原共享，新流首帧到达后才结束旧流。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:516},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:537},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:190},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:209},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:140},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:254},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:413},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:87},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:355},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:375},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:446},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:489},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:506},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:10},{&quot;path&quot;:&quot;PhoneAgent/Services/CaptureService.swift&quot;,&quot;line&quot;:57},{&quot;path&quot;:&quot;Shared/FrameReadiness.swift&quot;,&quot;line&quot;:59}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-hcontext&quot;,&quot;title&quot;:&quot;形成页面上下文&quot;,&quot;subtitle&quot;:&quot;PhoneHarnessRuntime / OCR / ObservationLease&quot;,&quot;details&quot;:[&quot;本机 Vision OCR 生成宿主元素 ID、页面结构、遮挡和有限的已验证导航记忆。&quot;,&quot;观察证明绑定像素、捕获流、尺寸、设备和 BLE 连接代次；OCR 前后及 await 返回后再次核对当前帧租约。&quot;,&quot;页面适配器存在只说明当前 OCR 结构可解释，不等于所有界面已完成真机验收。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneHarnessRuntime.swift&quot;,&quot;line&quot;:76},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneHarnessRuntime.swift&quot;,&quot;line&quot;:607},{&quot;path&quot;:&quot;Shared/PhoneHarness.swift&quot;,&quot;line&quot;:188},{&quot;path&quot;:&quot;PhoneAgent/Services/WorkflowObservationLease.swift&quot;,&quot;line&quot;:29},{&quot;path&quot;:&quot;PhoneAgent/Services/WorkflowObservationLease.swift&quot;,&quot;line&quot;:98},{&quot;path&quot;:&quot;PhoneAgent/Services/WorkflowObservationLease.swift&quot;,&quot;line&quot;:140},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneHarnessRuntime.swift&quot;,&quot;line&quot;:125},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneHarnessRuntime.swift&quot;,&quot;line&quot;:144},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:681},{&quot;path&quot;:&quot;Shared/PhonePageAdapters.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;Shared/PhoneOverlayClassifier.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;Shared/XiaohongshuPageAdapter.swift&quot;,&quot;line&quot;:1}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-context&quot;,&quot;title&quot;:&quot;本轮任务上下文&quot;,&quot;subtitle&quot;:&quot;记忆 · 附件 · 压缩历史 · 工具证据&quot;,&quot;details&quot;:[&quot;组合原任务、明确补充、子任务账本、显式附件、有限记忆、压缩历史和真实工具证据。&quot;,&quot;原要求与完整产物独立保存；滚动摘要明确省略范围，不能替代明细证据库。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:209},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:657},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;Shared/ConversationUnderstanding.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:499},{&quot;path&quot;:&quot;PhoneAgent/Stores/MemoryStore.swift&quot;,&quot;line&quot;:173}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-model&quot;,&quot;title&quot;:&quot;模型决策&quot;,&quot;subtitle&quot;:&quot;VisionClient.nextAction&quot;,&quot;details&quot;:[&quot;VisionClient 将当前画面和受界定上下文发给配置的模型，加载手机控制及相关业务 Skill。&quot;,&quot;模型只返回动作建议；API Key 和计划连接的授权、接收方及配置变化会使旧结果失效。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:114},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:190},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:204},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:101},{&quot;path&quot;:&quot;PhoneAgent/Services/ConnectedConversationClient.swift&quot;,&quot;line&quot;:1}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-actions&quot;,&quot;title&quot;:&quot;动作契约与解析&quot;,&quot;subtitle&quot;:&quot;AgentAction：12种kind&quot;,&quot;details&quot;:[&quot;动作契约包含 tap、long_press、drag、scroll、type、press_key、wait、finish、ask_user、system_tool、complete_subtask、phone_tool。&quot;,&quot;严格解析动作类型、字段、长度和数值范围；phone_tool 只能引用宿主语义目标，不能添加任意坐标。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;Shared/AgentModels.swift&quot;,&quot;line&quot;:352},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:706}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-revalidate&quot;,&quot;title&quot;:&quot;执行前复核&quot;,&quot;subtitle&quot;:&quot;新画面 + 局部变化 + 可选确认&quot;,&quot;details&quot;:[&quot;模型返回及可选用户确认之后再次核对捕获流、源尺寸、模型尺寸、全局和目标附近画面变化。&quot;,&quot;旧动作失效就丢弃并重新观察；重复动作只有在画面也无实质变化时累计，像素差异检查不能证明目标身份。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:585},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:852},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:874},{&quot;path&quot;:&quot;Shared/FrameReadiness.swift&quot;,&quot;line&quot;:5}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-mouse&quot;,&quot;title&quot;:&quot;普通输入执行&quot;,&quot;subtitle&quot;:&quot;MouseExecutor → BLE&quot;,&quot;details&quot;:[&quot;归一化目标经当前设备校准转换为相对鼠标移动、点击、拖动、滚动或键盘输入。&quot;,&quot;新定位先物理归零，拖动按住段保持连续；HID 文本直接输入限 ASCII，不能任意注入非 ASCII 文本。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:35},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:89},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:120},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:56},{&quot;path&quot;:&quot;PhoneAgent/Services/MouseExecutor.swift&quot;,&quot;line&quot;:104}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-harness&quot;,&quot;title&quot;:&quot;语义手机工具&quot;,&quot;subtitle&quot;:&quot;phone_tool → Harness&quot;,&quot;details&quot;:[&quot;phone_tool 在本地执行已识别导航，或把保存计划交给 PhoneWorkflowWorkspace。&quot;,&quot;保存业务流程必须绑定真实 taskID、planID 和稳定 operation_id；模型不能扩大私人会话、采集或收件范围。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;Shared/PhoneHarness.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;Shared/PhoneHarness.swift&quot;,&quot;line&quot;:22},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneHarnessRuntime.swift&quot;,&quot;line&quot;:226},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:456},{&quot;path&quot;:&quot;Shared/PhoneHarness.swift&quot;,&quot;line&quot;:58},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:143},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:231},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowCaptureDriver.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/WorkflowObservationLease.swift&quot;,&quot;line&quot;:98}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-system&quot;,&quot;title&quot;:&quot;原生工具执行&quot;,&quot;subtitle&quot;:&quot;system_tool → SystemTools&quot;,&quot;details&quot;:[&quot;system_tool 经参数、授权、前台与确认策略检查后调用 SystemTools。&quot;,&quot;工具结果必须与本任务、具体操作和规范化参数回执匹配，不能由模型声明代替真实执行。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:720},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskExecution.swift&quot;,&quot;line&quot;:38},{&quot;path&quot;:&quot;PhoneAgent/Services/TaskResourceGate.swift&quot;,&quot;line&quot;:44},{&quot;path&quot;:&quot;Shared/SystemToolRequest.swift&quot;,&quot;line&quot;:8},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:121}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-receipt&quot;,&quot;title&quot;:&quot;记录结果与决定继续&quot;,&quot;subtitle&quot;:&quot;Receipt / TaskCompletionPolicy / Persistence / Metrics&quot;,&quot;details&quot;:[&quot;执行后记录输入边界、已确认新帧、真实工具回执与业务核验状态，再进入下一轮观察。&quot;,&quot;finish 经过完成策略与子任务账本检查；视觉业务结果仍须明确模型判断与独立核验的区别。&quot;,&quot;持久化先于成功状态发布；阶段计时区分截图、OCR、模型、输入、等待与核验，不能将离线优化直接称为真机提速。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:7},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:521},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:921},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:477},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:490},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:627},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:139},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:74},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:108},{&quot;path&quot;:&quot;PhoneAgent/Stores/WorkflowDiagnosticsStore.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;Shared/RunMetrics.swift&quot;,&quot;line&quot;:1}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;ex-recovery&quot;,&quot;title&quot;:&quot;暂停、接管、恢复&quot;,&quot;subtitle&quot;:&quot;取消旧session → 等loop → release&quot;,&quot;details&quot;:[&quot;暂停、接管、停止或配置变化先撤销旧 session，等待旧循环收敛，再执行独立输入清理。&quot;,&quot;释放只针对原连接代次，不能清理新连接；传输或释放确认不证明业务成功。&quot;,&quot;未知外部提交保留待核验状态，恢复需要明确继续和新观察，禁止自动重发。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:242},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:366},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:403},{&quot;path&quot;:&quot;Shared/InputReleaseController.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;Shared/InputReleaseController.swift&quot;,&quot;line&quot;:18},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:330},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:477},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:984},{&quot;path&quot;:&quot;PhoneAgent/Services/FileTransferCoordinator.swift&quot;,&quot;line&quot;:186},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:74}],&quot;status&quot;:&quot;main&quot;}],&quot;lanes&quot;:[{&quot;id&quot;:&quot;screenq&quot;,&quot;title&quot;:&quot;屏幕任务队列&quot;,&quot;subtitle&quot;:&quot;Single GUI Owner&quot;,&quot;details&quot;:[&quot;屏幕队列保留原任务、顺序、附件和检查点；同一时刻只有一个 GUI 输入所有者。&quot;,&quot;人工操作、校准或所有权交接会阻止并发输入，原生任务不能偷偷抢用屏幕。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:1043},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:1531},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:1440},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:828}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;nativepool&quot;,&quot;title&quot;:&quot;原生任务池&quot;,&quot;subtitle&quot;:&quot;最多 3 个独立 Worker&quot;,&quot;details&quot;:[&quot;最多 3 个独立 tools-only Engine，分别持有任务记录、来源会话、设置和控制 token。&quot;,&quot;后台协调器可以暂停或恢复选中的任务，其他任务的状态变化不能重定向当前控制。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskCoordinator.swift&quot;,&quot;line&quot;:6},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskExecution.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskCoordinator.swift&quot;,&quot;line&quot;:4}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;bg-resources&quot;,&quot;title&quot;:&quot;共享资源互斥&quot;,&quot;subtitle&quot;:&quot;TaskResourceGate&quot;,&quot;details&quot;:[&quot;TaskResourceGate 按服务资源互斥；不同资源可以并行，逐步确认还会持有独立确认锁。&quot;,&quot;后台不弹首次系统权限；Health、Notes 等前台限定能力须在满足条件时执行，不能把后台进程时段当成系统权限。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/TaskResourceGate.swift&quot;,&quot;line&quot;:14},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundToolPolicy.swift&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:151},{&quot;path&quot;:&quot;PhoneAgent/Services/NativeConnectionsStore.swift&quot;,&quot;line&quot;:13},{&quot;path&quot;:&quot;PhoneAgent/Models/NativeAppConnection.swift&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:121}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;tool-request&quot;,&quot;title&quot;:&quot;工具请求协议&quot;,&quot;subtitle&quot;:&quot;SystemToolRequest · 22 种操作&quot;,&quot;details&quot;:[&quot;SystemToolRequest 定义 22 种操作，经统一 SystemTools 入口执行并记录回执。&quot;,&quot;执行注册表、可用连接和用户授权共同决定实际能力；界面里出现连接卡不等于已注册业务执行。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;Shared/SystemToolRequest.swift&quot;,&quot;line&quot;:8},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:720},{&quot;path&quot;:&quot;PhoneAgent/Services/BackgroundTaskExecution.swift&quot;,&quot;line&quot;:38},{&quot;path&quot;:&quot;PhoneAgent/Services/TaskResourceGate.swift&quot;,&quot;line&quot;:44}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;event-tools&quot;,&quot;title&quot;:&quot;本机系统工具&quot;,&quot;subtitle&quot;:&quot;EventKit / HealthKit / Music / Location / Notes Bridge&quot;,&quot;details&quot;:[&quot;日历和提醒通过 EventKit；联系人、照片及 Sela 自身闹钟分别使用系统能力。&quot;,&quot;健康查询保留可见性、截断和缺失边界，空值不能当 0；音乐执行后读取系统播放状态。&quot;,&quot;备忘录使用公共 Shortcuts 桥并校验回调正文，不是私有 Notes API，也不宣称独立核验了实际文件夹。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:244},{&quot;path&quot;:&quot;PhoneAgent/Services/NativeSystemTools.swift&quot;,&quot;line&quot;:13},{&quot;path&quot;:&quot;PhoneAgent/Services/NotesShortcutBridge.swift&quot;,&quot;line&quot;:34},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:236},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:281}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;travel-tools&quot;,&quot;title&quot;:&quot;专属业务客户端&quot;,&quot;subtitle&quot;:&quot;Ctrip / MeituanPaotui&quot;,&quot;details&quot;:[&quot;携程查询由官方返回生成航班卡片，保存完整查询与有序候选；参考时刻和实时报价分开。&quot;,&quot;跑腿通过原生多轮对话补齐范围、获取正式报价并在最终确认后提交；普通外卖菜单与购物车没有接通。&quot;,&quot;原生 App 接受 URL 不等于具体航班落点或预订成功；未知订单结果不得自动重试。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:218},{&quot;path&quot;:&quot;PhoneAgent/Services/CtripClient.swift&quot;,&quot;line&quot;:35},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:477},{&quot;path&quot;:&quot;docs/ctrip-connection.md&quot;,&quot;line&quot;:36},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:224},{&quot;path&quot;:&quot;PhoneAgent/Services/MeituanPaotuiConversation.swift&quot;,&quot;line&quot;:25},{&quot;path&quot;:&quot;PhoneAgent/Services/MeituanPaotuiConversation.swift&quot;,&quot;line&quot;:293},{&quot;path&quot;:&quot;PhoneAgent/Services/MeituanPaotuiStore.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:985},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationRouter.swift&quot;,&quot;line&quot;:66}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;registry&quot;,&quot;title&quot;:&quot;受控业务流程&quot;,&quot;subtitle&quot;:&quot;PhoneWorkflowWorkspace / XHS / WeChat / File Transfer&quot;,&quot;details&quot;:[&quot;已保存 planID 限定小红书采集、微信阅读与原件发送的目标、范围和预算，模型只能引用。&quot;,&quot;小红书读取可见内容并保存未读/待核验范围；累计调用预算包含加载等待，不能称为完整覆盖或精确秒级打断。&quot;,&quot;微信以当前会话身份和可见消息证据读取，不直接访问数据库；文件发送绑定收件对象与原件清单，提交未知时阻断重发。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:143},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:231},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:34},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:72},{&quot;path&quot;:&quot;PhoneAgent/Services/XiaohongshuCollector.swift&quot;,&quot;line&quot;:52},{&quot;path&quot;:&quot;PhoneAgent/Services/XiaohongshuCollector.swift&quot;,&quot;line&quot;:106},{&quot;path&quot;:&quot;PhoneAgent/Services/XiaohongshuCollector.swift&quot;,&quot;line&quot;:378},{&quot;path&quot;:&quot;PhoneAgent/Services/WeChatConversationDriver.swift&quot;,&quot;line&quot;:31},{&quot;path&quot;:&quot;PhoneAgent/Services/WeChatConversationDriver.swift&quot;,&quot;line&quot;:88},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:365},{&quot;path&quot;:&quot;PhoneAgent/Services/FileTransferCoordinator.swift&quot;,&quot;line&quot;:119},{&quot;path&quot;:&quot;PhoneAgent/Services/FileTransferCoordinator.swift&quot;,&quot;line&quot;:221},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowCaptureDriver.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/WorkflowObservationLease.swift&quot;,&quot;line&quot;:98},{&quot;path&quot;:&quot;Shared/PhonePageAdapters.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;Shared/PhoneOverlayClassifier.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;Shared/XiaohongshuPageAdapter.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:456},{&quot;path&quot;:&quot;Shared/PhoneHarness.swift&quot;,&quot;line&quot;:58}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;voice-local&quot;,&quot;title&quot;:&quot;多模态能力&quot;,&quot;subtitle&quot;:&quot;Voice / Realtime / Camera / Recording&quot;,&quot;details&quot;:[&quot;本机听写和朗读、相机观察、录音与文件识别是独立服务；音频租约防止互相抢占。&quot;,&quot;实时语音使用独立连接、音频管线和配置，不能把聊天模型授权默认套用于其他接收方。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/VoiceController.swift&quot;,&quot;line&quot;:85},{&quot;path&quot;:&quot;PhoneAgent/Services/RealtimeSession.swift&quot;,&quot;line&quot;:69},{&quot;path&quot;:&quot;PhoneAgent/Services/LiveCameraObserver.swift&quot;,&quot;line&quot;:42},{&quot;path&quot;:&quot;PhoneAgent/Services/CameraService.swift&quot;,&quot;line&quot;:49},{&quot;path&quot;:&quot;PhoneAgent/Services/RecordingAudioController.swift&quot;,&quot;line&quot;:55},{&quot;path&quot;:&quot;PhoneAgent/Services/LocalFileRecognition.swift&quot;,&quot;line&quot;:8},{&quot;path&quot;:&quot;PhoneAgent/Services/SpeakerClient.swift&quot;,&quot;line&quot;:6},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:89},{&quot;path&quot;:&quot;PhoneAgent/Services/RecordingAudioController.swift&quot;,&quot;line&quot;:45}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;web-research&quot;,&quot;title&quot;:&quot;研究与内容生成&quot;,&quot;subtitle&quot;:&quot;WebSearch / Investigation / Workbench / Export&quot;,&quot;details&quot;:[&quot;联网回答、网页调查和研究有独立客户端；普通回答通道不获得手机执行工具。&quot;,&quot;工作台生成文案、纪要等内容，文件、PDF 和表格导出成为可分享产物，不冒充外部动作已执行。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/WebInvestigationRunner.swift&quot;,&quot;line&quot;:7},{&quot;path&quot;:&quot;PhoneAgent/Services/WebSearchClient.swift&quot;,&quot;line&quot;:42},{&quot;path&quot;:&quot;PhoneAgent/Services/WebPageClient.swift&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;PhoneAgent/Services/ConnectedConversationClient.swift&quot;,&quot;line&quot;:9},{&quot;path&quot;:&quot;PhoneAgent/Services/VisionClient.swift&quot;,&quot;line&quot;:30},{&quot;path&quot;:&quot;PhoneAgent/Views/WorkbenchView.swift&quot;,&quot;line&quot;:251},{&quot;path&quot;:&quot;PhoneAgent/Services/ComposerAttachmentImport.swift&quot;,&quot;line&quot;:16},{&quot;path&quot;:&quot;PhoneAgent/Services/SpreadsheetFiles.swift&quot;,&quot;line&quot;:4}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;office-auth&quot;,&quot;title&quot;:&quot;受限连接与模拟能力&quot;,&quot;subtitle&quot;:&quot;办公授权桥 / 滴滴行程模拟&quot;,&quot;details&quot;:[&quot;飞书、钉钉、企微目前是 CLI 安装、授权和状态桥，未作为办公业务执行工具注册。&quot;,&quot;滴滴能力包含真实地点查询与估价，配合模拟行程界面；客户端没有下单 API。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/ExternalConnectionService.swift&quot;,&quot;line&quot;:153},{&quot;path&quot;:&quot;Tools/Connections/connection-bridge/server.py&quot;,&quot;line&quot;:374},{&quot;path&quot;:&quot;PhoneAgent/Services/DidiSimulationService.swift&quot;,&quot;line&quot;:5}],&quot;status&quot;:&quot;main&quot;}],&quot;hardware&quot;:[{&quot;id&quot;:&quot;ble-app&quot;,&quot;title&quot;:&quot;App：BLETransport&quot;,&quot;subtitle&quot;:&quot;CoreBluetooth 中央管理器&quot;,&quot;details&quot;:[&quot;App 通过 CoreBluetooth 连接自定义 GATT 命令、状态和任务指示通道。&quot;,&quot;控制连接和系统 HID 连接分别维护就绪状态；加密、HID 订阅、命令和状态能力均需满足。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:12},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:56},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:72},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:24},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:73},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:119},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:463}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;packet&quot;,&quot;title&quot;:&quot;MouseProtocol&quot;,&quot;subtitle&quot;:&quot;App 与固件共用的二进制合同&quot;,&quot;details&quot;:[&quot;v1 命令包固定 10 字节：report / click / release / keyboard；v2 缓冲移动包固定 14 字节。&quot;,&quot;固件按协议验证长度、操作码与参数，协议合同须与 Shared/MouseProtocol 同步。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;Shared/MouseProtocol.swift&quot;,&quot;line&quot;:12},{&quot;path&quot;:&quot;Shared/MouseProtocol.swift&quot;,&quot;line&quot;:20},{&quot;path&quot;:&quot;Shared/MouseProtocol.swift&quot;,&quot;line&quot;:39},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:276},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:299}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;motion&quot;,&quot;title&quot;:&quot;缓冲相对移动&quot;,&quot;subtitle&quot;:&quot;板端定时输出轨迹&quot;,&quot;details&quot;:[&quot;App 提交相对位移、次数和间隔，由板端定时发送 HID，避免每个微小位移都经 App 往返。&quot;,&quot;单次 report、总次数、间隔和总运动时间均有界。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:203},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:276}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;click&quot;,&quot;title&quot;:&quot;点击与延时&quot;,&quot;subtitle&quot;:&quot;click_timer / pending_click&quot;,&quot;details&quot;:[&quot;点击、延时和按键状态由固件事件队列和定时器管理。&quot;,&quot;取消与 release 清理尚未执行的点击和移动，不回滚已发生的系统输入。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:248},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:321},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:343}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;keyboard&quot;,&quot;title&quot;:&quot;组合键盘 HID&quot;,&quot;subtitle&quot;:&quot;修饰键 + 普通键 usage&quot;,&quot;details&quot;:[&quot;键盘报告包含修饰键和普通键 usage，App 输入前先校验整串文字与能力。&quot;,&quot;鼠标就绪和键盘就绪独立；Caps Lock 等状态随状态包返回。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:127},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:170},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:310},{&quot;path&quot;:&quot;docs/firmware.md&quot;,&quot;line&quot;:44}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;release&quot;,&quot;title&quot;:&quot;释放与看门狗&quot;,&quot;subtitle&quot;:&quot;输入故障收敛&quot;,&quot;details&quot;:[&quot;释放操作取消 pending click / move；鼠标和键盘按住状态由 1500ms 看门狗兜底释放。&quot;,&quot;App 清理使用独立任务并绑定连接代次；ATT 确认或 released 序列仅说明输入协议状态，不证明 iOS 页面或业务成功。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:27},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:184},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:237},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:329},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:487},{&quot;path&quot;:&quot;Shared/InputReleaseController.swift&quot;,&quot;line&quot;:5},{&quot;path&quot;:&quot;Shared/InputReleaseController.swift&quot;,&quot;line&quot;:18},{&quot;path&quot;:&quot;PhoneAgent/Services/BLETransport.swift&quot;,&quot;line&quot;:330}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;status&quot;,&quot;title&quot;:&quot;状态与序列确认&quot;,&quot;subtitle&quot;:&quot;Status：8 字节&quot;,&quot;details&quot;:[&quot;8 字节状态包包含就绪标志、按钮、错误、序号及能力位。&quot;,&quot;App 利用序号区分命令与释放边界，但仍需要新画面和业务证据确认实际效果。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:132},{&quot;path&quot;:&quot;Shared/MouseProtocol.swift&quot;,&quot;line&quot;:30},{&quot;path&quot;:&quot;Shared/MouseProtocol.swift&quot;,&quot;line&quot;:55}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;hid&quot;,&quot;title&quot;:&quot;系统 HID 服务&quot;,&quot;subtitle&quot;:&quot;0x1812 / Mouse + Keyboard&quot;,&quot;details&quot;:[&quot;ESP32 HID 服务提供鼠标与键盘报告，经系统蓝牙 HID / AssistiveTouch 作用于同一台 iPhone 的前台 App。&quot;,&quot;App 的控制 GATT 写入和 iOS 的 HID 输入接收是两条逻辑链路，不能画成 App 直接点击其他 App。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:431},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:452},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:457},{&quot;path&quot;:&quot;docs/firmware.md&quot;,&quot;line&quot;:44},{&quot;path&quot;:&quot;docs/architecture.md&quot;,&quot;line&quot;:47},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:477},{&quot;path&quot;:&quot;Shared/InputReleaseController.swift&quot;,&quot;line&quot;:3}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;led&quot;,&quot;title&quot;:&quot;独立 RGB 状态任务&quot;,&quot;subtitle&quot;:&quot;FreeRTOS → RMT → WS2812&quot;,&quot;details&quot;:[&quot;独立 FreeRTOS RGB 任务经 RMT 驱动 GPIO48 WS2812，避免阻塞 HID host 队列。&quot;,&quot;灯态表示连接/任务指示和心跳故障，不是目标业务成功的独立证据。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/status_led.c&quot;,&quot;line&quot;:13},{&quot;path&quot;:&quot;firmware/main/status_led.c&quot;,&quot;line&quot;:72},{&quot;path&quot;:&quot;docs/firmware.md&quot;,&quot;line&quot;:28}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;pairing&quot;,&quot;title&quot;:&quot;配对与 NVS&quot;,&quot;subtitle&quot;:&quot;NimBLE Secure Connections&quot;,&quot;details&quot;:[&quot;NimBLE 使用 bonding、Secure Connections 与 NVS 配对资料；最多维护两条逻辑连接。&quot;,&quot;当前固件目标为 ESP32-S3 / ESP-IDF 5.5.4；Battery 服务为配置值，不能画成真实电量计。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:615},{&quot;path&quot;:&quot;firmware/main/main.c&quot;,&quot;line&quot;:629},{&quot;path&quot;:&quot;docs/firmware.md&quot;,&quot;line&quot;:26},{&quot;path&quot;:&quot;docs/firmware.md&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;docs/firmware.md&quot;,&quot;line&quot;:13}],&quot;status&quot;:&quot;main&quot;}],&quot;data&quot;:[{&quot;id&quot;:&quot;conversation-store&quot;,&quot;title&quot;:&quot;助手对话历史&quot;,&quot;subtitle&quot;:&quot;AssistantConversationStore&quot;,&quot;details&quot;:[&quot;会话 Store 保存正文、草稿、附件引用、任务链接及旅行/跑腿卡片，回复投影回原会话。&quot;,&quot;持久展示快照只能证明保存过的内容，不赋予继续执行、提交或控制另一任务的权限。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/AssistantConversationStore.swift&quot;,&quot;line&quot;:17},{&quot;path&quot;:&quot;PhoneAgent/Services/AssistantConversation.swift&quot;,&quot;line&quot;:872},{&quot;path&quot;:&quot;PhoneAgent/Stores/ComposerAttachmentStore.swift&quot;,&quot;line&quot;:15},{&quot;path&quot;:&quot;Shared/AssistantConversationContext.swift&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;PhoneAgent/Services/UnifiedConversationCoordinator.swift&quot;,&quot;line&quot;:117}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;task-history&quot;,&quot;title&quot;:&quot;任务历史与检查点&quot;,&quot;subtitle&quot;:&quot;TaskHistoryStore / TaskQueueStore&quot;,&quot;details&quot;:[&quot;历史和队列保留原任务ID、原要求、补充、附件、阶段、检查点和压缩进度。&quot;,&quot;成功状态先提交持久记录再发布；存储错误暂停，进程重启后必须显式恢复并重新观察。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/TaskHistoryStore.swift&quot;,&quot;line&quot;:135},{&quot;path&quot;:&quot;PhoneAgent/Stores/TaskQueueStore.swift&quot;,&quot;line&quot;:32},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:139},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:1043},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:1531}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;memory-store&quot;,&quot;title&quot;:&quot;记忆统一入口&quot;,&quot;subtitle&quot;:&quot;MemoryStore&quot;,&quot;details&quot;:[&quot;MemoryStore 统一身份上下文、手动记忆索引和语义记忆来源，并使用 recallRevision 防止遗忘竞态。&quot;,&quot;记忆帮助理解要求，不独立授权新操作；手动记忆与自动学习资料有各自持有者。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/MemoryStore.swift&quot;,&quot;line&quot;:173},{&quot;path&quot;:&quot;PhoneAgent/Stores/MemoryStore.swift&quot;,&quot;line&quot;:32},{&quot;path&quot;:&quot;PhoneAgent/PhoneAgentViewModel.swift&quot;,&quot;line&quot;:499}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;sela-memory&quot;,&quot;title&quot;:&quot;长期记忆工作区&quot;,&quot;subtitle&quot;:&quot;SelaMemoryService / MemoryWorkspace / DiskStore&quot;,&quot;details&quot;:[&quot;本机 Intelligence 工作区保存 IDENTITY、SOUL、USER、MEMORY、BOOTSTRAP 五份基础文档与 state.json。&quot;,&quot;MemoryWorkspace / DiskStore 使用来源约束、原子写和锁；基础身份文档仅由主人编辑。&quot;,&quot;召回限定接收方与资料范围，默认不混入其他对话。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/SelaMemoryService.swift&quot;,&quot;line&quot;:169},{&quot;path&quot;:&quot;PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/Models.swift&quot;,&quot;line&quot;:17},{&quot;path&quot;:&quot;PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/MemoryWorkspace.swift&quot;,&quot;line&quot;:11},{&quot;path&quot;:&quot;PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/MemoryWorkspace.swift&quot;,&quot;line&quot;:73},{&quot;path&quot;:&quot;PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/DiskStore.swift&quot;,&quot;line&quot;:40}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;memory-learning&quot;,&quot;title&quot;:&quot;对话自动学习&quot;,&quot;subtitle&quot;:&quot;ConversationMemoryLearner&quot;,&quot;details&quot;:[&quot;完成的人类对话进入 ConversationMemoryLearner，经模型提出候选事实后按真实消息及逐字引用验证。&quot;,&quot;assistant/tool 输出不能直接成为活跃的用户事实；配置、凭据或授权变化取消迟到学习结果。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/SelaMemoryService.swift&quot;,&quot;line&quot;:196},{&quot;path&quot;:&quot;PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/ConversationLearning.swift&quot;,&quot;line&quot;:89}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;content-artifacts&quot;,&quot;title&quot;:&quot;本机正文与写入回执&quot;,&quot;subtitle&quot;:&quot;PhoneContentStore / SystemTools&quot;,&quot;details&quot;:[&quot;PhoneContentStore 保存正文产物；SystemTools 维护按任务及规范化参数绑定的写入回执。&quot;,&quot;pending、completed 与 unknown 分开，未知写入不能通过清空日志或重新提交绕开。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/PhoneContentStore.swift&quot;,&quot;line&quot;:28},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:95},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:236},{&quot;path&quot;:&quot;PhoneAgent/Services/SystemTools.swift&quot;,&quot;line&quot;:281}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;workflow-evidence&quot;,&quot;title&quot;:&quot;长流程证据与诊断&quot;,&quot;subtitle&quot;:&quot;Chat / XHS / Workflow Stores&quot;,&quot;details&quot;:[&quot;小红书、聊天证据与流程诊断分开持久化，保留原始可见内容、来源、覆盖、未读与待核验范围。&quot;,&quot;聊天摘要验证真实消息引用，小红书分析只使用保存的可见文字，本机复算统计。&quot;,&quot;诊断与计时说明发生过的步骤和耗时，不替代业务结果，也不把未知初始条件当作性能验收。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/ChatEvidenceStore.swift&quot;,&quot;line&quot;:6},{&quot;path&quot;:&quot;PhoneAgent/Stores/XiaohongshuCollectionStore.swift&quot;,&quot;line&quot;:6},{&quot;path&quot;:&quot;PhoneAgent/Stores/WorkflowDiagnosticsStore.swift&quot;,&quot;line&quot;:14},{&quot;path&quot;:&quot;PhoneAgent/Stores/XiaohongshuCollectionStore.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/XiaohongshuAnalysisService.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Stores/ChatEvidenceStore.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/ChatEvidenceSummarizer.swift&quot;,&quot;line&quot;:12},{&quot;path&quot;:&quot;PhoneAgent/Stores/WorkflowDiagnosticsStore.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;Shared/RunMetrics.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:74},{&quot;path&quot;:&quot;PhoneAgent/Services/AgentEngine.swift&quot;,&quot;line&quot;:108}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;file-originals&quot;,&quot;title&quot;:&quot;文件原件与提交账本&quot;,&quot;subtitle&quot;:&quot;FileTransferStore&quot;,&quot;details&quot;:[&quot;原件、manifest、收件对象、稳定 operation_id、检查点和逐文件结果证据共同绑定一次发送。&quot;,&quot;提交前先落盘；跨提交边界失败记为 unknown / pendingReview，不自动重发。&quot;,&quot;人工核验在原操作上记录结论，取消准备或清理界面不能删除已经发生的提交事实。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/FileTransferStore.swift&quot;,&quot;line&quot;:26},{&quot;path&quot;:&quot;PhoneAgent/Stores/FileTransferStore.swift&quot;,&quot;line&quot;:1},{&quot;path&quot;:&quot;PhoneAgent/Services/FileTransferCoordinator.swift&quot;,&quot;line&quot;:186},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:365},{&quot;path&quot;:&quot;PhoneAgent/Services/FileTransferCoordinator.swift&quot;,&quot;line&quot;:119},{&quot;path&quot;:&quot;PhoneAgent/Services/FileTransferCoordinator.swift&quot;,&quot;line&quot;:221},{&quot;path&quot;:&quot;PhoneAgent/Services/PhoneWorkflowWorkspace.swift&quot;,&quot;line&quot;:74}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;recording-library&quot;,&quot;title&quot;:&quot;录音资料库&quot;,&quot;subtitle&quot;:&quot;RecordingStore&quot;,&quot;details&quot;:[&quot;录音 Store 管理 Items、Pending、Trash 等生命周期，录制/播放与导入识别由各服务拥有资源。&quot;,&quot;本机识别与外部说话人分段是不同处理路径，接收方与音频授权分别核对。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/RecordingStore.swift&quot;,&quot;line&quot;:7},{&quot;path&quot;:&quot;PhoneAgent/Services/RecordingAudioController.swift&quot;,&quot;line&quot;:55},{&quot;path&quot;:&quot;PhoneAgent/Services/LocalFileRecognition.swift&quot;,&quot;line&quot;:8},{&quot;path&quot;:&quot;PhoneAgent/Services/SpeakerClient.swift&quot;,&quot;line&quot;:6}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;settings-secrets&quot;,&quot;title&quot;:&quot;设置与凭据&quot;,&quot;subtitle&quot;:&quot;UserDefaults + iOS Keychain&quot;,&quot;details&quot;:[&quot;用户偏好与配置使用 UserDefaults；模型、计划令牌和第三方授权码使用本机独立 Keychain 条目。&quot;,&quot;运行时参数、日志、模型上下文和回执不能携带明文凭据；不同连接不自动复用授权。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Stores/SettingsStore.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Stores/RealtimeStore.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Stores/WebSearchStore.swift&quot;,&quot;line&quot;:4}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;export-artifacts&quot;,&quot;title&quot;:&quot;可分享产物&quot;,&quot;subtitle&quot;:&quot;ArtifactFiles / SpreadsheetFiles&quot;,&quot;details&quot;:[&quot;文件、PDF、纪要和表格导出是可持有、可查看和可分享的独立产物。&quot;,&quot;导出成功、系统分享呈现和外部收件完成属于不同证据阶段，不能合并成一个成功状态。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent/Services/ArtifactFiles.swift&quot;,&quot;line&quot;:61},{&quot;path&quot;:&quot;PhoneAgent/Services/SpreadsheetFiles.swift&quot;,&quot;line&quot;:4},{&quot;path&quot;:&quot;PhoneAgent/Views/WorkbenchView.swift&quot;,&quot;line&quot;:251},{&quot;path&quot;:&quot;PhoneAgent/Services/ComposerAttachmentImport.swift&quot;,&quot;line&quot;:16}],&quot;status&quot;:&quot;main&quot;}],&quot;appendix&quot;:[{&quot;id&quot;:&quot;main-tree&quot;,&quot;title&quot;:&quot;当前主源码：Sela / Phone Agent&quot;,&quot;subtitle&quot;:&quot;github/iphone-use-agent-reliability-20261026&quot;,&quot;details&quot;:[&quot;主架构采用 reliability 当前工作副本，包含未提交增量；图示是源码职责快照，不等同于当前装机版本。&quot;,&quot;具体构建、设备安装、连接与业务验收需要匹配各自版本证据。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;PhoneAgent.xcodeproj/project.pbxproj&quot;,&quot;line&quot;:334},{&quot;path&quot;:&quot;docs/integrated-release-20261025.md&quot;,&quot;line&quot;:3}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;upstream&quot;,&quot;title&quot;:&quot;上游基础 Phone Agent&quot;,&quot;subtitle&quot;:&quot;research/phone-agent&quot;,&quot;details&quot;:[&quot;research/phone-agent 是干净上游 a900450，提供原生共享屏幕、手机模型决策和 BLE HID 基础。&quot;,&quot;它不能代表当前 Sela 整合工作副本全部能力。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;upstream-snapshot/phone-agent/README.md&quot;,&quot;line&quot;:18},{&quot;path&quot;:&quot;upstream-snapshot/phone-agent/docs/architecture.md&quot;,&quot;line&quot;:43}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;snapshot&quot;,&quot;title&quot;:&quot;原始本地源码快照&quot;,&quot;subtitle&quot;:&quot;github/iphone-use-agent&quot;,&quot;details&quot;:[&quot;github/iphone-use-agent 是原始 154 文件本地快照，是隔离实验的基线。&quot;,&quot;不能把该快照、上游分支和当前 reliability 增量混写成同一已部署版本。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:3}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;independent&quot;,&quot;title&quot;:&quot;主运行约束&quot;,&quot;subtitle&quot;:&quot;手机独立运行&quot;,&quot;details&quot;:[&quot;主线要求 iPhone App 独立运行；Mac 用于开发、模拟器和安装。&quot;,&quot;Mac 模型桥只存在于动作选择隔离实验，不能加入主运行拓扑。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;workspace-evidence/output/flight-island-goal-20261026/目标与验收.txt&quot;,&quot;line&quot;:15}],&quot;status&quot;:&quot;main&quot;},{&quot;id&quot;:&quot;lab-tree&quot;,&quot;title&quot;:&quot;动作选择 A/B 实验&quot;,&quot;subtitle&quot;:&quot;github/iphone-use-agent-action-lab&quot;,&quot;details&quot;:[&quot;独立动作实验 App、容器与 Keychain；冻结 observationID / taskID / attemptID / 当前像素等输入。&quot;,&quot;A 走原视觉模型；B 仅对已识别导航页面选择宿主绑定候选，未知页、输入和提交保留原视觉模型。&quot;,&quot;DecisionClient 或可选 Mac Codex Bridge 返回候选ID；低置信度、超时或异常最多一次视觉回退，取消不回退。&quot;,&quot;两组复用原执行复核和 BLE/HID；桥接成绩不能当成原生 Decisions 成绩，实验阈值未由真实微信数据校准。&quot;,&quot;离线与桥接验证不能代表真实手机速度或准确性，实验文档记录未安装或操作物理手机。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:16},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:34},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:44},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/Shared/ActionSelection.swift&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/Shared/ActionSelection.swift&quot;,&quot;line&quot;:100},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:7},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:10},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/Shared/ActionSelection.swift&quot;,&quot;line&quot;:79},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:9},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:22},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:40},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/codex-bridge.md&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/codex-bridge.md&quot;,&quot;line&quot;:37},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/codex-bridge.md&quot;,&quot;line&quot;:49},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:8},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md&quot;,&quot;line&quot;:48}],&quot;status&quot;:&quot;experiment&quot;},{&quot;id&quot;:&quot;paotui-tree&quot;,&quot;title&quot;:&quot;跑腿长期重构分支&quot;,&quot;subtitle&quot;:&quot;github/iphone-use-agent-paotui-architecture-20261026&quot;,&quot;details&quot;:[&quot;独立跑腿重构分支从主线基点分出，不能把部分改动当作主工作区已合入。&quot;,&quot;目标为单一有类型 PaotuiSession，统一 sessionID / revision / 阶段，收敛会话与兼容草稿状态。&quot;,&quot;Connection 管授权和凭据代次，OrderService 管提交锁，Journal 作为唯一回执持有者；普通 HTTP 与 MCP/SSE 分离。&quot;,&quot;最终确认与提交前原子日志保留；结果分 created、notDispatched、outcomeUnknown，未知结果禁止重放。&quot;,&quot;部分轮次已完成离线与模拟器验证，后续会话上下文与投影仍待完成；没有据此声明真实接口、手机安装或真实订单。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:18},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:75},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:7},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:9},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:22},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:63},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:10},{&quot;path&quot;:&quot;local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md&quot;,&quot;line&quot;:79}],&quot;status&quot;:&quot;experiment&quot;},{&quot;id&quot;:&quot;pending-acceptance&quot;,&quot;title&quot;:&quot;当前待验收边界&quot;,&quot;subtitle&quot;:&quot;航班直选 / 角色灵动岛&quot;,&quot;details&quot;:[&quot;iPhone 具体航班直选原生选价页、后台系统活动与角色状态仍需按当前候选独立验收。&quot;,&quot;安卓落点、模拟器接收 URL 或离线参数测试不能替代 iPhone 实际页面证据。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;workspace-evidence/output/flight-island-goal-20261026/目标与验收.txt&quot;,&quot;line&quot;:3},{&quot;path&quot;:&quot;workspace-evidence/output/flight-island-goal-20261026/目标与验收.txt&quot;,&quot;line&quot;:7}],&quot;status&quot;:&quot;pending&quot;},{&quot;id&quot;:&quot;esp-airplay&quot;,&quot;title&quot;:&quot;另一项目：ESP32 Agent&quot;,&quot;subtitle&quot;:&quot;esp32-iphone-agent&quot;,&quot;details&quot;:[&quot;esp32-iphone-agent 是另一技术路线：板端接收 AirPlay，视频经 BLE 返回 App，模型决策后由板子 USB HID 执行。&quot;,&quot;它与当前主线原生屏幕共享 + BLE HID 的职责分配不同，不并入主图。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;workspace-evidence/esp32-iphone-agent/README.zh-CN.md&quot;,&quot;line&quot;:40},{&quot;path&quot;:&quot;workspace-evidence/esp32-iphone-agent/README.zh-CN.md&quot;,&quot;line&quot;:48}],&quot;status&quot;:&quot;legacy&quot;},{&quot;id&quot;:&quot;mac-legacy&quot;,&quot;title&quot;:&quot;旧版电脑执行路线&quot;,&quot;subtitle&quot;:&quot;esp32-iphone-agent-legacy&quot;,&quot;details&quot;:[&quot;旧路线为 iPhone AirPlay → Mac UxPlay/GStreamer → Python planner/actor → Wi-Fi 板 → HID，Mac 是其运行组件。&quot;,&quot;根目录的旧版预览启动器、接收端和准备报告属于历史路径，不能证明当前主 App 或设备状态。&quot;],&quot;sources&quot;:[{&quot;path&quot;:&quot;workspace-evidence/esp32-iphone-agent-legacy/README.md&quot;,&quot;line&quot;:51},{&quot;path&quot;:&quot;workspace-evidence/README-旧版准备.md&quot;,&quot;line&quot;:8},{&quot;path&quot;:&quot;workspace-evidence/README-旧版准备.md&quot;,&quot;line&quot;:13},{&quot;path&quot;:&quot;workspace-evidence/README-旧版准备.md&quot;,&quot;line&quot;:20},{&quot;path&quot;:&quot;workspace-evidence/README-旧版准备.md&quot;,&quot;line&quot;:24}],&quot;status&quot;:&quot;legacy&quot;}]}}&lt;/script&gt;
+&lt;script&gt;
+(function () {
+  const C = {fg:&#x27;var(--foreground)&#x27;,bg:&#x27;var(--background)&#x27;,node:&#x27;var(--muted)&#x27;,line:&#x27;var(--muted-foreground)&#x27;,border:&#x27;var(--border)&#x27;,blue:&#x27;var(--viz-series-1)&#x27;};
+  const esc = v =&gt; String(v).replaceAll(&#x27;&amp;&#x27;,&#x27;&amp;amp;&#x27;).replaceAll(&#x27;&lt;&#x27;,&#x27;&amp;lt;&#x27;).replaceAll(&#x27;&gt;&#x27;,&#x27;&amp;gt;&#x27;).replaceAll(&#x27;&quot;&#x27;,&#x27;&amp;quot;&#x27;);
+  function wrap(value,width,size=12) {
+    const result=[]; let line=&#x27;&#x27;,used=0;
+    for(const char of String(value)){
+      const unit=/[\u0000-\u007f]/.test(char)?size*.56:size;
+      if(used+unit&gt;width &amp;&amp; line){result.push(line);line=&#x27;&#x27;;used=0;}
+      line+=char;used+=unit;
+    }
+    if(line)result.push(line);return result;
+  }
+  function drawing(id,w){
+    let out=&#x27;&#x27;;
+    const rect=(x,y,width,height,kind=&#x27;node&#x27;)=&gt;{
+      out+=`&lt;rect x=&quot;${x}&quot; y=&quot;${y}&quot; width=&quot;${width}&quot; height=&quot;${height}&quot; rx=&quot;${kind===&#x27;boundary&#x27;?10:6}&quot; fill=&quot;${kind===&#x27;boundary&#x27;?&#x27;none&#x27;:C.node}&quot; stroke=&quot;${kind===&#x27;boundary&#x27;?C.line:C.border}&quot; stroke-width=&quot;1.2&quot; ${kind===&#x27;boundary&#x27;?&#x27;stroke-dasharray=&quot;6 5&quot;&#x27;:&#x27;&#x27;}/&gt;`;
+    };
+    const text=(x,y,value,size=12,anchor=&#x27;middle&#x27;,strong=false,color=C.fg)=&gt;{out+=`&lt;text x=&quot;${x}&quot; y=&quot;${y}&quot; text-anchor=&quot;${anchor}&quot; font-size=&quot;${size}&quot; font-weight=&quot;${strong?500:400}&quot; fill=&quot;${color}&quot;&gt;${esc(value)}&lt;/text&gt;`;};
+    const label=(x,y,value,width=100)=&gt;{
+      const lines=wrap(value,width,12); const h=lines.length*17+6;
+      out+=`&lt;rect x=&quot;${x-width/2}&quot; y=&quot;${y-14}&quot; width=&quot;${width}&quot; height=&quot;${h}&quot; fill=&quot;${C.bg}&quot;/&gt;`;
+      lines.forEach((line,i)=&gt;text(x,y+i*17,line,12,&#x27;middle&#x27;,false,C.line));
+    };
+    const note=(x,y,value,width)=&gt;{const lines=wrap(value,width,12);lines.forEach((line,i)=&gt;text(x,y+i*18,line,12,&#x27;start&#x27;,false,C.line));return lines.length*18;};
+    const arrow=(points,caption=&#x27;&#x27;,options={})=&gt;{
+      const pts=points.map(p=&gt;p.join(&#x27;,&#x27;)).join(&#x27; &#x27;);
+      out+=`&lt;polyline points=&quot;${pts}&quot; fill=&quot;none&quot; stroke=&quot;${options.data?C.blue:C.line}&quot; stroke-width=&quot;1.4&quot; marker-end=&quot;url(#${id}-${options.data?&#x27;blue&#x27;:&#x27;gray&#x27;})&quot; ${options.both?`marker-start=&quot;url(#${id}-${options.data?&#x27;blue&#x27;:&#x27;gray&#x27;}-start)&quot;`:&#x27;&#x27;} ${options.data?&#x27;stroke-dasharray=&quot;5 4&quot;&#x27;:&#x27;&#x27;}/&gt;`;
+      if(caption){const p=options.at || [(points[0][0]+points.at(-1)[0])/2,(points[0][1]+points.at(-1)[1])/2-6];label(p[0],p[1],caption,options.labelWidth||92);}
+    };
+    const box=(x,y,width,height,title,sub=[],options={})=&gt;{
+      rect(x,y,width,height);
+      const titleLines=wrap(title,width-24,14);
+      const subLines=sub.flatMap(line=&gt;wrap(line,width-28,12));
+      const total=titleLines.length*20+(subLines.length?9:0)+subLines.length*18;
+      let ty=y+(height-total)/2+15;
+      titleLines.forEach(line=&gt;{text(x+width/2,ty,line,14,&#x27;middle&#x27;,true);ty+=20;});
+      if(subLines.length)ty+=7;
+      subLines.forEach(line=&gt;{text(x+width/2,ty,line,12,&#x27;middle&#x27;,false,C.line);ty+=18;});
+      return {x,y,w:width,h:height,cx:x+width/2,cy:y+height/2};
+    };
+    const frame=(x,y,width,height,title)=&gt;{rect(x,y,width,height,&#x27;boundary&#x27;);text(x+14,y+24,title,12,&#x27;start&#x27;,true);};
+    const finish=(h,title)=&gt;`&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;${w}&quot; height=&quot;${h}&quot; viewBox=&quot;0 0 ${w} ${h}&quot; role=&quot;img&quot; aria-label=&quot;${esc(title)}&quot; font-family=&quot;inherit&quot;&gt;&lt;title&gt;${esc(title)}&lt;/title&gt;&lt;defs&gt;${[&#x27;gray&#x27;,&#x27;blue&#x27;].map(k=&gt;`&lt;marker id=&quot;${id}-${k}&quot; viewBox=&quot;0 0 8 8&quot; refX=&quot;7&quot; refY=&quot;4&quot; markerWidth=&quot;6&quot; markerHeight=&quot;6&quot; orient=&quot;auto&quot;&gt;&lt;path d=&quot;M1 1 L7 4 L1 7Z&quot; fill=&quot;${k===&#x27;blue&#x27;?C.blue:C.line}&quot;/&gt;&lt;/marker&gt;&lt;marker id=&quot;${id}-${k}-start&quot; viewBox=&quot;0 0 8 8&quot; refX=&quot;1&quot; refY=&quot;4&quot; markerWidth=&quot;6&quot; markerHeight=&quot;6&quot; orient=&quot;auto&quot;&gt;&lt;path d=&quot;M7 1 L1 4 L7 7Z&quot; fill=&quot;${k===&#x27;blue&#x27;?C.blue:C.line}&quot;/&gt;&lt;/marker&gt;`).join(&#x27;&#x27;)}&lt;/defs&gt;${out}&lt;/svg&gt;`;
+    return {rect,text,label,note,arrow,box,frame,finish};
+  }
+  function system(w){
+    const d=drawing(&#x27;system&#x27;,w), {box,arrow,frame,text}=d;
+    if(w&gt;=640){
+      const pw=Math.round((w-128)*.64), extX=pw+112, ew=w-extX-16;
+      const app={x:32,y:170,w:pw-32,h:220};
+      box(32,14,pw-32,64,&#x27;用户&#x27;,[&#x27;文字 · 语音 · Siri · 附件&#x27;]);
+      frame(16,116,pw,514,&#x27;iPhone · 本机运行边界&#x27;);
+      box(app.x,app.y,app.w,app.h,&#x27;Sela App&#x27;,[&#x27;统一交互入口&#x27;,&#x27;对话理解与任务协调&#x27;,&#x27;屏幕任务 / 原生任务 / 专属服务&#x27;,&#x27;状态、回执与本机数据&#x27;]);
+      arrow([[pw/2+16,78],[pw/2+16,170]],&#x27;用户请求&#x27;,{at:[pw/2+16,109]});
+      const cw=(pw-48)/2;
+      const os=box(32,500,cw,90,&#x27;iOS 原生能力&#x27;,[&#x27;日历 · 提醒 · 健康&#x27;,&#x27;音乐 · 位置 · 内容&#x27;]);
+      const target=box(48+cw,500,cw,90,&#x27;前台目标 App&#x27;,[&#x27;iOS HID&#x27;,&#x27;AssistiveTouch&#x27;]);
+      arrow([[os.cx,390],[os.cx,500]],&#x27;原生 API&#x27;);
+      arrow([[target.cx,500],[target.cx,390]],&#x27;共享画面&#x27;,{data:true,at:[target.cx,448]});
+      box(extX,174,ew,82,&#x27;配置的模型服务&#x27;,[&#x27;文字 / 图像请求&#x27;,&#x27;结构化决策 / 回答&#x27;]);
+      arrow([[pw,215],[extX,215]],&#x27;HTTPS&#x27;,{both:true,labelWidth:76});
+      box(extX,304,ew,82,&#x27;业务服务平台&#x27;,[&#x27;携程 · 美团等&#x27;,&#x27;查询、报价与受控提交&#x27;]);
+      arrow([[pw,345],[extX,345]],&#x27;服务调用&#x27;,{both:true,labelWidth:76});
+      box(extX,500,ew,90,&#x27;ESP32-S3 配件&#x27;,[&#x27;命令执行 · 键鼠 HID&#x27;,&#x27;状态反馈 · 输入看门狗&#x27;]);
+      arrow([[pw,376],[pw+48,376],[pw+48,458],[extX+ew/2,458],[extX+ew/2,500]],&#x27;BLE 命令 / 状态&#x27;,{both:true,at:[extX+ew/2,453],labelWidth:118});
+      arrow([[extX,545],[target.x+target.w,545]],&#x27;系统 HID&#x27;,{labelWidth:78});
+      text(16,660,&#x27;实线：调用或系统输入　　蓝色虚线：用户授权的观察数据&#x27;,12,&#x27;start&#x27;,false,C.line);
+      return d.finish(682,&#x27;系统边界：iPhone 内的 Sela 与系统能力，手机外的模型、业务服务与 ESP32 配件&#x27;);
+    }
+    const x=22,bw=w-44;
+    box(x,10,bw,64,&#x27;用户&#x27;,[&#x27;文字 · 语音 · Siri · 附件&#x27;]);
+    arrow([[w/2,74],[w/2,142]],&#x27;用户请求&#x27;);
+    frame(10,108,w-20,422,&#x27;iPhone · 本机运行边界&#x27;);
+    box(x,142,bw,130,&#x27;Sela App&#x27;,[&#x27;统一交互与对话理解&#x27;,&#x27;任务协调与三条执行通道&#x27;,&#x27;状态、回执与本机数据&#x27;]);
+    arrow([[w/2,272],[w/2,338]],&#x27;原生 API&#x27;,{labelWidth:100});
+    box(x,338,bw,72,&#x27;iOS 原生能力&#x27;,[&#x27;日历 · 提醒 · 健康 · 音乐等&#x27;]);
+    box(x,434,bw,72,&#x27;前台目标 App&#x27;,[&#x27;接收 HID 输入 · 向 Sela 共享画面&#x27;]);
+    text(22,568,&#x27;手机外的协作边界&#x27;,12,&#x27;start&#x27;,true);
+    box(x,590,bw,92,&#x27;配置的模型服务&#x27;,[&#x27;Sela ↔ HTTPS&#x27;,&#x27;任务、图像 ↔ 决策、回答&#x27;]);
+    box(x,706,bw,92,&#x27;业务服务平台&#x27;,[&#x27;Sela ↔ 官方服务&#x27;,&#x27;查询、报价与受控提交&#x27;]);
+    box(x,822,bw,112,&#x27;ESP32-S3 配件&#x27;,[&#x27;Sela ↔ BLE 命令与状态&#x27;,&#x27;配件 → 系统 HID → 前台 App&#x27;]);
+    return d.finish(950,&#x27;系统边界：iPhone 本机及手机外的三类协作方&#x27;);
+  }
+  function layers(w){
+    const d=drawing(&#x27;layers&#x27;,w),{box,arrow,text}=d;const wide=w&gt;=640;
+    const left=wide?100:16,bw=w-left-16;let y=20;
+    const rows=[[&#x27;交互层&#x27;,&#x27;统一会话与结果展示&#x27;,[&#x27;文字 · 语音 · Siri · 附件&#x27;]],[&#x27;理解层&#x27;,&#x27;对话上下文与意图路由&#x27;,[&#x27;当前人类请求 + 有来源的参考资料&#x27;]],[&#x27;协调层&#x27;,&#x27;应用协调与任务归属&#x27;,[&#x27;任务 ID · 会话 token · 队列 · 授权状态&#x27;]]];
+    rows.forEach((row,i)=&gt;{if(wide)text(16,y+38,row[0],12,&#x27;start&#x27;,true);else text(16,y+12,row[0],12,&#x27;start&#x27;,true);const yy=y+(wide?0:27);box(left,yy,bw,80,row[1],row[2]);if(i&lt;2)arrow([[left+bw/2,yy+80],[left+bw/2,yy+124]],i===0?&#x27;本轮请求&#x27;:&#x27;结构化意图&#x27;,{at:[left+bw/2,yy+108]});y=yy+124;});
+    const entries=[[&#x27;屏幕任务&#x27;,[&#x27;单一 GUI 所有者&#x27;,&#x27;AgentEngine / Harness&#x27;]],[&#x27;原生任务&#x27;,[&#x27;最多 3 项并发&#x27;,&#x27;tools-only AgentEngine&#x27;]],[&#x27;专属会话&#x27;,[&#x27;航班 / 跑腿&#x27;,&#x27;领域对话与卡片&#x27;]]];
+    const adapters=[[&#x27;屏幕与输入适配&#x27;,[&#x27;Capture / OCR / BLE&#x27;]],[&#x27;系统能力适配&#x27;,[&#x27;SystemTools / iOS SDK&#x27;]],[&#x27;领域服务适配&#x27;,[&#x27;Ctrip / Paotui Client&#x27;]]];
+    if(wide){
+      text(16,y+45,&#x27;执行层&#x27;,12,&#x27;start&#x27;,true);const gap=16,cw=(bw-2*gap)/3;
+      arrow([[left+bw/2,y-44],[left+bw/2,y-18],[left+cw/2,y-18],[left+cw/2,y]],&#x27;&#x27;);
+      arrow([[left+bw/2,y-18],[left+2*(cw+gap)+cw/2,y-18],[left+2*(cw+gap)+cw/2,y]],&#x27;&#x27;);
+      arrow([[left+bw/2,y-18],[left+bw/2,y]],&#x27;&#x27;);
+      entries.forEach((a,i)=&gt;box(left+i*(cw+gap),y,cw,112,a[0],a[1]));
+      text(16,y+203,&#x27;适配层&#x27;,12,&#x27;start&#x27;,true);
+      adapters.forEach((a,i)=&gt;{const cx=left+i*(cw+gap)+cw/2;arrow([[cx,y+112],[cx,y+174]],&#x27;受控调用&#x27;,{labelWidth:76});box(left+i*(cw+gap),y+174,cw,88,a[0],a[1]);});y+=300;
+    } else {
+      text(16,y+4,&#x27;执行通道与对应适配器&#x27;,12,&#x27;start&#x27;,true);y+=24;
+      entries.forEach((a,i)=&gt;{box(left,y,bw,92,a[0],a[1]);arrow([[left+bw/2,y+92],[left+bw/2,y+132]],&#x27;&#x27;);box(left,y+132,bw,76,adapters[i][0],adapters[i][1]);y+=242;});
+    }
+    box(16,y,w-32,106,&#x27;横向支撑底座&#x27;,[&#x27;记忆与上下文 · 历史与检查点 · 权限与回执&#x27;,&#x27;通知 / 灵动岛 / PiP · 诊断与阶段计时&#x27;]);
+    return d.finish(y+124,&#x27;App 分层：交互、理解、协调、三条执行通道、能力适配和共享支撑&#x27;);
+  }
+  function loop(w){
+    const d=drawing(&#x27;loop&#x27;,w),{box,arrow,text,note}=d;const x=w&gt;=640?100:60,bw=w-x-18;let y=20;
+    const rows=[[&#x27;获取当前画面&#x27;,[&#x27;CaptureService / FrameReadiness&#x27;,&#x27;系统确认时间与输入边界&#x27;]],[&#x27;本地解释与上下文&#x27;,[&#x27;OCR / 页面适配 / Harness&#x27;,&#x27;任务、记忆、附件与实际回执&#x27;]],[&#x27;模型提出动作&#x27;,[&#x27;VisionClient → AgentAction&#x27;,&#x27;动作是提议，由宿主决定是否派发&#x27;]],[&#x27;宿主执行前复核&#x27;,[&#x27;流 / 尺寸 / 变化 / 取消 / 授权&#x27;,&#x27;画面失效则丢弃动作、重新观察&#x27;]],[&#x27;受控执行&#x27;,[&#x27;MouseExecutor / phone_tool / system_tool&#x27;,&#x27;单一输入所有者与稳定操作身份&#x27;]],[&#x27;结果取证与持久化&#x27;,[&#x27;新画面 + 工具回执 + 完成策略&#x27;,&#x27;先保存记录，再发布终态&#x27;]]];
+    const h=w&gt;=640?96:116,gap=50,centers=[];
+    rows.forEach((r,i)=&gt;{text(x-30,y+h/2+5,String(i+1).padStart(2,&#x27;0&#x27;),14,&#x27;middle&#x27;,true);box(x,y,bw,h,r[0],r[1]);centers.push(y);if(i&lt;rows.length-1)arrow([[x+bw/2,y+h],[x+bw/2,y+h+gap]],i===2?&#x27;结构化动作&#x27;:i===3?&#x27;校验通过&#x27;:&#x27;&#x27;,{labelWidth:96});y+=h+gap;});
+    const rail=16;
+    arrow([[x+bw/2,y-gap],[x+bw/2,y-gap+22],[rail,y-gap+22],[rail,8],[x+bw/2,8],[x+bw/2,20]],&#x27;&#x27;,{data:true});
+    if(w&gt;=640){text(36,(y-gap)/2,&#x27;未完成&#x27;,12,&#x27;start&#x27;,false,C.blue);text(36,(y-gap)/2+20,&#x27;再观察&#x27;,12,&#x27;start&#x27;,false,C.blue);}
+    const nh=note(x,y-8,&#x27;完成 / 需要人工处理 / 失败 / 停止 → 退出本轮&#x27;,bw);
+    return d.finish(y+nh+12,&#x27;GUI 单轮闭环：取屏、解释、决策、复核、执行与结果取证；未完成才进入下一轮&#x27;);
+  }
+  function lanes(w){
+    const d=drawing(&#x27;lanes&#x27;,w),{box,arrow,text,frame}=d;const wide=w&gt;=680;const gap=24,cw=wide?(w-32-2*gap)/3:w-48;
+    const cols=[{title:&#x27;屏幕操控通道&#x27;,limit:&#x27;单一 GUI 所有者&#x27;,steps:[[&#x27;屏幕任务队列&#x27;,[&#x27;顺序 / 暂停 / 显式恢复&#x27;]],[&#x27;视觉执行器&#x27;,[&#x27;AgentEngine + Harness&#x27;]],[&#x27;画面与输入适配&#x27;,[&#x27;Capture / OCR&#x27;,&#x27;MouseExecutor&#x27;]],[&#x27;配件与系统输入&#x27;,[&#x27;BLE → ESP32 → iOS HID&#x27;]]]},{title:&#x27;原生任务通道&#x27;,limit:&#x27;最多 3 项；同资源互斥&#x27;,steps:[[&#x27;原生任务池&#x27;,[&#x27;BackgroundTaskCoordinator&#x27;]],[&#x27;独立原生执行器&#x27;,[&#x27;每项 tools-only AgentEngine&#x27;]],[&#x27;资源锁与工具门禁&#x27;,[&#x27;TaskResourceGate&#x27;,&#x27;SystemTools&#x27;]],[&#x27;原生能力与服务&#x27;,[&#x27;iOS SDK / 受支持客户端&#x27;]]]},{title:&#x27;专属对话通道&#x27;,limit:&#x27;领域会话独立推进&#x27;,steps:[[&#x27;航班 / 跑腿对话&#x27;,[&#x27;原文、条件与卡片上下文&#x27;]],[&#x27;领域状态与策略&#x27;,[&#x27;Ctrip / Paotui Conversation&#x27;]],[&#x27;专属客户端与存储&#x27;,[&#x27;独立凭据 / 报价 / 回执&#x27;]],[&#x27;领域服务交互&#x27;,[&#x27;HTTPS 查询 / 确认 / 交接&#x27;]]]}];
+    let maxY=0;
+    cols.forEach((col,index)=&gt;{const x=wide?16+index*(cw+gap):24,base=wide?20:20+index*660;frame(x-8,base,cw+16,610,col.title);text(x+cw/2,base+52,col.limit,12,&#x27;middle&#x27;,false,C.line);let y=base+78;col.steps.forEach((s,i)=&gt;{box(x,y,cw,88,s[0],s[1]);if(i&lt;3)arrow([[x+cw/2,y+88],[x+cw/2,y+136]],&#x27;&#x27;);y+=136;});maxY=Math.max(maxY,base+610);});
+    const foot=maxY+30;box(16,foot,w-32,104,&#x27;统一回执与会话结果投影&#x27;,[&#x27;taskID / conversationID 绑定；执行状态与外部业务结果分开&#x27;,&#x27;首次系统授权与前台专用能力仍受系统门禁约束&#x27;]);
+    return d.finish(foot+126,&#x27;三条任务通道：屏幕任务串行、原生任务有限并发、专属会话直接调用领域服务&#x27;);
+  }
+  function hardware(w){
+    const d=drawing(&#x27;hardware&#x27;,w),{box,arrow,frame,text,note}=d;const x=30,bw=w-60;const hh=w&gt;=640?94:116;
+    frame(14,16,w-28,hh+64,&#x27;iPhone · Sela App&#x27;);box(x,60,bw,hh,&#x27;BLETransport&#x27;,[&#x27;CoreBluetooth 控制通道&#x27;,&#x27;版本化命令 / 状态 / 连接代次&#x27;]);
+    arrow([[w/2,hh+80],[w/2,hh+186]],&#x27;加密控制连接 · 命令 / 状态&#x27;,{both:true,labelWidth:210});
+    const mid=hh+170;frame(14,mid,w-28,292,&#x27;ESP32-S3 · ESP-IDF / NimBLE&#x27;);box(x,mid+48,bw,86,&#x27;自定义 GATT 与命令执行&#x27;,[&#x27;Command / Status / Task&#x27;,&#x27;协议校验 → 板端定时执行&#x27;]);
+    const cw=(bw-24)/3;
+    if(w&gt;=640){[&#x27;相对移动与点击&#x27;,&#x27;键盘与组合键&#x27;,&#x27;释放与看门狗&#x27;].forEach((v,i)=&gt;box(x+i*(cw+12),mid+166,cw,66,v));text(w/2,mid+266,&#x27;独立 RGB 状态任务 · 配对资料 NVS&#x27;,12,&#x27;middle&#x27;,false,C.line);}
+    else{box(x,mid+156,bw,106,&#x27;固件职责&#x27;,[&#x27;移动 / 点击 / 键盘 / 释放&#x27;,&#x27;看门狗 / RGB / NVS&#x27;]);}
+    arrow([[w/2,mid+292],[w/2,mid+396]],&#x27;系统 HID 连接 · 鼠标 / 键盘报告&#x27;,{labelWidth:224});
+    const bottom=mid+380;frame(14,bottom,w-28,194,&#x27;同一台 iPhone · 系统输入侧&#x27;);
+    if(w&gt;=640){const cw=(bw-64)/2;box(x,bottom+64,cw,86,&#x27;iOS HID / AssistiveTouch&#x27;);box(x+cw+64,bottom+64,cw,86,&#x27;前台目标 App&#x27;);arrow([[x+cw,bottom+107],[x+cw+64,bottom+107]],&#x27;输入&#x27;,{labelWidth:44});}
+    else box(x,bottom+62,bw,106,&#x27;iOS 系统输入&#x27;,[&#x27;HID / AssistiveTouch&#x27;,&#x27;→ 前台目标 App&#x27;]);
+    const nh=note(20,bottom+228,&#x27;传输或释放确认，只证明输入协议状态；业务结果由新画面与回执核验。&#x27;,w-40);
+    return d.finish(bottom+240+nh,&#x27;配件协议：App 的 BLE 控制连接和系统 HID 输入连接分别管理，ESP32 执行键鼠输入&#x27;);
+  }
+  function data(w){
+    const d=drawing(&#x27;data&#x27;,w),{box,arrow,text}=d;const wide=w&gt;=640,gap=22,cw=wide?(w-32-gap)/2:w-32;let end=0;
+    const domains=[[&#x27;会话与任务&#x27;,[&#x27;对话消息 · 任务历史 · 屏幕队列&#x27;,&#x27;任务 ID · 补充要求 · 检查点&#x27;]],[&#x27;长期记忆&#x27;,[&#x27;手动索引 · 五个基础文档&#x27;,&#x27;事实来源 · 自动学习 · 接收方边界&#x27;]],[&#x27;证据与产物&#x27;,[&#x27;聊天 / 笔记可见证据 · 文件原件&#x27;,&#x27;工具回执 · 工作流日志 · 导出产物&#x27;]],[&#x27;配置与凭据&#x27;,[&#x27;UserDefaults：配置和偏好&#x27;,&#x27;Keychain：模型及业务连接凭据&#x27;]]];
+    domains.forEach((a,i)=&gt;{const x=wide?16+(i%2)*(cw+gap):16,y=20+(wide?Math.floor(i/2)*166:i*166);box(x,y,cw,140,a[0],a[1]);end=y+140;});
+    let y=end+62;text(16,y,&#x27;恢复与未知提交结果&#x27;,14,&#x27;start&#x27;,true);y+=28;
+    const x=wide?100:32,bw=w-x-(wide?100:32),h=78;
+    box(x,y,bw,h,&#x27;保存原任务与提交意图&#x27;,[&#x27;稳定 taskID / operation_id；提交前先落盘&#x27;]);
+    arrow([[w/2,y+h],[w/2,y+h+54]],&#x27;&#x27;);y+=h+54;
+    box(x,y,bw,h,&#x27;执行并核对实际结果&#x27;,[&#x27;新观察 / 真实回执；模型声明不是完成证据&#x27;]);y+=h;
+    if(wide){const branchY=y+64,cw=(bw-24)/2;arrow([[w/2,y],[w/2,y+30],[x+cw/2,y+30],[x+cw/2,branchY]],&#x27;&#x27;);arrow([[w/2,y+30],[x+cw+24+cw/2,y+30],[x+cw+24+cw/2,branchY]],&#x27;&#x27;);box(x,branchY,cw,82,&#x27;结果已确认&#x27;,[&#x27;保存回执并发布终态&#x27;]);box(x+cw+24,branchY,cw,82,&#x27;结果未知&#x27;,[&#x27;保留原操作，进入人工核验&#x27;]);arrow([[x+cw+24+cw/2,branchY+82],[x+cw+24+cw/2,branchY+130]],&#x27;&#x27;);box(x+cw+24,branchY+130,cw,82,&#x27;明确恢复或结束&#x27;,[&#x27;核验后决定；不自动重发&#x27;]);y=branchY+212;}
+    else{arrow([[w/2,y],[w/2,y+48]],&#x27;&#x27;);y+=48;box(x,y,bw,100,&#x27;结果分类&#x27;,[&#x27;已确认 → 保存回执与终态&#x27;,&#x27;未知 → 保留原操作，人工核验&#x27;]);arrow([[w/2,y+100],[w/2,y+148]],&#x27;&#x27;);y+=148;box(x,y,bw,90,&#x27;核验后明确恢复或结束&#x27;,[&#x27;不重建身份，不自动重放未知提交&#x27;]);y+=90;}
+    return d.finish(y+24,&#x27;数据与恢复：四类本机数据域，以及未知提交结果的保守核验路径&#x27;);
+  }
+  globalThis.SelaArchitecture={draw:(id,width)=&gt;({system,layers,loop,lanes,hardware,data}[id])(Math.round(width))};
+})();
+
+&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const root=document.getElementById(&#x27;sela-architecture-v2&#x27;);
+  const data=JSON.parse(document.getElementById(&#x27;sela-v2-source-data&#x27;).textContent);
+  const definitions=[
+    [&#x27;system&#x27;,&#x27;系统总览&#x27;,&#x27;系统边界&#x27;,&#x27;运行主体与调用边界；共享画面、服务调用和系统输入分别表达。&#x27;],
+    [&#x27;layers&#x27;,&#x27;App 分层&#x27;,&#x27;App 内部分层&#x27;,&#x27;从用户请求到能力适配；公共支撑集中表达。&#x27;],
+    [&#x27;loop&#x27;,&#x27;操控闭环&#x27;,&#x27;手机操控闭环&#x27;,&#x27;每轮重新观察、提出动作、宿主复核，再执行与取证。&#x27;],
+    [&#x27;lanes&#x27;,&#x27;任务通道&#x27;,&#x27;三条执行通道&#x27;,&#x27;屏幕串行、原生有限并发，专属对话直接进入领域服务。&#x27;],
+    [&#x27;hardware&#x27;,&#x27;配件协议&#x27;,&#x27;配件与输入协议&#x27;,&#x27;控制连接与系统 HID 连接独立管理，均回到同一台 iPhone。&#x27;],
+    [&#x27;data&#x27;,&#x27;数据与恢复&#x27;,&#x27;本机数据与恢复&#x27;,&#x27;按数据职责归档；未知提交结果先核验，再决定恢复。&#x27;]
+  ];
+  const tabs=root.querySelector(&#x27;[data-v2-tabs]&#x27;),panels=root.querySelector(&#x27;[data-v2-panels]&#x27;);
+  const saved=window.openai?.widgetState?.privateContent;
+  let current=definitions.some(v=&gt;v[0]===saved?.view)?saved.view:&#x27;system&#x27;;
+  const instance=Math.random().toString(36).slice(2);let revision=0,suppress=false;
+  const states=new Map();
+  const el=(tag,cls,text)=&gt;{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
+  function appendFacts(container,items){
+    for(const item of items){
+      const detail=el(&#x27;details&#x27;);detail.append(el(&#x27;summary&#x27;,&#x27;&#x27;,item.title+&#x27; · &#x27;+item.subtitle));
+      const ul=el(&#x27;ul&#x27;);for(const fact of item.details)ul.append(el(&#x27;li&#x27;,&#x27;&#x27;,fact));detail.append(ul);
+      const sources=el(&#x27;div&#x27;,&#x27;v2-source text-small&#x27;);
+      for(const source of item.sources||[]){const row=el(&#x27;div&#x27;);const path=source.path.replace(data.workspace+&#x27;/&#x27;,&#x27;&#x27;);row.append(el(&#x27;code&#x27;,&#x27;&#x27;,path+&#x27;:&#x27;+source.line));sources.append(row);}
+      detail.append(sources);container.append(detail);
+    }
+  }
+  function redraw(id,force=false){const s=states.get(id);if(!s||s.panel.hidden)return;const width=Math.round(s.diagram.getBoundingClientRect().width);if(width&lt;100)return;if(!force&amp;&amp;width===s.width)return;s.width=width;s.diagram.innerHTML=globalThis.SelaArchitecture.draw(id,width);}
+  function save(){if(suppress||!window.openai?.setWidgetState)return;const item=definitions.find(v=&gt;v[0]===current);window.openai.setWidgetState({modelContent:{architectureView:item[1]},privateContent:{view:current,instance,revision:++revision}}).catch(()=&gt;{});}
+  for(const [id,label,title,subtitle]of definitions){
+    const button=el(&#x27;button&#x27;,&#x27;nav-link&#x27;+(id===current?&#x27; active&#x27;:&#x27;&#x27;),label);button.type=&#x27;button&#x27;;button.id=&#x27;v2-tab-&#x27;+id;button.setAttribute(&#x27;role&#x27;,&#x27;tab&#x27;);button.setAttribute(&#x27;aria-controls&#x27;,&#x27;v2-panel-&#x27;+id);button.setAttribute(&#x27;aria-selected&#x27;,String(id===current));tabs.append(button);
+    const panel=el(&#x27;div&#x27;);panel.id=&#x27;v2-panel-&#x27;+id;panel.setAttribute(&#x27;role&#x27;,&#x27;tabpanel&#x27;);panel.setAttribute(&#x27;aria-labelledby&#x27;,button.id);panel.hidden=id!==current;
+    panel.append(el(&#x27;h3&#x27;,&#x27;&#x27;,title),el(&#x27;div&#x27;,&#x27;v2-subtitle text-small text-muted&#x27;,subtitle));
+    const diagram=el(&#x27;div&#x27;,&#x27;v2-diagram&#x27;);panel.append(diagram);
+    const map=el(&#x27;details&#x27;,&#x27;v2-map&#x27;);map.append(el(&#x27;summary&#x27;,&#x27;&#x27;,&#x27;职责与源码映射&#x27;));appendFacts(map,data.appendix[id]||[]);panel.append(map);panels.append(panel);
+    states.set(id,{panel,diagram,width:0});new ResizeObserver(()=&gt;redraw(id)).observe(diagram);
+  }
+  appendFacts(root.querySelector(&#x27;[data-v2-appendix]&#x27;),data.appendix.appendix||[]);
+  new MutationObserver(()=&gt;{const tab=tabs.querySelector(&#x27;[aria-selected=&quot;true&quot;]&#x27;);if(!tab)return;const id=tab.id.replace(&#x27;v2-tab-&#x27;,&#x27;&#x27;);if(id!==current){current=id;save();}requestAnimationFrame(()=&gt;redraw(current,true));}).observe(tabs,{subtree:true,attributes:true,attributeFilter:[&#x27;aria-selected&#x27;]});
+  window.addEventListener(&#x27;openai:set_globals&#x27;,event=&gt;{const state=event.detail?.globals?.widgetState?.privateContent;if(!state||!definitions.some(v=&gt;v[0]===state.view))return;if(state.instance===instance&amp;&amp;state.revision&lt;=revision)return;suppress=true;document.getElementById(&#x27;v2-tab-&#x27;+state.view).click();setTimeout(()=&gt;suppress=false,0);});
+  requestAnimationFrame(()=&gt;redraw(current,true));
+})();
+&lt;/script&gt;
+
+
+
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+  let lastPointerWasTouch = false;
+  let pinnedByTouch = false;
+
+  const getTrigger = (event) =&gt; {
+    for (const target of event.composedPath()) {
+      if (target?.nodeType === Node.ELEMENT_NODE) {
+        const trigger = target.closest(&quot;[data-tooltip]&quot;);
+        if (trigger) return trigger;
+      }
+    }
+    return null;
+  };
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    pinnedByTouch = false;
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handlePointer = (event) =&gt; {
+    lastPointerWasTouch =
+      event.type === &quot;pointerdown&quot; &amp;&amp; event.pointerType === &quot;touch&quot;;
+  };
+  const handleTouchClick = (event) =&gt; {
+    const isTouch = event.pointerType === &quot;touch&quot; || lastPointerWasTouch;
+    lastPointerWasTouch = false;
+    if (!isTouch || event.detail === 0) {
+      return;
+    }
+    const trigger = getTrigger(event);
+    if (
+      trigger == null ||
+      !trigger.isConnected ||
+      getContent(trigger).length === 0 ||
+      (pinnedByTouch &amp;&amp; activeTrigger === trigger)
+    ) {
+      if (pinnedByTouch) {
+        closeTooltip();
+      }
+      return;
+    }
+    openTooltip(trigger);
+    pinnedByTouch = activeTrigger === trigger;
+    window.setTimeout(() =&gt; {
+      if (activeTrigger === trigger &amp;&amp; !trigger.isConnected) {
+        closeTooltip(false);
+      }
+    }, 0);
+  };
+  const handleLeave = (event) =&gt; {
+    if (pinnedByTouch) {
+      return;
+    }
+    const trigger = getTrigger(event);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    lastPointerWasTouch = false;
+    const trigger = getTrigger(event);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handlers = {
+    pointerover: handlePointerOpen,
+    pointerdown: handlePointer,
+    pointercancel: handlePointer,
+    click: handleTouchClick,
+    pointerout: handleLeave,
+    focusin: handleFocusIn,
+    focusout: handleLeave,
+    keydown: handleKeyDown,
+    contextmenu: handleContextMenu,
+  };
+  const roots = new Map();
+  const handledEvents = new WeakSet();
+  const handleEvent = (event) =&gt; {
+    if (handledEvents.has(event)) return;
+    handledEvents.add(event);
+    handlers[event.type](event);
+  };
+  const discoverRoots = (node) =&gt; {
+    if (node.shadowRoot) listen(node.shadowRoot);
+    for (const element of node.querySelectorAll(&quot;*&quot;)) {
+      if (element.shadowRoot) listen(element.shadowRoot);
+    }
+  };
+  const listen = (root) =&gt; {
+    if (roots.has(root)) return;
+    for (const type of Object.keys(handlers)) root.addEventListener(type, handleEvent);
+    const observer = new window.MutationObserver((records) =&gt; {
+      for (const { addedNodes } of records) {
+        for (const node of addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) discoverRoots(node);
+        }
+      }
+      for (const [root, cleanup] of roots) {
+        if (root.host &amp;&amp; !root.host.isConnected) {
+          cleanup();
+          roots.delete(root);
+        }
+      }
+      if (activeTrigger &amp;&amp; !activeTrigger.isConnected) closeTooltip(false);
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    roots.set(root, () =&gt; {
+      observer.disconnect();
+      for (const type of Object.keys(handlers)) root.removeEventListener(type, handleEvent);
+    });
+    discoverRoots(root);
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    lastPointerWasTouch = false;
+    for (const cleanup of roots.values()) cleanup();
+    roots.clear();
+    tooltip = null;
+  };
+
+  // Events between children of one shadow root never reach the document.
+  listen(document);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-tabs&quot;&gt;
+(() =&gt; {
+  const selector = &#x27;.nav[role=&quot;tablist&quot;] [role=&quot;tab&quot;]&#x27;;
+  const disabled = &#x27;:disabled,[aria-disabled=&quot;true&quot;]&#x27;;
+  const selectTab = (selected) =&gt; {
+    const panelId = selected.getAttribute(&quot;aria-controls&quot;);
+    for (const tab of selected.closest(&#x27;[role=&quot;tablist&quot;]&#x27;).querySelectorAll(&#x27;[role=&quot;tab&quot;]&#x27;)) {
+      const active = tab === selected;
+      tab.classList.toggle(&quot;active&quot;, active);
+      tab.setAttribute(&quot;aria-selected&quot;, String(active));
+      const id = tab.getAttribute(&quot;aria-controls&quot;);
+      const panel = id &amp;&amp; document.getElementById(id);
+      if (panel != null) {
+        panel.hidden = id !== panelId;
+        if (!panel.hidden &amp;&amp; selected.id) {
+          panel.setAttribute(&quot;aria-labelledby&quot;, selected.id);
+        }
+      }
+    }
+  };
+  const interact = (event) =&gt; {
+    const tab = event.target?.closest?.(selector);
+    if (event.defaultPrevented || tab == null || tab.matches(disabled)) {
+      return;
+    }
+    if (event.type === &quot;click&quot;) {
+      selectTab(tab);
+      return;
+    }
+    const tabs = Array.from(
+      tab.closest(&#x27;[role=&quot;tablist&quot;]&#x27;).querySelectorAll(&#x27;[role=&quot;tab&quot;]&#x27;),
+    ).filter((candidate) =&gt; !candidate.matches(disabled));
+    const current = tabs.indexOf(tab);
+    let next;
+    if (event.key === &quot;ArrowRight&quot; || event.key === &quot;ArrowDown&quot;) {
+      next = (current + 1) % tabs.length;
+    } else if (event.key === &quot;ArrowLeft&quot; || event.key === &quot;ArrowUp&quot;) {
+      next = (current + tabs.length - 1) % tabs.length;
+    } else if (event.key === &quot;Home&quot;) {
+      next = 0;
+    } else if (event.key === &quot;End&quot;) {
+      next = tabs.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    tabs[next].focus();
+    selectTab(tabs[next]);
+  };
+
+  for (const list of document.querySelectorAll(&#x27;.nav[role=&quot;tablist&quot;]&#x27;)) {
+    const selected =
+      list.querySelector(&#x27;[role=&quot;tab&quot;][aria-selected=&quot;true&quot;]&#x27;) ??
+      list.querySelector(&#x27;[role=&quot;tab&quot;].active&#x27;) ??
+      list.querySelector(&#x27;[role=&quot;tab&quot;]&#x27;);
+    if (selected != null) {
+      selectTab(selected);
+    }
+  }
+  document.addEventListener(&quot;click&quot;, interact);
+  document.addEventListener(&quot;keydown&quot;, interact);
+  window.addEventListener(&quot;pagehide&quot;, () =&gt; {
+    document.removeEventListener(&quot;click&quot;, interact);
+    document.removeEventListener(&quot;keydown&quot;, interact);
+  }, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-carousel&quot;&gt;
+  (() =&gt; {
+    for (const root of document.querySelectorAll(&quot;.viz-carousel&quot;)) {
+      const panels = Array.from(
+        root.querySelectorAll(&quot;:scope &gt; [data-variant]&quot;),
+      );
+      if (panels.length === 0) {
+        continue;
+      }
+      root.setAttribute(&quot;role&quot;, &quot;group&quot;);
+      panels.forEach((panel, index) =&gt; {
+        panel.hidden = index !== 0;
+        panel.setAttribute(&quot;role&quot;, &quot;group&quot;);
+        if (!panel.hasAttribute(&quot;aria-label&quot;)) {
+          panel.setAttribute(&quot;aria-label&quot;, panel.dataset.variant);
+        }
+      });
+      root.dataset.activeVariant = panels[0].dataset.variant;
+      if (panels.length === 1) {
+        continue;
+      }
+
+      const controls = document.createElement(&quot;div&quot;);
+      controls.className = &quot;viz-carousel-controls&quot;;
+      // Portable copy of the settings dropdown&#x27;s legacy glyph; no 14px icon-package preset matches it.
+      // https://github.com/openai/openai/blob/master/codex/codex-apps/webview/src/icons/chevron.svg
+      controls.innerHTML = `
+      &lt;button type=&quot;button&quot; class=&quot;viz-carousel-previous cursor-interaction&quot;&gt;&lt;i data-lucide=&quot;chevron-left&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;
+      &lt;details class=&quot;viz-carousel-picker&quot;&gt;
+        &lt;summary class=&quot;cursor-interaction&quot;&gt;
+          &lt;span class=&quot;viz-carousel-count tabular-nums&quot;&gt;&lt;/span&gt;
+          &lt;span class=&quot;viz-carousel-name&quot;&gt;&lt;/span&gt;
+          &lt;svg class=&quot;viz-carousel-caret&quot; width=&quot;14&quot; height=&quot;14&quot; viewBox=&quot;0 0 20 21&quot; fill=&quot;none&quot; aria-hidden=&quot;true&quot; focusable=&quot;false&quot;&gt;
+            &lt;path d=&quot;M15.2793 7.71101C15.539 7.45131 15.961 7.45131 16.2207 7.71101C16.4804 7.97071 16.4804 8.39272 16.2207 8.65242L10.4707 14.4024C10.211 14.6621 9.78902 14.6621 9.52932 14.4024L3.77932 8.65242L3.69436 8.54792C3.52385 8.28979 3.55205 7.93828 3.77932 7.71101C4.00659 7.48374 4.3581 7.45554 4.61623 7.62605L4.72073 7.71101L10 12.9903L15.2793 7.71101Z&quot; fill=&quot;currentColor&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;0.6&quot; /&gt;
+          &lt;/svg&gt;
+        &lt;/summary&gt;
+        &lt;div class=&quot;viz-carousel-options&quot;&gt;&lt;/div&gt;
+      &lt;/details&gt;
+      &lt;button type=&quot;button&quot; class=&quot;viz-carousel-next cursor-interaction&quot;&gt;&lt;i data-lucide=&quot;chevron-right&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;`;
+      const previous = controls.querySelector(&quot;.viz-carousel-previous&quot;);
+      const next = controls.querySelector(&quot;.viz-carousel-next&quot;);
+      const picker = controls.querySelector(&quot;.viz-carousel-picker&quot;);
+      const summary = picker.querySelector(&quot;summary&quot;);
+      const count = controls.querySelector(&quot;.viz-carousel-count&quot;);
+      const name = controls.querySelector(&quot;.viz-carousel-name&quot;);
+      const options = controls.querySelector(&quot;.viz-carousel-options&quot;);
+      const status = document.createElement(&quot;span&quot;);
+      status.className = &quot;sr-only&quot;;
+      status.setAttribute(&quot;role&quot;, &quot;status&quot;);
+      status.setAttribute(&quot;aria-live&quot;, &quot;polite&quot;);
+      status.setAttribute(&quot;aria-atomic&quot;, &quot;true&quot;);
+      previous.setAttribute(
+        &quot;aria-label&quot;,
+        root.dataset.previousLabel ?? &quot;Previous variant&quot;,
+      );
+      next.setAttribute(&quot;aria-label&quot;, root.dataset.nextLabel ?? &quot;Next variant&quot;);
+
+      let active = 0;
+      let mousePointerId = null;
+      let summaryPointerHandled = false;
+      summary.addEventListener(&quot;pointerdown&quot;, (event) =&gt; {
+        summaryPointerHandled =
+          event.pointerType === &quot;mouse&quot; &amp;&amp; event.button === 0 &amp;&amp; !event.ctrlKey;
+        if (!summaryPointerHandled) {
+          return;
+        }
+        event.preventDefault();
+        summary.focus({ preventScroll: true });
+        picker.open = !picker.open;
+        mousePointerId = picker.open ? event.pointerId : null;
+      });
+      summary.addEventListener(&quot;click&quot;, (event) =&gt; {
+        if (summaryPointerHandled &amp;&amp; event.detail &gt; 0) {
+          event.preventDefault();
+        }
+      });
+      const choices = panels.map((panel, index) =&gt; {
+        const choice = document.createElement(&quot;button&quot;);
+        choice.type = &quot;button&quot;;
+        choice.className = &quot;cursor-interaction&quot;;
+        choice.textContent = panel.dataset.variant;
+        choice.addEventListener(&quot;click&quot;, () =&gt; {
+          select(index);
+          summary.focus();
+        });
+        choice.addEventListener(&quot;pointerup&quot;, (event) =&gt; {
+          if (
+            picker.open &amp;&amp;
+            event.pointerType === &quot;mouse&quot; &amp;&amp;
+            event.button === 0 &amp;&amp;
+            event.pointerId === mousePointerId
+          ) {
+            choice.click();
+          }
+        });
+        options.appendChild(choice);
+        return choice;
+      });
+      const select = (index) =&gt; {
+        const changed = active !== index;
+        active = index;
+        panels.forEach((panel, position) =&gt; {
+          panel.hidden = position !== active;
+          choices[position].setAttribute(
+            &quot;aria-current&quot;,
+            String(position === active),
+          );
+        });
+        root.dataset.activeVariant = panels[active].dataset.variant;
+        count.textContent = `${active + 1} / ${panels.length}`;
+        name.textContent = panels[active].dataset.variant;
+        picker.open = false;
+        mousePointerId = null;
+        if (changed) {
+          status.textContent = `${count.textContent}: ${name.textContent}`;
+        }
+      };
+      previous.addEventListener(&quot;click&quot;, () =&gt;
+        select((active + panels.length - 1) % panels.length),
+      );
+      next.addEventListener(&quot;click&quot;, () =&gt;
+        select((active + 1) % panels.length),
+      );
+      picker.addEventListener(&quot;keydown&quot;, (event) =&gt; {
+        if (event.key === &quot;Escape&quot; &amp;&amp; picker.open) {
+          event.preventDefault();
+          picker.open = false;
+          mousePointerId = null;
+          summary.focus();
+          return;
+        }
+        if (event.altKey || event.ctrlKey || event.metaKey) {
+          return;
+        }
+        const index = choices.indexOf(document.activeElement);
+        let nextIndex;
+        if (event.key === &quot;ArrowDown&quot;) {
+          nextIndex = index &lt; 0 ? active : (index + 1) % choices.length;
+        } else if (event.key === &quot;ArrowUp&quot;) {
+          nextIndex = index &lt; 0 ? active : (index + choices.length - 1) % choices.length;
+        } else if (picker.open &amp;&amp; event.key === &quot;Home&quot;) {
+          nextIndex = 0;
+        } else if (picker.open &amp;&amp; event.key === &quot;End&quot;) {
+          nextIndex = choices.length - 1;
+        } else {
+          return;
+        }
+        event.preventDefault();
+        picker.open = true;
+        choices[nextIndex].focus();
+      });
+      picker.addEventListener(&quot;focusout&quot;, (event) =&gt; {
+        if (!picker.contains(event.relatedTarget)) {
+          picker.open = false;
+          mousePointerId = null;
+        }
+      });
+      const dismiss = (event) =&gt; {
+        if (!summary.contains(event.target)) {
+          mousePointerId = null;
+        }
+        if (!picker.contains(event.target)) {
+          picker.open = false;
+        }
+      };
+      const endPointerSelection = () =&gt; {
+        mousePointerId = null;
+      };
+      const sizePicker = () =&gt; {
+        root.style.setProperty(
+          &quot;--viz-carousel-picker-height&quot;,
+          `${picker.open ? options.offsetHeight : 0}px`,
+        );
+      };
+      picker.addEventListener(&quot;toggle&quot;, sizePicker);
+      window.addEventListener(&quot;resize&quot;, sizePicker);
+      document.addEventListener(&quot;pointerdown&quot;, dismiss);
+      document.addEventListener(&quot;pointerup&quot;, endPointerSelection);
+      document.addEventListener(&quot;pointercancel&quot;, endPointerSelection);
+      window.addEventListener(&quot;blur&quot;, endPointerSelection);
+      window.addEventListener(
+        &quot;pagehide&quot;,
+        () =&gt; {
+          document.removeEventListener(&quot;pointerdown&quot;, dismiss);
+          document.removeEventListener(&quot;pointerup&quot;, endPointerSelection);
+          document.removeEventListener(&quot;pointercancel&quot;, endPointerSelection);
+          window.removeEventListener(&quot;blur&quot;, endPointerSelection);
+          window.removeEventListener(&quot;resize&quot;, sizePicker);
+        },
+        { once: true },
+      );
+      root.append(controls, status);
+      select(0);
+    }
+  })();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+
+<script>(() => {
+  const frame = document.getElementById("codex-visualization");
+  if (!(frame instanceof HTMLIFrameElement)) {
+    return;
+  }
+  const isShare = document.documentElement.classList.contains(
+    "visualization-share-root",
+  );
+  let viewportHeight = globalThis.innerHeight;
+  let sizeFingerprint = null;
+  let sizeWriteTimeout;
+  let lastSize = null;
+  let pendingSize = null;
+  const storageKey = `codex:visualization-widget-state-v2:${JSON.stringify([
+    globalThis.location.pathname,
+    globalThis.location.search,
+  ])}`;
+  const sizeStorageKey = `${storageKey}:share-size-v1`;
+  const parseState = (serializedState) => {
+    if (
+      typeof serializedState !== "string" ||
+      new TextEncoder().encode(serializedState).length > 16 * 1024
+    ) {
+      throw new TypeError(
+        "Widget state must be a JSON object of at most 16 KiB",
+      );
+    }
+    /** @type {unknown} */
+    const state = JSON.parse(serializedState);
+    if (
+      state == null ||
+      typeof state !== "object" ||
+      Array.isArray(state) ||
+      ("imageIds" in state &&
+        (!Array.isArray(state.imageIds) || state.imageIds.length > 0))
+    ) {
+      throw new TypeError("Widget state must be a JSON object");
+    }
+    const storedState = { modelContent: null, privateContent: null, ...state };
+    const canonicalState = JSON.stringify(
+      storedState,
+      (_key, /** @type {unknown} */ value) => {
+        if (typeof value === "number" && !Number.isFinite(value)) {
+          throw new TypeError("Widget state must contain finite numbers");
+        }
+        return value;
+      },
+    );
+    if (new TextEncoder().encode(canonicalState).length > 16 * 1024) {
+      throw new TypeError(
+        "Widget state must be a JSON object of at most 16 KiB",
+      );
+    }
+    return storedState;
+  };
+  let storage = null;
+  let state = null;
+  try {
+    const localStorage = globalThis.localStorage;
+    const probeKey = `${storageKey}:probe`;
+    localStorage.setItem(probeKey, "1");
+    localStorage.removeItem(probeKey);
+    storage = localStorage;
+    const savedState = storage.getItem(storageKey);
+    if (savedState != null) {
+      try {
+        state = parseState(savedState);
+      } catch {
+        // Invalid saved state does not disable future writes.
+      }
+    }
+  } catch {
+    storage = null;
+  }
+  const persistSize = () => {
+    globalThis.clearTimeout(sizeWriteTimeout);
+    if (pendingSize == null) {
+      return;
+    }
+    try {
+      storage?.setItem(sizeStorageKey, pendingSize);
+    } catch {
+      // A denied or full cache must not affect the visualization.
+    }
+    pendingSize = null;
+  };
+  if (isShare) {
+    globalThis.addEventListener("pagehide", persistSize);
+  }
+  const initialGlobals = {
+    widgetState: state,
+    statePersistence: storage == null ? "none" : "local",
+  };
+
+  const channel = new MessageChannel();
+  channel.port1.addEventListener("message", (event) => {
+    const data = event.data;
+    if (typeof data !== "object" || data == null) {
+      return;
+    }
+    if (data.type === "widget-state-write") {
+      if (!Number.isSafeInteger(data.id) || data.id <= 0) {
+        return;
+      }
+      let ok = false;
+      try {
+        if (storage != null) {
+          const state = parseState(data.state);
+          storage.setItem(storageKey, JSON.stringify(state));
+          ok = true;
+        }
+      } catch {
+        // Storage denial, quota limits, and invalid state return a failed receipt.
+      }
+      channel.port1.postMessage({
+        type: "widget-state-result",
+        id: data.id,
+        ok,
+      });
+      return;
+    }
+    if (data.type === "height") {
+      const height = data.height;
+      if (
+        typeof height !== "number" ||
+        !Number.isFinite(height) ||
+        height < 0
+      ) {
+        return;
+      }
+      if (height <= 10_000) {
+        const width = isShare && storage != null ? frame.clientWidth : null;
+        frame.style.height = Math.ceil(height) + "px";
+        if (isShare && storage != null) {
+          const size = JSON.stringify({
+            fingerprint: sizeFingerprint,
+            width,
+            viewportHeight: globalThis.innerHeight,
+            dark: globalThis.matchMedia("(prefers-color-scheme: dark)").matches,
+            scale: globalThis.devicePixelRatio,
+            height: Math.ceil(height),
+          });
+          if (size !== lastSize) {
+            lastSize = size;
+            pendingSize = size;
+            globalThis.clearTimeout(sizeWriteTimeout);
+            sizeWriteTimeout = globalThis.setTimeout(persistSize, 100);
+          }
+        }
+      }
+      if (isShare) {
+        // Keep unusually tall content accessible without accepting an unbounded height.
+        if (height > 10_000 && Number.parseFloat(frame.style.height) === 0) {
+          frame.style.removeProperty("height");
+        }
+        frame.scrolling = height > 10_000 ? "auto" : "no";
+        document.documentElement.classList.add("visualization-share-ready");
+      }
+      return;
+    }
+    if (data.type === "scroll-to") {
+      const top = data.top;
+      if (
+        typeof top === "number" &&
+        Number.isFinite(top) &&
+        top >= 0 &&
+        globalThis.navigator.userActivation?.isActive === true
+      ) {
+        globalThis.scrollTo({
+          top: Math.ceil(
+            globalThis.scrollY + frame.getBoundingClientRect().top + top,
+          ),
+        });
+      }
+      return;
+    }
+    if (data.type === "open-external") {
+      const rawHref = data.href;
+      if (typeof rawHref !== "string") {
+        return;
+      }
+      let href;
+      try {
+        const url = new URL(rawHref, document.baseURI);
+        if (url.protocol !== "https:") {
+          return;
+        }
+        href = url.href;
+      } catch {
+        return;
+      }
+      if (globalThis.navigator.userActivation?.isActive === true) {
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.rel = "noopener noreferrer";
+        anchor.target = "_blank";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      }
+      return;
+    }
+    if (data.type === "follow-up") {
+      const prompt = data.prompt;
+      if (
+        typeof prompt !== "string" ||
+        globalThis.navigator.userActivation?.isActive !== true
+      ) {
+        return;
+      }
+      const title = data.title;
+      globalThis.prompt(typeof title === "string" ? title : prompt, prompt);
+    }
+  });
+  channel.port1.start();
+  const srcdoc = frame.dataset.srcdoc;
+  if (srcdoc == null) {
+    return;
+  }
+  globalThis.addEventListener("resize", () => {
+    const height = Number.parseFloat(frame.style.height);
+    if (!isShare && (!Number.isFinite(height) || height <= viewportHeight)) {
+      frame.style.removeProperty("height");
+    }
+    viewportHeight = globalThis.innerHeight;
+    channel.port1.postMessage({ type: "measure" });
+  });
+  frame.addEventListener(
+    "load",
+    () => {
+      frame.contentWindow?.postMessage(
+        { type: "codex-visualization-initialize" },
+        "*",
+        [channel.port2],
+      );
+    },
+    { once: true },
+  );
+  // Match the trusted bootstrap element, not the same text in an authored title.
+  const frameHtml = srcdoc.replace(
+    '<script type="application/json" id="codex-visualization-widget-state">__CODEX_VISUALIZATION_WIDGET_STATE__<\/script>',
+    () =>
+      '<script type="application/json" id="codex-visualization-widget-state">' +
+      JSON.stringify(initialGlobals).replaceAll("<", "\\u003c") +
+      "<\/script>",
+  );
+  if (isShare && storage != null) {
+    // Fingerprint the rendered document, including restored widget state, without
+    // storing its content. This is a layout cache, not a security identity.
+    let hash = 5381;
+    for (let index = 0; index < frameHtml.length; index += 1) {
+      hash = (hash * 33 + frameHtml.charCodeAt(index)) % 4_294_967_296;
+    }
+    sizeFingerprint = hash.toString(36);
+    try {
+      const size = JSON.parse(storage.getItem(sizeStorageKey) ?? "null");
+      if (
+        size?.fingerprint === sizeFingerprint &&
+        size.width === frame.clientWidth &&
+        size.viewportHeight === globalThis.innerHeight &&
+        size.dark ===
+          globalThis.matchMedia("(prefers-color-scheme: dark)").matches &&
+        size.scale === globalThis.devicePixelRatio &&
+        typeof size.height === "number" &&
+        Number.isFinite(size.height) &&
+        size.height >= 0 &&
+        size.height <= 10_000
+      ) {
+        frame.style.height = size.height + "px";
+      }
+    } catch {
+      // Ignore missing or invalid cache entries and measure the live frame.
+    }
+  }
+  frame.srcdoc = frameHtml;
+  delete frame.dataset.srcdoc;
+})();
+</script>
+</body>
+</html>

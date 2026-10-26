@@ -1,0 +1,2592 @@
+{
+  "workspace": ".",
+  "appendix": {
+    "system": [
+      {
+        "id": "entry",
+        "title": "用户与系统入口",
+        "subtitle": "文字 / 语音 / Siri / 附件",
+        "details": [
+          "用户以文字、语音、Siri / 快捷指令或显式选择的附件提出要求。",
+          "新操作的授权来自本轮人类要求；历史内容、网页与附件正文仅作为资料。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/PhoneAgentApp.swift",
+            "line": 5
+          },
+          {
+            "path": "PhoneAgent/Services/AgentIntents.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 187
+          },
+          {
+            "path": "PhoneAgent/Services/AgentIntents.swift",
+            "line": 4
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "composition",
+        "title": "Sela iPhone App",
+        "subtitle": "交互 · 理解 · 协调 · 执行",
+        "details": [
+          "Sela 是在 iPhone 内运行的原生 App，负责理解请求、协调任务、调用能力和呈现结果。",
+          "运行时不依赖 Mac 常开；Mac 在主线中只承担开发、模拟器和安装工作。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 430
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentApp.swift",
+            "line": 7
+          },
+          {
+            "path": "PhoneAgent/ContentView.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Models/WorkspaceNavigation.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 872
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 4
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "model",
+        "title": "配置的模型服务",
+        "subtitle": "任务理解 / 视觉决策 / 文字分析",
+        "details": [
+          "文字、图片和相关任务上下文发给用户配置且获授权的模型服务。",
+          "自定义 HTTPS API Key 与显式选择的 ChatGPT 计划连接是两条认证路径；输出由手机宿主校验后采用。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 101
+          },
+          {
+            "path": "PhoneAgent/Services/ConnectedConversationClient.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/ConnectedConversationClient.swift",
+            "line": 9
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 30
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 114
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 190
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 204
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "direct",
+        "title": "第三方业务服务",
+        "subtitle": "携程 / 美团跑腿 / 其他显式连接",
+        "details": [
+          "携程和美团跑腿由手机中的专属客户端调用，返回查询、报价或提交回执。",
+          "真实连接状态、实时报价、库存和业务成功分别核对；服务返回不自动等于订单或付款成功。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 575
+          },
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 973
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 218
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 224
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "tools",
+        "title": "iOS 系统能力",
+        "subtitle": "本机 API / 权限 / Shortcuts 桥",
+        "details": [
+          "获授权的日历、提醒、联系人、照片、健康、音乐、位置等能力由 iPhone 本机系统接口执行。",
+          "前台条件、系统权限、资源互斥与工具回执在手机宿主中检查。"
+        ],
+        "sources": [
+          {
+            "path": "Shared/SystemToolRequest.swift",
+            "line": 9
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 121
+          },
+          {
+            "path": "PhoneAgent/Services/NativeConnectionsStore.swift",
+            "line": 13
+          },
+          {
+            "path": "PhoneAgent/Models/NativeAppConnection.swift",
+            "line": 3
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "esp",
+        "title": "ESP32-S3 配件",
+        "subtitle": "自定义 BLE 控制服务 + HID",
+        "details": [
+          "ESP32-S3 接收 App 的 BLE 控制命令，再向 iOS 系统发送键鼠 HID 报告。",
+          "本路线中配件不采集屏幕，也不运行模型；控制连接与系统 HID 连接分别跟踪。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/main.c",
+            "line": 73
+          },
+          {
+            "path": "Shared/MouseProtocol.swift",
+            "line": 12
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 12
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 56
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 72
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 431
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 452
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 457
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "target",
+        "title": "同一台 iPhone 的目标 App",
+        "subtitle": "iOS HID / AssistiveTouch",
+        "details": [
+          "iOS 通过系统 HID / AssistiveTouch 将配件输入作用于同一台 iPhone 的前台目标 App。",
+          "用户授权的整屏共享把结果画面送回 Sela；Sela 不直接读取目标 App 的私有数据库。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 477
+          },
+          {
+            "path": "Shared/InputReleaseController.swift",
+            "line": 3
+          },
+          {
+            "path": "docs/firmware.md",
+            "line": 44
+          },
+          {
+            "path": "docs/architecture.md",
+            "line": 47
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/WorkflowObservationLease.swift",
+            "line": 29
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "local",
+        "title": "本机数据与证据",
+        "subtitle": "Stores · SelaMemoryCore · Keychain",
+        "details": [
+          "对话、任务、记忆、证据与产物由本机 Store 保存，凭据放在独立 Keychain 条目。",
+          "持久记录是回看和显式恢复资料，不会从磁盘自动恢复执行权限。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/SettingsStore.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 139
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskCoordinator.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Stores/SettingsStore.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Stores/RealtimeStore.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Stores/WebSearchStore.swift",
+            "line": 4
+          }
+        ],
+        "status": "main"
+      }
+    ],
+    "layers": [
+      {
+        "id": "ui",
+        "title": "交互与输入层",
+        "subtitle": "ContentView / Views / Voice / Siri",
+        "details": [
+          "SwiftUI 工作区负责对话、草稿、附件、任务卡片和设置；语音与 Siri 复用同一应用协调入口。",
+          "View 发出事件并呈现服务状态，不直接绕过执行器发送 HID 输入。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/ContentView.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Models/WorkspaceNavigation.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentApp.swift",
+            "line": 5
+          },
+          {
+            "path": "PhoneAgent/Services/AgentIntents.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 872
+          },
+          {
+            "path": "PhoneAgent/Stores/ComposerAttachmentStore.swift",
+            "line": 15
+          },
+          {
+            "path": "PhoneAgent/Services/AgentIntents.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Services/VoiceController.swift",
+            "line": 85
+          },
+          {
+            "path": "PhoneAgent/Views/WorkbenchView.swift",
+            "line": 251
+          },
+          {
+            "path": "PhoneAgent/Services/ComposerAttachmentImport.swift",
+            "line": 16
+          },
+          {
+            "path": "PhoneAgent/Services/SpreadsheetFiles.swift",
+            "line": 4
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "intelligence",
+        "title": "对话理解层",
+        "subtitle": "AssistantConversation / UnifiedConversationRouter",
+        "details": [
+          "组合本轮消息、有限历史、显式附件、待补充意图和带来源的记忆，输出结构化意图。",
+          "校验来源、任务范围和配置版本；聊天与追问不获得执行权限，迟到结果不能污染另一会话。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 872
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 5
+          },
+          {
+            "path": "Shared/ConversationUnderstanding.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 499
+          },
+          {
+            "path": "PhoneAgent/Stores/MemoryStore.swift",
+            "line": 173
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 12
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 99
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 125
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 117
+          },
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 973
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 153
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 187
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "composition",
+        "title": "应用协调层",
+        "subtitle": "PhoneAgentViewModel / ConversationCoordinator",
+        "details": [
+          "应用组合根连接采集、模型、执行器、工具、存储与系统状态，并决定启动、入队、暂停或恢复。",
+          "任务与原 conversationID / messageID / taskID 绑定；控制还必须匹配当前执行会话 token。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 430
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentApp.swift",
+            "line": 7
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 447
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 75
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 97
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 8
+          },
+          {
+            "path": "Shared/AssistantConversationContext.swift",
+            "line": 3
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 117
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 256
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 184
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "screen",
+        "title": "屏幕执行通道",
+        "subtitle": "AgentEngine / Screen Queue",
+        "details": [
+          "屏幕任务采用单一 GUI 输入所有者，其他屏幕任务保存到队列。",
+          "AgentEngine 协调观察、模型动作、复核、执行和结果证据；恢复重新观察，不重放旧动作。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 828
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 1531
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 38
+          },
+          {
+            "path": "Shared/AgentModels.swift",
+            "line": 38
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 1043
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 1440
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "native",
+        "title": "原生执行通道",
+        "subtitle": "BackgroundTaskCoordinator / Worker Pool",
+        "details": [
+          "原生任务每项拥有独立 tools-only AgentEngine，最多同时运行 3 项。",
+          "不需要 BLE 或共享屏幕；同资源互斥、不同资源可以并行，磁盘记录不能自动重建运行会话。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskCoordinator.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskExecution.swift",
+            "line": 5
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskCoordinator.swift",
+            "line": 6
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "direct",
+        "title": "专属服务通道",
+        "subtitle": "Ctrip / MeituanPaotui Conversation + Client",
+        "details": [
+          "航班与跑腿多轮对话有独立客户端与卡片状态；部分查询直接由对话服务调用。",
+          "任务的 system_tool 也可以调用相关客户端；不能把所有专属查询都画成 GUI 点击。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 575
+          },
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 973
+          },
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 985
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 66
+          },
+          {
+            "path": "PhoneAgent/Services/CtripClient.swift",
+            "line": 35
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 477
+          },
+          {
+            "path": "docs/ctrip-connection.md",
+            "line": 36
+          },
+          {
+            "path": "PhoneAgent/Services/MeituanPaotuiConversation.swift",
+            "line": 25
+          },
+          {
+            "path": "PhoneAgent/Services/MeituanPaotuiConversation.swift",
+            "line": 293
+          },
+          {
+            "path": "PhoneAgent/Services/MeituanPaotuiStore.swift",
+            "line": 1
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "perception",
+        "title": "能力与适配层",
+        "subtitle": "Capture / Harness / Model / SystemTools / BLE",
+        "details": [
+          "采集、OCR、模型连接、系统工具和 BLE/HID 适配作为执行通道的基础设施。",
+          "观察绑定、输入释放与真实回执由宿主掌握，模型不能直接取得配件或系统权限。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/WorkflowObservationLease.swift",
+            "line": 29
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 56
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 101
+          },
+          {
+            "path": "PhoneAgent/Services/ConnectedConversationClient.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneHarnessRuntime.swift",
+            "line": 76
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneHarnessRuntime.swift",
+            "line": 607
+          },
+          {
+            "path": "Shared/PhoneHarness.swift",
+            "line": 188
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 35
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 89
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 120
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 720
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskExecution.swift",
+            "line": 38
+          },
+          {
+            "path": "PhoneAgent/Services/TaskResourceGate.swift",
+            "line": 44
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "local",
+        "title": "数据与证据层",
+        "subtitle": "Stores / SelaMemoryCore / Journals",
+        "details": [
+          "共享存储层保存会话、任务检查点、记忆、业务证据、产物与独立工具回执。",
+          "关键成功状态先持久化再发布；写盘失败会暂停继续执行。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/SettingsStore.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 139
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskCoordinator.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Stores/MemoryStore.swift",
+            "line": 173
+          },
+          {
+            "path": "PhoneAgent/Stores/TaskHistoryStore.swift",
+            "line": 135
+          },
+          {
+            "path": "PhoneAgent/Stores/AssistantConversationStore.swift",
+            "line": 17
+          },
+          {
+            "path": "PhoneAgent/Stores/ChatEvidenceStore.swift",
+            "line": 6
+          },
+          {
+            "path": "PhoneAgent/Stores/XiaohongshuCollectionStore.swift",
+            "line": 6
+          },
+          {
+            "path": "PhoneAgent/Stores/WorkflowDiagnosticsStore.swift",
+            "line": 14
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "surface",
+        "title": "系统运行与状态层",
+        "subtitle": "BackgroundExecution / Activity / Notifications / PiP",
+        "details": [
+          "Live Activity、灵动岛、通知和 PiP 是任务状态的投影；展示不会授予新的任务控制权。",
+          "后台执行控制器只维持进程内已经启动的工作；系统到期时暂停并保存检查点，当前相关真机边界仍需单独验收。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/BackgroundExecutionController.swift",
+            "line": 6
+          },
+          {
+            "path": "PhoneAgent/Services/TaskActivityController.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/TaskActivityController.swift",
+            "line": 134
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 710
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 771
+          },
+          {
+            "path": "Activity/TaskActivityWidget.swift",
+            "line": 10
+          },
+          {
+            "path": "Shared/AgentActivityControls.swift",
+            "line": 10
+          },
+          {
+            "path": "PhoneAgent/Services/TaskNotificationsController.swift",
+            "line": 84
+          },
+          {
+            "path": "PhoneAgent/Services/AgentPiPController.swift",
+            "line": 19
+          }
+        ],
+        "status": "pending"
+      }
+    ],
+    "loop": [
+      {
+        "id": "ex-preflight",
+        "title": "准备检查",
+        "subtitle": "授权 · 模型 · 整屏 · 校准",
+        "details": [
+          "启动前检查模型、数据同意、整屏共享、当前配件就绪、校准和输入所有权。",
+          "工具模式不要求截图或 BLE；预览模式不发送输入，模式不能互相借用准备条件。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 296
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 35
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 89
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 104
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-observe",
+        "title": "取得当前整屏",
+        "subtitle": "CaptureService / ScreenFrame / FrameReadinessGate",
+        "details": [
+          "系统共享选择器与 SCStream 把真实像素转换为 JPEG / ScreenFrame，采集时间和系统确认时间分别保存。",
+          "完整帧及有效 started 像素可更新图像；idle 只确认同一流已有完整像素，空白、暂停或旧流不能冒充新画面。",
+          "执行帧必须晚于输入边界、最近 1.5 秒内被系统确认；有界事件等待最多 6 秒，预览仅请求新帧。",
+          "刷新采用独立流代次；刷新失败可保留原共享，新流首帧到达后才结束旧流。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 516
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 537
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 190
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 209
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 140
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 254
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 413
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 87
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 355
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 375
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 446
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 489
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 506
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 10
+          },
+          {
+            "path": "PhoneAgent/Services/CaptureService.swift",
+            "line": 57
+          },
+          {
+            "path": "Shared/FrameReadiness.swift",
+            "line": 59
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-hcontext",
+        "title": "形成页面上下文",
+        "subtitle": "PhoneHarnessRuntime / OCR / ObservationLease",
+        "details": [
+          "本机 Vision OCR 生成宿主元素 ID、页面结构、遮挡和有限的已验证导航记忆。",
+          "观察证明绑定像素、捕获流、尺寸、设备和 BLE 连接代次；OCR 前后及 await 返回后再次核对当前帧租约。",
+          "页面适配器存在只说明当前 OCR 结构可解释，不等于所有界面已完成真机验收。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/PhoneHarnessRuntime.swift",
+            "line": 76
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneHarnessRuntime.swift",
+            "line": 607
+          },
+          {
+            "path": "Shared/PhoneHarness.swift",
+            "line": 188
+          },
+          {
+            "path": "PhoneAgent/Services/WorkflowObservationLease.swift",
+            "line": 29
+          },
+          {
+            "path": "PhoneAgent/Services/WorkflowObservationLease.swift",
+            "line": 98
+          },
+          {
+            "path": "PhoneAgent/Services/WorkflowObservationLease.swift",
+            "line": 140
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneHarnessRuntime.swift",
+            "line": 125
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneHarnessRuntime.swift",
+            "line": 144
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 681
+          },
+          {
+            "path": "Shared/PhonePageAdapters.swift",
+            "line": 1
+          },
+          {
+            "path": "Shared/PhoneOverlayClassifier.swift",
+            "line": 1
+          },
+          {
+            "path": "Shared/XiaohongshuPageAdapter.swift",
+            "line": 1
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-context",
+        "title": "本轮任务上下文",
+        "subtitle": "记忆 · 附件 · 压缩历史 · 工具证据",
+        "details": [
+          "组合原任务、明确补充、子任务账本、显式附件、有限记忆、压缩历史和真实工具证据。",
+          "原要求与完整产物独立保存；滚动摘要明确省略范围，不能替代明细证据库。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 209
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 657
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 5
+          },
+          {
+            "path": "Shared/ConversationUnderstanding.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 499
+          },
+          {
+            "path": "PhoneAgent/Stores/MemoryStore.swift",
+            "line": 173
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-model",
+        "title": "模型决策",
+        "subtitle": "VisionClient.nextAction",
+        "details": [
+          "VisionClient 将当前画面和受界定上下文发给配置的模型，加载手机控制及相关业务 Skill。",
+          "模型只返回动作建议；API Key 和计划连接的授权、接收方及配置变化会使旧结果失效。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 114
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 190
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 204
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 101
+          },
+          {
+            "path": "PhoneAgent/Services/ConnectedConversationClient.swift",
+            "line": 1
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-actions",
+        "title": "动作契约与解析",
+        "subtitle": "AgentAction：12种kind",
+        "details": [
+          "动作契约包含 tap、long_press、drag、scroll、type、press_key、wait、finish、ask_user、system_tool、complete_subtask、phone_tool。",
+          "严格解析动作类型、字段、长度和数值范围；phone_tool 只能引用宿主语义目标，不能添加任意坐标。"
+        ],
+        "sources": [
+          {
+            "path": "Shared/AgentModels.swift",
+            "line": 352
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 706
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-revalidate",
+        "title": "执行前复核",
+        "subtitle": "新画面 + 局部变化 + 可选确认",
+        "details": [
+          "模型返回及可选用户确认之后再次核对捕获流、源尺寸、模型尺寸、全局和目标附近画面变化。",
+          "旧动作失效就丢弃并重新观察；重复动作只有在画面也无实质变化时累计，像素差异检查不能证明目标身份。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 585
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 852
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 874
+          },
+          {
+            "path": "Shared/FrameReadiness.swift",
+            "line": 5
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-mouse",
+        "title": "普通输入执行",
+        "subtitle": "MouseExecutor → BLE",
+        "details": [
+          "归一化目标经当前设备校准转换为相对鼠标移动、点击、拖动、滚动或键盘输入。",
+          "新定位先物理归零，拖动按住段保持连续；HID 文本直接输入限 ASCII，不能任意注入非 ASCII 文本。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 35
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 89
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 120
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 56
+          },
+          {
+            "path": "PhoneAgent/Services/MouseExecutor.swift",
+            "line": 104
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-harness",
+        "title": "语义手机工具",
+        "subtitle": "phone_tool → Harness",
+        "details": [
+          "phone_tool 在本地执行已识别导航，或把保存计划交给 PhoneWorkflowWorkspace。",
+          "保存业务流程必须绑定真实 taskID、planID 和稳定 operation_id；模型不能扩大私人会话、采集或收件范围。"
+        ],
+        "sources": [
+          {
+            "path": "Shared/PhoneHarness.swift",
+            "line": 5
+          },
+          {
+            "path": "Shared/PhoneHarness.swift",
+            "line": 22
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneHarnessRuntime.swift",
+            "line": 226
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 456
+          },
+          {
+            "path": "Shared/PhoneHarness.swift",
+            "line": 58
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 143
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 231
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowCaptureDriver.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/WorkflowObservationLease.swift",
+            "line": 98
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-system",
+        "title": "原生工具执行",
+        "subtitle": "system_tool → SystemTools",
+        "details": [
+          "system_tool 经参数、授权、前台与确认策略检查后调用 SystemTools。",
+          "工具结果必须与本任务、具体操作和规范化参数回执匹配，不能由模型声明代替真实执行。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 720
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskExecution.swift",
+            "line": 38
+          },
+          {
+            "path": "PhoneAgent/Services/TaskResourceGate.swift",
+            "line": 44
+          },
+          {
+            "path": "Shared/SystemToolRequest.swift",
+            "line": 8
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 121
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-receipt",
+        "title": "记录结果与决定继续",
+        "subtitle": "Receipt / TaskCompletionPolicy / Persistence / Metrics",
+        "details": [
+          "执行后记录输入边界、已确认新帧、真实工具回执与业务核验状态，再进入下一轮观察。",
+          "finish 经过完成策略与子任务账本检查；视觉业务结果仍须明确模型判断与独立核验的区别。",
+          "持久化先于成功状态发布；阶段计时区分截图、OCR、模型、输入、等待与核验，不能将离线优化直接称为真机提速。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 7
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 521
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 921
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 477
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 490
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 627
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 139
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 74
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 108
+          },
+          {
+            "path": "PhoneAgent/Stores/WorkflowDiagnosticsStore.swift",
+            "line": 1
+          },
+          {
+            "path": "Shared/RunMetrics.swift",
+            "line": 1
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "ex-recovery",
+        "title": "暂停、接管、恢复",
+        "subtitle": "取消旧session → 等loop → release",
+        "details": [
+          "暂停、接管、停止或配置变化先撤销旧 session，等待旧循环收敛，再执行独立输入清理。",
+          "释放只针对原连接代次，不能清理新连接；传输或释放确认不证明业务成功。",
+          "未知外部提交保留待核验状态，恢复需要明确继续和新观察，禁止自动重发。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 242
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 366
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 403
+          },
+          {
+            "path": "Shared/InputReleaseController.swift",
+            "line": 5
+          },
+          {
+            "path": "Shared/InputReleaseController.swift",
+            "line": 18
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 330
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 477
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 984
+          },
+          {
+            "path": "PhoneAgent/Services/FileTransferCoordinator.swift",
+            "line": 186
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 74
+          }
+        ],
+        "status": "main"
+      }
+    ],
+    "lanes": [
+      {
+        "id": "screenq",
+        "title": "屏幕任务队列",
+        "subtitle": "Single GUI Owner",
+        "details": [
+          "屏幕队列保留原任务、顺序、附件和检查点；同一时刻只有一个 GUI 输入所有者。",
+          "人工操作、校准或所有权交接会阻止并发输入，原生任务不能偷偷抢用屏幕。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 1043
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 1531
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 1440
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 828
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "nativepool",
+        "title": "原生任务池",
+        "subtitle": "最多 3 个独立 Worker",
+        "details": [
+          "最多 3 个独立 tools-only Engine，分别持有任务记录、来源会话、设置和控制 token。",
+          "后台协调器可以暂停或恢复选中的任务，其他任务的状态变化不能重定向当前控制。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskCoordinator.swift",
+            "line": 6
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskExecution.swift",
+            "line": 5
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskCoordinator.swift",
+            "line": 4
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "bg-resources",
+        "title": "共享资源互斥",
+        "subtitle": "TaskResourceGate",
+        "details": [
+          "TaskResourceGate 按服务资源互斥；不同资源可以并行，逐步确认还会持有独立确认锁。",
+          "后台不弹首次系统权限；Health、Notes 等前台限定能力须在满足条件时执行，不能把后台进程时段当成系统权限。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/TaskResourceGate.swift",
+            "line": 14
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundToolPolicy.swift",
+            "line": 3
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 151
+          },
+          {
+            "path": "PhoneAgent/Services/NativeConnectionsStore.swift",
+            "line": 13
+          },
+          {
+            "path": "PhoneAgent/Models/NativeAppConnection.swift",
+            "line": 3
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 121
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "tool-request",
+        "title": "工具请求协议",
+        "subtitle": "SystemToolRequest · 22 种操作",
+        "details": [
+          "SystemToolRequest 定义 22 种操作，经统一 SystemTools 入口执行并记录回执。",
+          "执行注册表、可用连接和用户授权共同决定实际能力；界面里出现连接卡不等于已注册业务执行。"
+        ],
+        "sources": [
+          {
+            "path": "Shared/SystemToolRequest.swift",
+            "line": 8
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 720
+          },
+          {
+            "path": "PhoneAgent/Services/BackgroundTaskExecution.swift",
+            "line": 38
+          },
+          {
+            "path": "PhoneAgent/Services/TaskResourceGate.swift",
+            "line": 44
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "event-tools",
+        "title": "本机系统工具",
+        "subtitle": "EventKit / HealthKit / Music / Location / Notes Bridge",
+        "details": [
+          "日历和提醒通过 EventKit；联系人、照片及 Sela 自身闹钟分别使用系统能力。",
+          "健康查询保留可见性、截断和缺失边界，空值不能当 0；音乐执行后读取系统播放状态。",
+          "备忘录使用公共 Shortcuts 桥并校验回调正文，不是私有 Notes API，也不宣称独立核验了实际文件夹。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 244
+          },
+          {
+            "path": "PhoneAgent/Services/NativeSystemTools.swift",
+            "line": 13
+          },
+          {
+            "path": "PhoneAgent/Services/NotesShortcutBridge.swift",
+            "line": 34
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 236
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 281
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "travel-tools",
+        "title": "专属业务客户端",
+        "subtitle": "Ctrip / MeituanPaotui",
+        "details": [
+          "携程查询由官方返回生成航班卡片，保存完整查询与有序候选；参考时刻和实时报价分开。",
+          "跑腿通过原生多轮对话补齐范围、获取正式报价并在最终确认后提交；普通外卖菜单与购物车没有接通。",
+          "原生 App 接受 URL 不等于具体航班落点或预订成功；未知订单结果不得自动重试。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 218
+          },
+          {
+            "path": "PhoneAgent/Services/CtripClient.swift",
+            "line": 35
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 477
+          },
+          {
+            "path": "docs/ctrip-connection.md",
+            "line": 36
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 224
+          },
+          {
+            "path": "PhoneAgent/Services/MeituanPaotuiConversation.swift",
+            "line": 25
+          },
+          {
+            "path": "PhoneAgent/Services/MeituanPaotuiConversation.swift",
+            "line": 293
+          },
+          {
+            "path": "PhoneAgent/Services/MeituanPaotuiStore.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 985
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationRouter.swift",
+            "line": 66
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "registry",
+        "title": "受控业务流程",
+        "subtitle": "PhoneWorkflowWorkspace / XHS / WeChat / File Transfer",
+        "details": [
+          "已保存 planID 限定小红书采集、微信阅读与原件发送的目标、范围和预算，模型只能引用。",
+          "小红书读取可见内容并保存未读/待核验范围；累计调用预算包含加载等待，不能称为完整覆盖或精确秒级打断。",
+          "微信以当前会话身份和可见消息证据读取，不直接访问数据库；文件发送绑定收件对象与原件清单，提交未知时阻断重发。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 143
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 231
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 34
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 72
+          },
+          {
+            "path": "PhoneAgent/Services/XiaohongshuCollector.swift",
+            "line": 52
+          },
+          {
+            "path": "PhoneAgent/Services/XiaohongshuCollector.swift",
+            "line": 106
+          },
+          {
+            "path": "PhoneAgent/Services/XiaohongshuCollector.swift",
+            "line": 378
+          },
+          {
+            "path": "PhoneAgent/Services/WeChatConversationDriver.swift",
+            "line": 31
+          },
+          {
+            "path": "PhoneAgent/Services/WeChatConversationDriver.swift",
+            "line": 88
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 365
+          },
+          {
+            "path": "PhoneAgent/Services/FileTransferCoordinator.swift",
+            "line": 119
+          },
+          {
+            "path": "PhoneAgent/Services/FileTransferCoordinator.swift",
+            "line": 221
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowCaptureDriver.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/WorkflowObservationLease.swift",
+            "line": 98
+          },
+          {
+            "path": "Shared/PhonePageAdapters.swift",
+            "line": 1
+          },
+          {
+            "path": "Shared/PhoneOverlayClassifier.swift",
+            "line": 1
+          },
+          {
+            "path": "Shared/XiaohongshuPageAdapter.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 456
+          },
+          {
+            "path": "Shared/PhoneHarness.swift",
+            "line": 58
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "voice-local",
+        "title": "多模态能力",
+        "subtitle": "Voice / Realtime / Camera / Recording",
+        "details": [
+          "本机听写和朗读、相机观察、录音与文件识别是独立服务；音频租约防止互相抢占。",
+          "实时语音使用独立连接、音频管线和配置，不能把聊天模型授权默认套用于其他接收方。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/VoiceController.swift",
+            "line": 85
+          },
+          {
+            "path": "PhoneAgent/Services/RealtimeSession.swift",
+            "line": 69
+          },
+          {
+            "path": "PhoneAgent/Services/LiveCameraObserver.swift",
+            "line": 42
+          },
+          {
+            "path": "PhoneAgent/Services/CameraService.swift",
+            "line": 49
+          },
+          {
+            "path": "PhoneAgent/Services/RecordingAudioController.swift",
+            "line": 55
+          },
+          {
+            "path": "PhoneAgent/Services/LocalFileRecognition.swift",
+            "line": 8
+          },
+          {
+            "path": "PhoneAgent/Services/SpeakerClient.swift",
+            "line": 6
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 89
+          },
+          {
+            "path": "PhoneAgent/Services/RecordingAudioController.swift",
+            "line": 45
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "web-research",
+        "title": "研究与内容生成",
+        "subtitle": "WebSearch / Investigation / Workbench / Export",
+        "details": [
+          "联网回答、网页调查和研究有独立客户端；普通回答通道不获得手机执行工具。",
+          "工作台生成文案、纪要等内容，文件、PDF 和表格导出成为可分享产物，不冒充外部动作已执行。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/WebInvestigationRunner.swift",
+            "line": 7
+          },
+          {
+            "path": "PhoneAgent/Services/WebSearchClient.swift",
+            "line": 42
+          },
+          {
+            "path": "PhoneAgent/Services/WebPageClient.swift",
+            "line": 3
+          },
+          {
+            "path": "PhoneAgent/Services/ConnectedConversationClient.swift",
+            "line": 9
+          },
+          {
+            "path": "PhoneAgent/Services/VisionClient.swift",
+            "line": 30
+          },
+          {
+            "path": "PhoneAgent/Views/WorkbenchView.swift",
+            "line": 251
+          },
+          {
+            "path": "PhoneAgent/Services/ComposerAttachmentImport.swift",
+            "line": 16
+          },
+          {
+            "path": "PhoneAgent/Services/SpreadsheetFiles.swift",
+            "line": 4
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "office-auth",
+        "title": "受限连接与模拟能力",
+        "subtitle": "办公授权桥 / 滴滴行程模拟",
+        "details": [
+          "飞书、钉钉、企微目前是 CLI 安装、授权和状态桥，未作为办公业务执行工具注册。",
+          "滴滴能力包含真实地点查询与估价，配合模拟行程界面；客户端没有下单 API。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/ExternalConnectionService.swift",
+            "line": 153
+          },
+          {
+            "path": "Tools/Connections/connection-bridge/server.py",
+            "line": 374
+          },
+          {
+            "path": "PhoneAgent/Services/DidiSimulationService.swift",
+            "line": 5
+          }
+        ],
+        "status": "main"
+      }
+    ],
+    "hardware": [
+      {
+        "id": "ble-app",
+        "title": "App：BLETransport",
+        "subtitle": "CoreBluetooth 中央管理器",
+        "details": [
+          "App 通过 CoreBluetooth 连接自定义 GATT 命令、状态和任务指示通道。",
+          "控制连接和系统 HID 连接分别维护就绪状态；加密、HID 订阅、命令和状态能力均需满足。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 12
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 56
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 72
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 24
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 73
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 119
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 463
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "packet",
+        "title": "MouseProtocol",
+        "subtitle": "App 与固件共用的二进制合同",
+        "details": [
+          "v1 命令包固定 10 字节：report / click / release / keyboard；v2 缓冲移动包固定 14 字节。",
+          "固件按协议验证长度、操作码与参数，协议合同须与 Shared/MouseProtocol 同步。"
+        ],
+        "sources": [
+          {
+            "path": "Shared/MouseProtocol.swift",
+            "line": 12
+          },
+          {
+            "path": "Shared/MouseProtocol.swift",
+            "line": 20
+          },
+          {
+            "path": "Shared/MouseProtocol.swift",
+            "line": 39
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 276
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 299
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "motion",
+        "title": "缓冲相对移动",
+        "subtitle": "板端定时输出轨迹",
+        "details": [
+          "App 提交相对位移、次数和间隔，由板端定时发送 HID，避免每个微小位移都经 App 往返。",
+          "单次 report、总次数、间隔和总运动时间均有界。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/main.c",
+            "line": 203
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 276
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "click",
+        "title": "点击与延时",
+        "subtitle": "click_timer / pending_click",
+        "details": [
+          "点击、延时和按键状态由固件事件队列和定时器管理。",
+          "取消与 release 清理尚未执行的点击和移动，不回滚已发生的系统输入。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/main.c",
+            "line": 248
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 321
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 343
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "keyboard",
+        "title": "组合键盘 HID",
+        "subtitle": "修饰键 + 普通键 usage",
+        "details": [
+          "键盘报告包含修饰键和普通键 usage，App 输入前先校验整串文字与能力。",
+          "鼠标就绪和键盘就绪独立；Caps Lock 等状态随状态包返回。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/main.c",
+            "line": 127
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 170
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 310
+          },
+          {
+            "path": "docs/firmware.md",
+            "line": 44
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "release",
+        "title": "释放与看门狗",
+        "subtitle": "输入故障收敛",
+        "details": [
+          "释放操作取消 pending click / move；鼠标和键盘按住状态由 1500ms 看门狗兜底释放。",
+          "App 清理使用独立任务并绑定连接代次；ATT 确认或 released 序列仅说明输入协议状态，不证明 iOS 页面或业务成功。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/main.c",
+            "line": 27
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 184
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 237
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 329
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 487
+          },
+          {
+            "path": "Shared/InputReleaseController.swift",
+            "line": 5
+          },
+          {
+            "path": "Shared/InputReleaseController.swift",
+            "line": 18
+          },
+          {
+            "path": "PhoneAgent/Services/BLETransport.swift",
+            "line": 330
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "status",
+        "title": "状态与序列确认",
+        "subtitle": "Status：8 字节",
+        "details": [
+          "8 字节状态包包含就绪标志、按钮、错误、序号及能力位。",
+          "App 利用序号区分命令与释放边界，但仍需要新画面和业务证据确认实际效果。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/main.c",
+            "line": 132
+          },
+          {
+            "path": "Shared/MouseProtocol.swift",
+            "line": 30
+          },
+          {
+            "path": "Shared/MouseProtocol.swift",
+            "line": 55
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "hid",
+        "title": "系统 HID 服务",
+        "subtitle": "0x1812 / Mouse + Keyboard",
+        "details": [
+          "ESP32 HID 服务提供鼠标与键盘报告，经系统蓝牙 HID / AssistiveTouch 作用于同一台 iPhone 的前台 App。",
+          "App 的控制 GATT 写入和 iOS 的 HID 输入接收是两条逻辑链路，不能画成 App 直接点击其他 App。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/main.c",
+            "line": 431
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 452
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 457
+          },
+          {
+            "path": "docs/firmware.md",
+            "line": 44
+          },
+          {
+            "path": "docs/architecture.md",
+            "line": 47
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 477
+          },
+          {
+            "path": "Shared/InputReleaseController.swift",
+            "line": 3
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "led",
+        "title": "独立 RGB 状态任务",
+        "subtitle": "FreeRTOS → RMT → WS2812",
+        "details": [
+          "独立 FreeRTOS RGB 任务经 RMT 驱动 GPIO48 WS2812，避免阻塞 HID host 队列。",
+          "灯态表示连接/任务指示和心跳故障，不是目标业务成功的独立证据。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/status_led.c",
+            "line": 13
+          },
+          {
+            "path": "firmware/main/status_led.c",
+            "line": 72
+          },
+          {
+            "path": "docs/firmware.md",
+            "line": 28
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "pairing",
+        "title": "配对与 NVS",
+        "subtitle": "NimBLE Secure Connections",
+        "details": [
+          "NimBLE 使用 bonding、Secure Connections 与 NVS 配对资料；最多维护两条逻辑连接。",
+          "当前固件目标为 ESP32-S3 / ESP-IDF 5.5.4；Battery 服务为配置值，不能画成真实电量计。"
+        ],
+        "sources": [
+          {
+            "path": "firmware/main/main.c",
+            "line": 615
+          },
+          {
+            "path": "firmware/main/main.c",
+            "line": 629
+          },
+          {
+            "path": "docs/firmware.md",
+            "line": 26
+          },
+          {
+            "path": "docs/firmware.md",
+            "line": 3
+          },
+          {
+            "path": "docs/firmware.md",
+            "line": 13
+          }
+        ],
+        "status": "main"
+      }
+    ],
+    "data": [
+      {
+        "id": "conversation-store",
+        "title": "助手对话历史",
+        "subtitle": "AssistantConversationStore",
+        "details": [
+          "会话 Store 保存正文、草稿、附件引用、任务链接及旅行/跑腿卡片，回复投影回原会话。",
+          "持久展示快照只能证明保存过的内容，不赋予继续执行、提交或控制另一任务的权限。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/AssistantConversationStore.swift",
+            "line": 17
+          },
+          {
+            "path": "PhoneAgent/Services/AssistantConversation.swift",
+            "line": 872
+          },
+          {
+            "path": "PhoneAgent/Stores/ComposerAttachmentStore.swift",
+            "line": 15
+          },
+          {
+            "path": "Shared/AssistantConversationContext.swift",
+            "line": 3
+          },
+          {
+            "path": "PhoneAgent/Services/UnifiedConversationCoordinator.swift",
+            "line": 117
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "task-history",
+        "title": "任务历史与检查点",
+        "subtitle": "TaskHistoryStore / TaskQueueStore",
+        "details": [
+          "历史和队列保留原任务ID、原要求、补充、附件、阶段、检查点和压缩进度。",
+          "成功状态先提交持久记录再发布；存储错误暂停，进程重启后必须显式恢复并重新观察。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/TaskHistoryStore.swift",
+            "line": 135
+          },
+          {
+            "path": "PhoneAgent/Stores/TaskQueueStore.swift",
+            "line": 32
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 139
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 1043
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 1531
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "memory-store",
+        "title": "记忆统一入口",
+        "subtitle": "MemoryStore",
+        "details": [
+          "MemoryStore 统一身份上下文、手动记忆索引和语义记忆来源，并使用 recallRevision 防止遗忘竞态。",
+          "记忆帮助理解要求，不独立授权新操作；手动记忆与自动学习资料有各自持有者。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/MemoryStore.swift",
+            "line": 173
+          },
+          {
+            "path": "PhoneAgent/Stores/MemoryStore.swift",
+            "line": 32
+          },
+          {
+            "path": "PhoneAgent/PhoneAgentViewModel.swift",
+            "line": 499
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "sela-memory",
+        "title": "长期记忆工作区",
+        "subtitle": "SelaMemoryService / MemoryWorkspace / DiskStore",
+        "details": [
+          "本机 Intelligence 工作区保存 IDENTITY、SOUL、USER、MEMORY、BOOTSTRAP 五份基础文档与 state.json。",
+          "MemoryWorkspace / DiskStore 使用来源约束、原子写和锁；基础身份文档仅由主人编辑。",
+          "召回限定接收方与资料范围，默认不混入其他对话。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/SelaMemoryService.swift",
+            "line": 169
+          },
+          {
+            "path": "PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/Models.swift",
+            "line": 17
+          },
+          {
+            "path": "PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/MemoryWorkspace.swift",
+            "line": 11
+          },
+          {
+            "path": "PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/MemoryWorkspace.swift",
+            "line": 73
+          },
+          {
+            "path": "PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/DiskStore.swift",
+            "line": 40
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "memory-learning",
+        "title": "对话自动学习",
+        "subtitle": "ConversationMemoryLearner",
+        "details": [
+          "完成的人类对话进入 ConversationMemoryLearner，经模型提出候选事实后按真实消息及逐字引用验证。",
+          "assistant/tool 输出不能直接成为活跃的用户事实；配置、凭据或授权变化取消迟到学习结果。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/SelaMemoryService.swift",
+            "line": 196
+          },
+          {
+            "path": "PhoneAgent/SelaMemoryCore/Sources/SelaMemoryCore/ConversationLearning.swift",
+            "line": 89
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "content-artifacts",
+        "title": "本机正文与写入回执",
+        "subtitle": "PhoneContentStore / SystemTools",
+        "details": [
+          "PhoneContentStore 保存正文产物；SystemTools 维护按任务及规范化参数绑定的写入回执。",
+          "pending、completed 与 unknown 分开，未知写入不能通过清空日志或重新提交绕开。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/PhoneContentStore.swift",
+            "line": 28
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 95
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 236
+          },
+          {
+            "path": "PhoneAgent/Services/SystemTools.swift",
+            "line": 281
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "workflow-evidence",
+        "title": "长流程证据与诊断",
+        "subtitle": "Chat / XHS / Workflow Stores",
+        "details": [
+          "小红书、聊天证据与流程诊断分开持久化，保留原始可见内容、来源、覆盖、未读与待核验范围。",
+          "聊天摘要验证真实消息引用，小红书分析只使用保存的可见文字，本机复算统计。",
+          "诊断与计时说明发生过的步骤和耗时，不替代业务结果，也不把未知初始条件当作性能验收。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/ChatEvidenceStore.swift",
+            "line": 6
+          },
+          {
+            "path": "PhoneAgent/Stores/XiaohongshuCollectionStore.swift",
+            "line": 6
+          },
+          {
+            "path": "PhoneAgent/Stores/WorkflowDiagnosticsStore.swift",
+            "line": 14
+          },
+          {
+            "path": "PhoneAgent/Stores/XiaohongshuCollectionStore.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/XiaohongshuAnalysisService.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Stores/ChatEvidenceStore.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/ChatEvidenceSummarizer.swift",
+            "line": 12
+          },
+          {
+            "path": "PhoneAgent/Stores/WorkflowDiagnosticsStore.swift",
+            "line": 1
+          },
+          {
+            "path": "Shared/RunMetrics.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 74
+          },
+          {
+            "path": "PhoneAgent/Services/AgentEngine.swift",
+            "line": 108
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "file-originals",
+        "title": "文件原件与提交账本",
+        "subtitle": "FileTransferStore",
+        "details": [
+          "原件、manifest、收件对象、稳定 operation_id、检查点和逐文件结果证据共同绑定一次发送。",
+          "提交前先落盘；跨提交边界失败记为 unknown / pendingReview，不自动重发。",
+          "人工核验在原操作上记录结论，取消准备或清理界面不能删除已经发生的提交事实。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/FileTransferStore.swift",
+            "line": 26
+          },
+          {
+            "path": "PhoneAgent/Stores/FileTransferStore.swift",
+            "line": 1
+          },
+          {
+            "path": "PhoneAgent/Services/FileTransferCoordinator.swift",
+            "line": 186
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 365
+          },
+          {
+            "path": "PhoneAgent/Services/FileTransferCoordinator.swift",
+            "line": 119
+          },
+          {
+            "path": "PhoneAgent/Services/FileTransferCoordinator.swift",
+            "line": 221
+          },
+          {
+            "path": "PhoneAgent/Services/PhoneWorkflowWorkspace.swift",
+            "line": 74
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "recording-library",
+        "title": "录音资料库",
+        "subtitle": "RecordingStore",
+        "details": [
+          "录音 Store 管理 Items、Pending、Trash 等生命周期，录制/播放与导入识别由各服务拥有资源。",
+          "本机识别与外部说话人分段是不同处理路径，接收方与音频授权分别核对。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/RecordingStore.swift",
+            "line": 7
+          },
+          {
+            "path": "PhoneAgent/Services/RecordingAudioController.swift",
+            "line": 55
+          },
+          {
+            "path": "PhoneAgent/Services/LocalFileRecognition.swift",
+            "line": 8
+          },
+          {
+            "path": "PhoneAgent/Services/SpeakerClient.swift",
+            "line": 6
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "settings-secrets",
+        "title": "设置与凭据",
+        "subtitle": "UserDefaults + iOS Keychain",
+        "details": [
+          "用户偏好与配置使用 UserDefaults；模型、计划令牌和第三方授权码使用本机独立 Keychain 条目。",
+          "运行时参数、日志、模型上下文和回执不能携带明文凭据；不同连接不自动复用授权。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Stores/SettingsStore.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Stores/RealtimeStore.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Stores/WebSearchStore.swift",
+            "line": 4
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "export-artifacts",
+        "title": "可分享产物",
+        "subtitle": "ArtifactFiles / SpreadsheetFiles",
+        "details": [
+          "文件、PDF、纪要和表格导出是可持有、可查看和可分享的独立产物。",
+          "导出成功、系统分享呈现和外部收件完成属于不同证据阶段，不能合并成一个成功状态。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent/Services/ArtifactFiles.swift",
+            "line": 61
+          },
+          {
+            "path": "PhoneAgent/Services/SpreadsheetFiles.swift",
+            "line": 4
+          },
+          {
+            "path": "PhoneAgent/Views/WorkbenchView.swift",
+            "line": 251
+          },
+          {
+            "path": "PhoneAgent/Services/ComposerAttachmentImport.swift",
+            "line": 16
+          }
+        ],
+        "status": "main"
+      }
+    ],
+    "appendix": [
+      {
+        "id": "main-tree",
+        "title": "当前主源码：Sela / Phone Agent",
+        "subtitle": "github/iphone-use-agent-reliability-20261026",
+        "details": [
+          "主架构采用 reliability 当前工作副本，包含未提交增量；图示是源码职责快照，不等同于当前装机版本。",
+          "具体构建、设备安装、连接与业务验收需要匹配各自版本证据。"
+        ],
+        "sources": [
+          {
+            "path": "PhoneAgent.xcodeproj/project.pbxproj",
+            "line": 334
+          },
+          {
+            "path": "docs/integrated-release-20261025.md",
+            "line": 3
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "upstream",
+        "title": "上游基础 Phone Agent",
+        "subtitle": "research/phone-agent",
+        "details": [
+          "research/phone-agent 是干净上游 a900450，提供原生共享屏幕、手机模型决策和 BLE HID 基础。",
+          "它不能代表当前 Sela 整合工作副本全部能力。"
+        ],
+        "sources": [
+          {
+            "path": "upstream-snapshot/phone-agent/README.md",
+            "line": 18
+          },
+          {
+            "path": "upstream-snapshot/phone-agent/docs/architecture.md",
+            "line": 43
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "snapshot",
+        "title": "原始本地源码快照",
+        "subtitle": "github/iphone-use-agent",
+        "details": [
+          "github/iphone-use-agent 是原始 154 文件本地快照，是隔离实验的基线。",
+          "不能把该快照、上游分支和当前 reliability 增量混写成同一已部署版本。"
+        ],
+        "sources": [
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 3
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "independent",
+        "title": "主运行约束",
+        "subtitle": "手机独立运行",
+        "details": [
+          "主线要求 iPhone App 独立运行；Mac 用于开发、模拟器和安装。",
+          "Mac 模型桥只存在于动作选择隔离实验，不能加入主运行拓扑。"
+        ],
+        "sources": [
+          {
+            "path": "workspace-evidence/output/flight-island-goal-20261026/目标与验收.txt",
+            "line": 15
+          }
+        ],
+        "status": "main"
+      },
+      {
+        "id": "lab-tree",
+        "title": "动作选择 A/B 实验",
+        "subtitle": "github/iphone-use-agent-action-lab",
+        "details": [
+          "独立动作实验 App、容器与 Keychain；冻结 observationID / taskID / attemptID / 当前像素等输入。",
+          "A 走原视觉模型；B 仅对已识别导航页面选择宿主绑定候选，未知页、输入和提交保留原视觉模型。",
+          "DecisionClient 或可选 Mac Codex Bridge 返回候选ID；低置信度、超时或异常最多一次视觉回退，取消不回退。",
+          "两组复用原执行复核和 BLE/HID；桥接成绩不能当成原生 Decisions 成绩，实验阈值未由真实微信数据校准。",
+          "离线与桥接验证不能代表真实手机速度或准确性，实验文档记录未安装或操作物理手机。"
+        ],
+        "sources": [
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 16
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 34
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 44
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/Shared/ActionSelection.swift",
+            "line": 3
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/Shared/ActionSelection.swift",
+            "line": 100
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 7
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 10
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/Shared/ActionSelection.swift",
+            "line": 79
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 9
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 22
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 40
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/codex-bridge.md",
+            "line": 3
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/codex-bridge.md",
+            "line": 37
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/codex-bridge.md",
+            "line": 49
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 8
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-action-lab/docs/action-selection-lab.md",
+            "line": 48
+          }
+        ],
+        "status": "experiment"
+      },
+      {
+        "id": "paotui-tree",
+        "title": "跑腿长期重构分支",
+        "subtitle": "github/iphone-use-agent-paotui-architecture-20261026",
+        "details": [
+          "独立跑腿重构分支从主线基点分出，不能把部分改动当作主工作区已合入。",
+          "目标为单一有类型 PaotuiSession，统一 sessionID / revision / 阶段，收敛会话与兼容草稿状态。",
+          "Connection 管授权和凭据代次，OrderService 管提交锁，Journal 作为唯一回执持有者；普通 HTTP 与 MCP/SSE 分离。",
+          "最终确认与提交前原子日志保留；结果分 created、notDispatched、outcomeUnknown，未知结果禁止重放。",
+          "部分轮次已完成离线与模拟器验证，后续会话上下文与投影仍待完成；没有据此声明真实接口、手机安装或真实订单。"
+        ],
+        "sources": [
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 3
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 18
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 75
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 7
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 9
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 22
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 63
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 10
+          },
+          {
+            "path": "local-snapshots/iphone-use-agent-paotui-architecture-20261026/docs/paotui-architecture-plan.md",
+            "line": 79
+          }
+        ],
+        "status": "experiment"
+      },
+      {
+        "id": "pending-acceptance",
+        "title": "当前待验收边界",
+        "subtitle": "航班直选 / 角色灵动岛",
+        "details": [
+          "iPhone 具体航班直选原生选价页、后台系统活动与角色状态仍需按当前候选独立验收。",
+          "安卓落点、模拟器接收 URL 或离线参数测试不能替代 iPhone 实际页面证据。"
+        ],
+        "sources": [
+          {
+            "path": "workspace-evidence/output/flight-island-goal-20261026/目标与验收.txt",
+            "line": 3
+          },
+          {
+            "path": "workspace-evidence/output/flight-island-goal-20261026/目标与验收.txt",
+            "line": 7
+          }
+        ],
+        "status": "pending"
+      },
+      {
+        "id": "esp-airplay",
+        "title": "另一项目：ESP32 Agent",
+        "subtitle": "esp32-iphone-agent",
+        "details": [
+          "esp32-iphone-agent 是另一技术路线：板端接收 AirPlay，视频经 BLE 返回 App，模型决策后由板子 USB HID 执行。",
+          "它与当前主线原生屏幕共享 + BLE HID 的职责分配不同，不并入主图。"
+        ],
+        "sources": [
+          {
+            "path": "workspace-evidence/esp32-iphone-agent/README.zh-CN.md",
+            "line": 40
+          },
+          {
+            "path": "workspace-evidence/esp32-iphone-agent/README.zh-CN.md",
+            "line": 48
+          }
+        ],
+        "status": "legacy"
+      },
+      {
+        "id": "mac-legacy",
+        "title": "旧版电脑执行路线",
+        "subtitle": "esp32-iphone-agent-legacy",
+        "details": [
+          "旧路线为 iPhone AirPlay → Mac UxPlay/GStreamer → Python planner/actor → Wi-Fi 板 → HID，Mac 是其运行组件。",
+          "根目录的旧版预览启动器、接收端和准备报告属于历史路径，不能证明当前主 App 或设备状态。"
+        ],
+        "sources": [
+          {
+            "path": "workspace-evidence/esp32-iphone-agent-legacy/README.md",
+            "line": 51
+          },
+          {
+            "path": "workspace-evidence/README-旧版准备.md",
+            "line": 8
+          },
+          {
+            "path": "workspace-evidence/README-旧版准备.md",
+            "line": 13
+          },
+          {
+            "path": "workspace-evidence/README-旧版准备.md",
+            "line": 20
+          },
+          {
+            "path": "workspace-evidence/README-旧版准备.md",
+            "line": 24
+          }
+        ],
+        "status": "legacy"
+      }
+    ]
+  }
+}
