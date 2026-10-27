@@ -52,3 +52,6 @@ model-config.once.json
 
 # Reproducible local baseline, builds and acceptance evidence
 /output/
+
+# Generated executable and module cache from Ctrip handoff checks
+/Tests/CtripHandoff/tests/

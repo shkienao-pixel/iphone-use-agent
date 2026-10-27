@@ -1,0 +1,4 @@
+interface:
+  display_name: "滴滴打车"
+  short_description: "在 Sela 理解打车需求并展示滴滴地点和车型估价体验"
+  default_prompt: "使用 $didi-ride 帮我查看打车选项。"

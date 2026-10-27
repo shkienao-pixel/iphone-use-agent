@@ -46,6 +46,18 @@ import Foundation
                 let longInput=try ConversationRoutingInput(question:"打开第一班",history:[source]+neutral,taskContext:"{}",now:instant,timeZoneIdentifier:"Asia/Shanghai")
                 let longResult=try await router.route(input:longInput)
                 expect(longResult.flightSelection?.source.id == source.id && RoutingWireProbe.requests.count==beforeLocalRequests,label+": locally visible current source survives model history truncation")
+                var newerGround = AssistantMessage(role: "assistant", text: "车次查询结果", groundQuery: "2026-10-27上海到杭州高铁", groundTravelMode: "train")
+                newerGround.createdAt = instant.addingTimeInterval(-10)
+                RoutingWireProbe.reset()
+                let beforeGroundOrdinal = RoutingWireProbe.requests.count
+                let groundOrdinal = try await router.route(input: ConversationRoutingInput(question: "第二个", history: [source, newerGround], taskContext: "{}", now: instant, timeZoneIdentifier: "Asia/Shanghai"))
+                expect(groundOrdinal.mode == .chat && RoutingWireProbe.requests.count == beforeGroundOrdinal + 1, label + ": newer ground card prevents an ordinal from opening an older flight")
+                var newerRide = AssistantMessage(role: "assistant", text: "打车模拟", didiSimulationID: UUID())
+                newerRide.createdAt = instant.addingTimeInterval(-5)
+                RoutingWireProbe.reset()
+                let beforeRideOrdinal = RoutingWireProbe.requests.count
+                let rideOrdinal = try await router.route(input: ConversationRoutingInput(question: "第二个", history: [source, newerRide], taskContext: "{}", now: instant, timeZoneIdentifier: "Asia/Shanghai"))
+                expect(rideOrdinal.mode == .chat && RoutingWireProbe.requests.count == beforeRideOrdinal + 1, label + ": newer Didi card prevents an ordinal from opening an older flight")
                 RoutingWireProbe.reset();RoutingWireProbe.content = #"{"mode":"flightOpen","request":"打开MF8350","message":"已经打开","flightSelection":{"flightNo":"MF8350"}}"#
                 await rejects(label+": model JSON cannot request local flight opening") {
                     _ = try await router.route(question:"你好",history:[],taskContext:"{}")
@@ -78,6 +90,31 @@ import Foundation
                 expect((payload.body["response_format"] as? [String: String])?["type"] == "json_object",
                        label + ": configured JSON routing format is retained")
             }
+
+            RoutingWireProbe.reset()
+            let railQuery = "查询2026-10-29上海虹桥到杭州东高铁，1成人二等座"
+            try RoutingWireProbe.route("groundQuery", request: railQuery)
+            let rail = try await router.route(question: railQuery, history: [], taskContext: "{}")
+            expect(rail.mode == .groundQuery && rail.request == railQuery, label + ": unified routing retains ground travel after adding Didi")
+            let railWire = try wire(connected)
+            expect(railWire.guide.contains("groundQuery") && railWire.guide.contains("didiRide"), label + ": both travel modes remain in the routing contract")
+            if connected {
+                let format = (railWire.body["text"] as! [String: Any])["format"] as! [String: Any]
+                let schema = format["schema"] as! [String: Any]
+                let properties = schema["properties"] as! [String: Any]
+                let modes = (properties["mode"] as! [String: Any])["enum"] as! [String]
+                expect(modes.contains("groundQuery") && modes.contains("didiRide"), label + ": strict model schema permits both integrated modes")
+            }
+            RoutingWireProbe.reset()
+            try RoutingWireProbe.route("didiRide", request: "模型不得替换原文")
+            let ride = try await router.route(question: "帮我从人民广场到虹桥机场打车", history: [], taskContext: "{}")
+            expect(ride.mode == .didiRide && ride.request == "帮我从人民广场到虹桥机场打车", label + ": ride route retains the exact human itinerary")
+            let rideWire = try wire(connected)
+            expect(rideWire.guide.contains("didiRide") && rideWire.guide.contains("Offline native skill resource boundary"), label + ": intent routing includes the Didi skill boundary")
+            RoutingWireProbe.reset()
+            try RoutingWireProbe.route("didiRide", request: "打车")
+            let rideDiscussion = try await router.route(question: "只讨论一下打车方案，不要执行", history: [], taskContext: "{}")
+            expect(rideDiscussion.mode == .chat, label + ": discussion does not trigger a ride card")
 
             RoutingWireProbe.reset()
             try RoutingWireProbe.route("xiaohongshuQuery", request: #"{"action":"search","keyword":"咖啡"}"#)

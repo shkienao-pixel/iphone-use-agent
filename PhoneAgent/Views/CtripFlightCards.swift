@@ -1,6 +1,14 @@
 import Foundation
 import SwiftUI
 
+/// Keep the plane aligned with the two flight times even if an airport name wraps.
+private enum FlightTimeAlignment: AlignmentID {
+    static func defaultValue(in dimensions: ViewDimensions) -> CGFloat { dimensions[VerticalAlignment.center] }
+}
+private extension VerticalAlignment {
+    static let flightTime = VerticalAlignment(FlightTimeAlignment.self)
+}
+
 /// Presentation uses the human turn, never the provider's normalized query.
 enum CtripFlightCardPresentationPolicy {
     static func showsSortExplanation(messageID: UUID, messages: [AssistantMessage]) -> Bool {
@@ -134,11 +142,6 @@ struct CtripFlightCards: View {
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text(offers.allSatisfy(\.isSchedule) ?
-                 "以上为时刻参考，票价、余票及实际起降安排待查。请在携程核对机场、人数和舱位。" :
-                 "价格与余票以携程实时页面为准。请在携程核对机场、人数和舱位后选票。")
-                .font(.caption2).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -169,66 +172,125 @@ struct CtripFlightCards: View {
         for value in offer.selectionIssues + offer.cardWarnings where !result.contains(value) { result.append(value) }
         return result
     }
+    private func visibleMetadata(_ offer: CtripFlightOffer) -> [String] {
+        var values = CtripFlightCardPresentationPolicy.summaryMetadata(offer).map(compactDuration)
+        let kind = offer.field("航程类型")
+        if kind == "直飞", !values.contains("直飞") { values.insert("直飞", at: 0) }
+        let aircraft = offer.field("机型")
+        if !aircraft.isEmpty, aircraft.count <= 30,
+           aircraft.range(of: #"[。！？!?\n]|https?://"#, options: .regularExpression) == nil,
+           !values.contains(aircraft), !offer.itinerarySegments.contains(where: { $0.aircraft == aircraft }) {
+            values.append(aircraft)
+        }
+        return values
+    }
+    /// Suppress a parenthesized minute total only when it equals the stated duration.
+    private func compactDuration(_ value: String) -> String {
+        guard let open = value.firstIndex(where: { $0 == "（" || $0 == "(" }),
+              let close = value.last, close == "）" || close == ")" else { return value }
+        let primary = String(value[..<open]).trimmingCharacters(in: .whitespaces)
+        let alternative = String(value[value.index(after: open)..<value.index(before: value.endIndex)])
+        guard alternative.range(of: #"^\d{1,4}\s*(?:分钟|分|min)$"#, options: [.regularExpression, .caseInsensitive]) != nil,
+              let first = CtripFlightParser.durationMinutes(primary),
+              let second = CtripFlightParser.durationMinutes(alternative), first == second else { return value }
+        return primary
+    }
+    private func visibleBenefit(_ name: String, in offer: CtripFlightOffer) -> String? {
+        let value = offer.field(name).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= 80,
+              value.range(of: #"[\n]|https?://"#, options: .regularExpression) == nil else { return nil }
+        return value
+    }
     private func card(_ offer: CtripFlightOffer) -> some View {
         let status = offer.selectionStatus
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 10) {
-                Image("Brand-ctrip").resizable().scaledToFit().frame(width: 24, height: 24)
-                Text(offer.cardTitle).font(.headline).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            Label(offer.isSchedule ? "时刻参考 · 尚未核价" : "携程查询报价", systemImage: offer.isSchedule ? "clock" : "tag")
-                .font(.caption).foregroundStyle(offer.isSchedule ? .secondary : .primary)
-                .accessibilityIdentifier(offer.isSchedule ? "flight.schedule" : "flight.quote")
-            if status != .satisfied {
-                Label(status == .doesNotMeet ? "不符合本次条件" : "条件信息待核实",
-                      systemImage: status == .doesNotMeet ? "exclamationmark.triangle" : "questionmark.circle")
-                    .font(.caption).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("flight.selectionStatus")
-            }
-            if CtripFlightCardPresentationPolicy.isTransfer(offer) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("全程总时长（含中转等待）").font(.subheadline.weight(.semibold))
+        let ticketBlue = Color(red: 0.05, green: 0.46, blue: 0.84)
+        return VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 8) {
+                Image("Brand-ctrip").resizable().scaledToFit().frame(width: 20, height: 20)
+                Text(offer.cardTitle).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Image(systemName: "airplane").font(.title3.weight(.medium))
+                    .rotationEffect(.degrees(-12)).opacity(0.6).accessibilityHidden(true)
+            }.foregroundStyle(.white).padding(.horizontal, 15).padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 10) {
+                if offer.isSchedule {
+                    Label("时刻参考 · 尚未核价", systemImage: "clock")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("flight.schedule")
+                }
+                if status != .satisfied {
+                    Label(status == .doesNotMeet ? "不符合本次条件" : "条件信息待核实",
+                          systemImage: status == .doesNotMeet ? "exclamationmark.triangle" : "questionmark.circle")
+                        .font(.caption).foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(CtripFlightCardPresentationPolicy.wholeJourneyDuration(offer))
-                        .font(.title3.weight(.semibold)).monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityElement(children: .combine).accessibilityIdentifier("flight.totalDuration")
+                        .accessibilityIdentifier("flight.selectionStatus")
+                }
+                if CtripFlightCardPresentationPolicy.isTransfer(offer) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("全程总时长（含中转等待）").font(.subheadline.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(CtripFlightCardPresentationPolicy.wholeJourneyDuration(offer))
+                            .font(.title3.weight(.semibold)).monospacedDigit()
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityElement(children: .combine).accessibilityIdentifier("flight.totalDuration")
+                }
+                itinerary(offer)
+                if !offer.transferAirport.isEmpty {
+                    Label(offer.transferAirport == "中转机场" ? "中转机场待核实" : "经 " + offer.transferAirport, systemImage: "arrow.triangle.branch")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                let metadata = visibleMetadata(offer)
+                if !metadata.isEmpty {
+                    Text(metadata.joined(separator: " · "))
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                if let baggage = visibleBenefit("行李", in: offer) {
+                    Label("行李：" + baggage, systemImage: "suitcase")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                if let changes = visibleBenefit("退改", in: offer) {
+                    Label("退改：" + changes, systemImage: "arrow.uturn.backward")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(Array(visibleIssues(offer).enumerated()), id: \.offset) { item in
+                    Text(item.element).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                }
+                if !offer.cardSupplement.isEmpty {
+                    DisclosureGroup("更多信息") {
+                        Text(offer.cardSupplement).font(.footnote).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
+                    }.font(.caption.weight(.medium)).accessibilityIdentifier("flight.details")
+                }
+                ticketDivider(blue: ticketBlue).padding(.horizontal, -16)
+                priceAndBooking(offer)
             }
-            itinerary(offer)
-            if !offer.transferAirport.isEmpty {
-                Label(offer.transferAirport == "中转机场" ? "中转机场待核实" : "经 " + offer.transferAirport, systemImage: "arrow.triangle.branch")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            let metadata = CtripFlightCardPresentationPolicy.summaryMetadata(offer)
-            if !metadata.isEmpty {
-                Text(metadata.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            ForEach(Array(visibleIssues(offer).enumerated()), id: \.offset) { item in
-                Text(item.element).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-            }
-            if !offer.cardSupplement.isEmpty {
-                DisclosureGroup("更多信息") {
-                    Text(offer.cardSupplement).font(.footnote).textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
-                }.font(.subheadline).accessibilityIdentifier("flight.details")
-            }
-            priceAndBooking(offer)
-            if offer.preferredNativeFlightSelectionURL != nil || offer.nativeFlightSelectionLookupQuery != nil {
-                Text(offer.preferredNativeFlightSelectionURL != nil ? "打开这班航班的选价页，票价与舱位以携程页面为准" : "先补查这班航班的信息，再尝试打开它的选价页")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("flight.handoffScope")
-            }
-        }.padding(16).background(AgentPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(AgentPalette.ink.opacity(offer.isSchedule ? 0.25 : 0.10),
-                style: StrokeStyle(lineWidth: 1, dash: offer.isSchedule ? [5, 4] : [])))
+            .padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 12).padding(.bottom, 12)
+        }.background(ticketBlue)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .environment(\.colorScheme, .light)
             .accessibilityElement(children: .contain).accessibilityIdentifier("flight.card")
+    }
+
+    /// The circles sit on the white ticket edge and use the surrounding blue,
+    /// so the perforation stays aligned with the divider as the content grows.
+    private func ticketDivider(blue: Color) -> some View {
+        Rectangle().stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            .foregroundStyle(Color.gray.opacity(0.3))
+            .frame(height: 1).padding(.horizontal, 15)
+            .frame(height: 16)
+            .overlay(alignment: .leading) {
+                Circle().fill(blue).frame(width: 16, height: 16).offset(x: -8)
+            }
+            .overlay(alignment: .trailing) {
+                Circle().fill(blue).frame(width: 16, height: 16).offset(x: 8)
+            }
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder private func itinerary(_ offer: CtripFlightOffer) -> some View {
@@ -245,7 +307,7 @@ struct CtripFlightCards: View {
                         route(departure: item.element.departure, arrival: item.element.arrival)
                         let metadata = [item.element.aircraft, item.element.duration].filter { !$0.isEmpty }
                         if !metadata.isEmpty {
-                            Text(metadata.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            Text(metadata.map(compactDuration).joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -292,9 +354,10 @@ struct CtripFlightCards: View {
                 endpoint(arrival, departure: false, trailing: false, showRole: true)
             }.frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
+            HStack(alignment: .flightTime, spacing: 10) {
                 endpoint(departure, departure: true, trailing: false)
-                Image(systemName: "airplane").font(.title3).foregroundStyle(.secondary).accessibilityHidden(true)
+                Image(systemName: "airplane").font(.subheadline).foregroundStyle(.secondary).accessibilityHidden(true)
+                    .alignmentGuide(.flightTime) { $0[VerticalAlignment.center] }
                 endpoint(arrival, departure: false, trailing: true)
             }
         }
@@ -304,12 +367,13 @@ struct CtripFlightCards: View {
         let airport = leg.airport.isEmpty ? (departure ? "出发机场待核实" : "到达机场待核实") : leg.airport.replacingOccurrences(of: "待核对", with: "待核实")
         let date = dateText(leg.date)
         let role = departure ? "出发" : "到达"
-        return VStack(alignment: trailing ? .trailing : .leading, spacing: 5) {
+        return VStack(alignment: trailing ? .trailing : .leading, spacing: 3) {
             if showRole { Text(role).font(.caption).foregroundStyle(.secondary) }
+            Text(date).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text(time).font(.system(size: timeSize, weight: .semibold, design: .rounded)).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.75)
+                .alignmentGuide(.flightTime) { $0[VerticalAlignment.center] }
             Text(airport).font(.caption).fixedSize(horizontal: false, vertical: true)
-            Text(date).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.multilineTextAlignment(trailing ? .trailing : .leading)
             .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
             .accessibilityElement(children: .combine)
@@ -343,13 +407,20 @@ struct CtripFlightCards: View {
         }
     }
     private func price(_ offer: CtripFlightOffer) -> some View {
-        Text(offer.cardPrice).font(offer.isSchedule ? .subheadline : .title3.weight(.semibold)).monospacedDigit()
-            .foregroundStyle(offer.isSchedule ? .secondary : .primary)
-            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("flight.price")
+        let parts = offer.cardPrice.components(separatedBy: " · ")
+        let amount = Text(parts.first ?? offer.cardPrice)
+            .font(offer.isSchedule ? .subheadline : .title3.weight(.semibold))
+            .foregroundColor(offer.isSchedule ? .secondary : Color(red: 0.91, green: 0.42, blue: 0.08))
+        let qualifier = parts.dropFirst().joined(separator: " · ")
+        let detail = Text(qualifier.isEmpty ? "" : " · " + qualifier).font(.caption).foregroundColor(.secondary)
+        return (amount + detail).monospacedDigit()
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(offer.cardPrice).accessibilityIdentifier("flight.price")
     }
     private func bookingButton(_ offer: CtripFlightOffer, fullWidth: Bool = false) -> some View {
-        Button { onBook(offer) } label: {
-            Text(offer.bookingButtonTitle).font(.subheadline.bold()).multilineTextAlignment(.center)
+        let title = offer.preferredNativeFlightSelectionURL != nil ? "订票" : offer.bookingButtonTitle
+        return Button { onBook(offer) } label: {
+            Text(title).font(.subheadline.bold()).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 14).padding(.vertical, 12)
                 .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 48)
@@ -357,7 +428,7 @@ struct CtripFlightCards: View {
                 .background(offer.isSchedule ? Color.clear : Color.blue, in: Capsule())
                 .overlay(Capsule().stroke(offer.isSchedule ? Color.secondary.opacity(0.5) : Color.clear))
                 .contentShape(Capsule())
-        }.buttonStyle(.plain).accessibilityLabel(offer.bookingButtonTitle + "，" + offer.cardTitle)
+        }.buttonStyle(.plain).accessibilityLabel(title + "，" + offer.cardTitle)
             .accessibilityIdentifier("flight.book")
     }
 }

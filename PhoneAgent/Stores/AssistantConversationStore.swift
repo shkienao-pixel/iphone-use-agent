@@ -84,6 +84,7 @@ final class AssistantConversationStore {
                   valid(record.contextReferences), record.messages.allSatisfy({ message in
                       ["user", "assistant"].contains(message.role) && !message.text.isEmpty && message.text.count <= 60_000 &&
                       message.createdAt.timeIntervalSince1970.isFinite && valid(message.references ?? []) &&
+                      (message.didiSimulationID == nil || message.role == "assistant") &&
                       (message.paotuiCard == nil || (message.paotuiCard!.valid && message.paotuiCard!.conversationID == record.id)) &&
                       (message.xhsCard == nil || (message.xhsCard!.valid && message.xhsCard!.conversationID == record.id))
                   }) else { throw AssistantConversationStoreError.invalid }

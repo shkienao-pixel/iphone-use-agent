@@ -69,6 +69,8 @@ def main():
     parser.add_argument('--index', type=int)
     parser.add_argument('--x', type=float)
     parser.add_argument('--y', type=float)
+    parser.add_argument('--x2', type=float)
+    parser.add_argument('--y2', type=float)
     parser.add_argument('--frame-id')
     parser.add_argument('--expected-value')
     parser.add_argument('--timeout', type=float, default=60)
@@ -125,7 +127,7 @@ def main():
         raise RuntimeError('Diagnostic acknowledgement timed out. Transfer status: ' + str(status.returncode) + '. Inspect state before retrying.')
     # Swift UUID.uuidString is uppercase; use the same spelling for result paths.
     command = {'id': str(uuid.uuid4()).upper(), 'session': config['session'], 'operation': args.operation, 'expiresAt': time.time() + 60}
-    for key in ('bundle', 'element_type', 'identifier', 'index', 'x', 'y', 'frame_id', 'expected_value'):
+    for key in ('bundle', 'element_type', 'identifier', 'index', 'x', 'y', 'x2', 'y2', 'frame_id', 'expected_value'):
         value = getattr(args, key)
         if value is not None: command[{'element_type': 'elementType', 'frame_id': 'frameID', 'expected_value': 'expectedValue'}.get(key, key)] = value
     text = args.text_file.read_text() if args.text_file else args.text

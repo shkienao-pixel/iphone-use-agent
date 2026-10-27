@@ -140,6 +140,11 @@ import Security
         let inputs = body["input"] as! [[String: Any]], userInput = inputs.first { $0["role"] as? String == "user" }!, content = userInput["content"] as! [[String: Any]]
         expect(body["instructions"] as? String == "Only JSON" && content[0]["text"] as? String == source && content[1]["type"] as? String == "input_image", "Instructions, exact Unicode source and reference image survive real conversion")
         expect(inputs.first?["role"] as? String == "developer" && (inputs.first?["content"] as? String)?.contains("JSON") == true, "JSON object guidance also appears in input without altering the original user content")
+        let terra = try ChatGPTPlanResponses.body(from: ["model": "gpt-6.1-terra", "messages": [["role": "system", "content": "Only JSON"], ["role": "user", "content": [["type": "text", "text": source], ["type": "image_url", "image_url": ["url": "data:image/png;base64,AA==", "detail": "high"]]]]], "response_format": ["type": "json_object"]])
+        expect(terra["model"] as? String == "gpt-6.1-terra" && terra["reasoning"] == nil, "Terra keeps its exact model ID and its own default reasoning rather than inheriting Sol overrides")
+        let terraInput = (terra["input"] as! [[String: Any]]).first { $0["role"] as? String == "user" }!["content"] as! [[String: Any]]
+        expect(terraInput[0]["text"] as? String == source && terraInput[1]["type"] as? String == "input_image" && terraInput[1]["detail"] as? String == "high", "Terra receives the exact user text and image through the production Responses conversion")
+        expect(((terra["text"] as? [String: Any])?["format"] as? [String: Any])?["type"] as? String == "json_object", "Terra retains the host's validated JSON action contract")
         let schema = try ChatGPTPlanResponses.body(from: ["model": "gpt-6.1-sol", "messages": [["role": "user", "content": "JSON"]], "response_format": ["type": "json_schema", "json_schema": ["name": "action", "strict": true, "schema": ["type": "object"]]]])
         let format = (schema["text"] as! [String: Any])["format"] as! [String: Any]
         expect(format["name"] as? String == "action" && format["strict"] as? Bool == true && format["type"] as? String == "json_schema", "Structured action schema moves to Responses text.format")

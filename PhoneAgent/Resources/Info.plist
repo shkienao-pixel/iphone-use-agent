@@ -90,7 +90,7 @@
 	<key>NSAppleMusicUsageDescription</key>
 	<string>在你主动授权后访问音乐资料库，支持后续音乐功能。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>在你主动使用位置相关功能时获取大致位置，作为地点参考。</string>
+	<string>在你主动使用位置相关功能时获取位置。打车模拟会将定位坐标发送给滴滴查询附近上车地点，请核对选点。</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>确认工具请求后，查找或添加你指定的日程。匹配结果将发送给你授权的 AI 服务。</string>
 	<key>NSRemindersUsageDescription</key>

@@ -48,6 +48,7 @@ struct ContentView: View {
     @State private var amendmentDrafts: [UUID: String] = [:]
     @State private var searchText = ""
     @State private var sidebarSearchExpanded = false
+    @State private var showWeChatShortcut = false
     @StateObject private var attachmentDraft = ComposerAttachmentStore()
     @State private var attachmentSnapshots: [TaskScreen: [ComposerAttachment]] = [:]
     @State private var attachmentSelectionID = UUID()
@@ -211,6 +212,9 @@ struct ContentView: View {
             } }
             .environmentObject(model)
             .agentSheetStyle()
+        }
+        .sheet(isPresented: $showWeChatShortcut) {
+            WeChatShortcutView().environmentObject(model).agentSheetStyle()
         }
         .fullScreenCover(isPresented: $showCalibration, onDismiss: calibrationDismissed) {
             if let calibration {
@@ -516,6 +520,18 @@ struct ContentView: View {
             .accessibilityLabel("打开任务与工具侧栏")
             .accessibilityIdentifier("conversation.menu")
             Spacer(minLength: 0)
+            Button { showWeChatShortcut = true } label: {
+                Label("微信聊天", systemImage: "bubble.left.and.bubble.right")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 12).frame(minHeight: 44)
+                    .background(SelaHomePalette.surface, in: Capsule())
+                    .overlay { Capsule().stroke(SelaHomePalette.line, lineWidth: 0.7) }
+            }
+            .buttonStyle(AgentPressStyle()).tint(.primary)
+            .disabled(busy || sheet != nil || sidebarOpen || modeSwitcherOpen)
+            .accessibilityLabel("打开微信聊天")
+            .accessibilityHint("选择好友后尝试打开微信聊天窗口")
+            .accessibilityIdentifier("home.wechat.open")
             taskQueueButton
         }
         .padding(.horizontal, 20).padding(.top, 2).padding(.bottom, 6)
@@ -635,7 +651,7 @@ struct ContentView: View {
     private var pageTitle: String { selectedDestination.title }
     private var unifiedConversation: some View {
         AssistantView(reviewDictation: reviewVoicePhase,
-            allowsDictation: !model.preparingAutomatically && sheet == nil && !settingsPageOpen && !sidebarOpen && !modeSwitcherOpen,
+            allowsDictation: !model.preparingAutomatically && sheet == nil && !showWeChatShortcut && !settingsPageOpen && !sidebarOpen && !modeSwitcherOpen,
             canvasBackground: mainCanvas,
             onModelSetup: { present(.connection(.model)) })
     }

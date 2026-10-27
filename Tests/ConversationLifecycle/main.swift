@@ -22,6 +22,23 @@ import Foundation
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("sela-lifecycle-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
+        let legacyQueueText = ConversationQueuePresentation.legacyAcknowledgement
+        let linkedID = UUID()
+        var linkedMessage = AssistantMessage(role: "assistant", text: legacyQueueText, taskID: linkedID)
+        expect(ConversationQueuePresentation.messageText(linkedMessage.text, taskLinked: linkedMessage.taskID != nil) == "已加入任务队列。", "A linked legacy queue notice remains true as the task advances")
+        expect(linkedMessage.text == legacyQueueText, "Display correction does not rewrite historical message content")
+        linkedMessage.taskID = nil
+        expect(ConversationQueuePresentation.messageText(linkedMessage.text, taskLinked: false) == legacyQueueText, "Unlinked historical acknowledgement is not rewritten")
+        expect(ConversationQueuePresentation.messageText("其他回复", taskLinked: true) == "其他回复", "An unrelated linked reply is unchanged")
+        expect(ConversationQueuePresentation.statusLabel(outcome: "paused", queueState: "waiting", queueStarted: false, isCurrent: false) == "等待执行", "Never-started queued task is waiting, not paused")
+        expect(ConversationQueuePresentation.statusLabel(outcome: "paused", queueState: "suspended", queueStarted: false, isCurrent: false) == "等待你确认", "Restart suspension is reported as requiring confirmation")
+        expect(ConversationQueuePresentation.statusLabel(outcome: "running", queueState: "waiting", queueStarted: true, isCurrent: true) == "进行中", "Current execution outranks stale queue state")
+        for (terminal, label) in [("completed", "已完成"), ("failed", "执行中断"), ("stopped", "已停止")] {
+            expect(ConversationQueuePresentation.statusLabel(outcome: terminal, queueState: "waiting", queueStarted: false, isCurrent: false) == label, "Terminal history outranks a stale queued state: " + terminal)
+        }
+        expect(ConversationQueuePresentation.statusLabel(outcome: nil, queueState: nil, queueStarted: false, isCurrent: false) == nil, "Missing task record remains unknown")
+        expect(ConversationQueuePresentation.statusLabel(outcome: nil, queueState: "future", queueStarted: false, isCurrent: false) == nil, "Unknown future state is not invented")
+
         let settings = AgentSettings(), memories = MemoryStore(), model = OfflineModel.shared
         func conversation(_ name: String) -> AssistantConversation {
             AssistantConversation(store: AssistantConversationStore(url: folder.appendingPathComponent(name + ".json")))
@@ -322,6 +339,44 @@ import Foundation
         model.complete(memoryBoundStart, answer: "记忆等待后的原会话结果")
         try await settle { memoryBound.processingConversationIDs.isEmpty }
         expect(memoryBound.currentConversationID == memoryReplacement && memoryBound.draft == "记忆等待期间的新输入" && memoryBound.conversations.first(where: { $0.id == memoryBoundOrigin })?.messages.last?.text == "记忆等待后的原会话结果", "Memory-first asynchronous preparation retains request ownership")
+
+        // The persisted event acknowledgement must not mislead the next model
+        // or archived-chat recall after its linked task has changed state.
+        let queuePath = folder.appendingPathComponent("queue-legacy-context.json")
+        let queueStore = AssistantConversationStore(url: queuePath), queueOrigin = UUID(), queueOther = UUID(), queueOtherUnlinked = UUID(), queueTime = Date()
+        let queueLegacy = ConversationQueuePresentation.legacyAcknowledgement
+        let sourceMessages = [AssistantMessage(role: "user", text: "微信朋友圈任务"),
+            AssistantMessage(role: "assistant", text: queueLegacy, taskID: UUID())]
+        let originalCurrentMessages = [AssistantMessage(role: "user", text: "微信朋友圈任务"),
+            AssistantMessage(role: "assistant", text: queueLegacy, taskID: UUID()),
+            AssistantMessage(role: "assistant", text: queueLegacy),
+            AssistantMessage(role: "user", text: queueLegacy, taskID: UUID())]
+        let queueRecipient = settings.endpoint + "|" + PrivacyConsent.recipient(settings)
+        let queueCurrent = AssistantConversationRecord(id: queueOrigin, title: "微信朋友圈任务", messages: originalCurrentMessages,
+            createdAt: queueTime, updatedAt: queueTime, recipient: queueRecipient, draft: "", contextReferences: [])
+        let queueSource = AssistantConversationRecord(id: queueOther, title: "微信朋友圈任务", messages: sourceMessages,
+            createdAt: queueTime, updatedAt: queueTime, recipient: queueRecipient, draft: "", contextReferences: [])
+        let queueUnlinkedSource = AssistantConversationRecord(id: queueOtherUnlinked, title: "微信朋友圈任务另一条",
+            messages: [AssistantMessage(role: "user", text: "微信朋友圈任务另一条"), AssistantMessage(role: "assistant", text: queueLegacy)],
+            createdAt: queueTime, updatedAt: queueTime, recipient: queueRecipient, draft: "", contextReferences: [])
+        try queueStore.save([queueCurrent, queueSource, queueUnlinkedSource], currentConversationID: queueOrigin)
+        let queueChat = AssistantConversation(store: queueStore), queueMemory = MemoryStore(), queueStart = model.requests.count
+        let crossHit = queueChat.searchConversationContext("微信朋友圈任务", originatingConversationID: queueOrigin, recipientKey: queueRecipient)
+        expect(crossHit.contains { $0.sourceID == queueOther && $0.excerpt.contains("已加入任务队列。") && !$0.excerpt.contains(queueLegacy) }, "Cross-chat retrieval converts the linked legacy acknowledgement")
+        expect(crossHit.contains { $0.sourceID == queueOtherUnlinked && $0.excerpt.contains(queueLegacy) }, "Cross-chat retrieval keeps unlinked assistant text intact")
+        var queueRoutingInput: ConversationRoutingInput?
+        queueChat.unifiedRoute = { input in queueRoutingInput = input; return .init(mode: .chat, request: "", message: "") }
+        queueChat.draft = "这个任务现在怎样"
+        expect(queueChat.send(settings: settings, apiKey: "", memories: queueMemory), "Queue history fixture sends")
+        try await settle { model.requests.count == queueStart + 1 }
+        let expectedHistory = ["微信朋友圈任务", "已加入任务队列。", queueLegacy, queueLegacy]
+        expect(queueRoutingInput?.history.map(\.text) == expectedHistory && model.requests[queueStart].history.map(\.text) == expectedHistory, "Router and model get a corrected copy while unlinked and user text stay intact")
+        expect(queueChat.messages.prefix(4).map(\.text) == originalCurrentMessages.map(\.text), "Current chat retains its original stored text")
+        model.complete(queueStart, answer: "请查看当前任务状态")
+        try await settle { !queueChat.loading }
+        let queueReload = AssistantConversationStore(url: queuePath)
+        expect(queueReload.records.first(where: { $0.id == queueOrigin })?.messages.prefix(4).map(\.text) == originalCurrentMessages.map(\.text), "Current archive retains original messages after sending")
+        expect(queueReload.records.first(where: { $0.id == queueOther })?.messages == sourceMessages, "Cross-chat archive remains unchanged")
 
         let recallPath = folder.appendingPathComponent("recall-exclusion.json"), recallStore = AssistantConversationStore(url: recallPath)
         let recallOrigin = UUID(), forgottenSourceID = UUID(), forgottenTaskID = UUID(), recallTime = Date()

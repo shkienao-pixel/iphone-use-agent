@@ -99,4 +99,21 @@ final class ScreenQueueUITests: XCTestCase {
         XCTAssertTrue(element("screenQueue.row." + third).exists)
         capture("07-terminate-one-keeps-the-others")
     }
+
+    func testUnifiedConversationWeChatEntryPreservesDraft() {
+        let sela = XCUIApplication(bundleIdentifier: "com.local.phoneagent.tedace337ee")
+        sela.launchArguments = ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "--ui-page", "assistant"]
+        sela.launch()
+        let draft = sela.textFields["composer.text"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 20))
+        draft.tap(); draft.typeText("Keep this draft")
+        let shortcut = sela.buttons["home.wechat.open"]
+        XCTAssertTrue(shortcut.waitForExistence(timeout: 5))
+        XCTAssertTrue(shortcut.isHittable)
+        shortcut.tap()
+        XCTAssertTrue(sela.textFields["wechat.shortcut.name"].waitForExistence(timeout: 5))
+        XCTAssertTrue(sela.buttons["wechat.shortcut.filehelper"].exists)
+        sela.buttons["关闭"].tap()
+        XCTAssertEqual(draft.value as? String, "Keep this draft")
+    }
 }

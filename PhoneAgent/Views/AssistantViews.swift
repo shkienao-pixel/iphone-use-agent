@@ -175,6 +175,19 @@ struct InlineDictationComposer: View {
 }
 
 struct AssistantView: View {
+    /// A general app opening never implies a particular train or bus is selected.
+    private func openGroundTravel(_ specificURL: URL?, mode: CtripGroundTravelMode) {
+        let searchURL = mode == .bus ? "https://3g.ctrip.com/webapp/bus" : "https://3g.ctrip.com/webapp/train/"
+        guard let target = specificURL ?? URL(string: searchURL) else {
+            model.notice = "无法打开携程，请在携程中查询车次。"
+            return
+        }
+        UIApplication.shared.open(target, options: [:]) { accepted in
+            if !accepted {
+                Task { @MainActor in model.notice = "未能打开携程查询，请检查网络或稍后重试。" }
+            }
+        }
+    }
     let reviewDictation: DictationPhase?
     let allowsDictation: Bool
     var canvasBackground: Color = AgentPalette.background
@@ -249,13 +262,45 @@ struct AssistantView: View {
                             if message.role == "user" { Spacer(minLength: 36) }
                             VStack(alignment: .leading, spacing: 10) {
                                 if message.role == "assistant" {
-                                    if let card = message.paotuiCard {
+                                    if let sessionID = message.didiSimulationID {
+                                        // A tall ride card opens below the floating navigation controls.
+                                        Color.clear.frame(height: 76).id("didi-top-" + message.id.uuidString)
+                                        let conversationID = model.conversation.currentConversationID
+                                        DidiConversationCard(sessionID: sessionID, messageID: message.id,
+                                            conversationID: conversationID,
+                                            active: model.conversation.isCurrentDidiSimulation(sessionID: sessionID,
+                                                messageID: message.id, conversationID: conversationID),
+                                            onSummary: { summary in
+                                                _ = model.conversation.updateDidiSimulation(sessionID: sessionID,
+                                                    messageID: message.id, conversationID: conversationID, summary: summary)
+                                            },
+                                            onEnd: {
+                                                _ = model.conversation.endDidiSimulation(sessionID: sessionID,
+                                                    messageID: message.id, conversationID: conversationID)
+                                            },
+                                            onRestart: { _ = model.conversation.startDidiSimulation() })
+                                    } else if let card = message.paotuiCard {
                                         if message.text.trimmingCharacters(in: .whitespacesAndNewlines) != card.title.trimmingCharacters(in: .whitespacesAndNewlines) {
                                             SelaMarkdownText(text: message.text)
                                         }
                                         PaotuiConversationCards(card: card,
                                             presentation: { model.conversation.paotuiCardPresentation(card) },
                                             onSelect: { model.conversation.selectPaotui(card, $0) })
+                                    } else if message.groundQuery != nil,
+                                              let mode = CtripGroundTravelMode(rawValue: message.groundTravelMode ?? "") {
+                                        let offers = CtripGroundTravelParser.offers(text: message.text, mode: mode)
+                                        if offers.isEmpty {
+                                            SelaMarkdownText(text: message.text)
+                                            Button("打开携程查询") { openGroundTravel(nil, mode: mode) }
+                                                .font(.subheadline.weight(.medium)).frame(minHeight: 44)
+                                        } else {
+                                            // Keep source restrictions and route mismatches visible
+                                            // alongside the compact read-only ticket cards.
+                                            SelaMarkdownText(text: message.text)
+                                            CtripGroundTravelCards(offers: offers, onOpen: { offer in
+                                                openGroundTravel(offer.verifiedURL, mode: offer.mode)
+                                            })
+                                        }
                                     } else {
                                     let offers = model.conversation.flightOffers(for: message)
                                     if !offers.isEmpty {
@@ -272,7 +317,7 @@ struct AssistantView: View {
                                             })
                                     } else if message.flightQuery != nil || message.flightOffers != nil {
                                         CtripFlightEmptyResult(text: message.text)
-                                    } else { SelaMarkdownText(text: message.text) }
+                                    } else { SelaMarkdownText(text: ConversationQueuePresentation.messageText(message.text, taskLinked: message.taskID != nil)) }
                                     }
                                 }
                                 else { Text(message.text).font(.body).lineSpacing(4).textSelection(.enabled) }
@@ -284,7 +329,7 @@ struct AssistantView: View {
                                     Text("相机序列 · \(frames) 帧 · \(Int((message.cameraDuration ?? 0).rounded())) 秒")
                                         .font(.caption2).foregroundStyle(.secondary)
                                 }
-                                if message.role == "assistant" {
+                                if message.role == "assistant", message.didiSimulationID == nil {
                                     let references = model.conversation.references(for: message)
                                     if !references.isEmpty {
                                         conversationReferences(references)
@@ -322,6 +367,12 @@ struct AssistantView: View {
                             .accessibilityIdentifier("conversation.backgroundWork")
                     }
                     if !model.conversation.error.isEmpty { AgentNotice(text: model.conversation.error, error: true) }
+                    if let failedMode = model.conversation.currentGroundFailureMode,
+                       let mode = CtripGroundTravelMode(rawValue: failedMode) {
+                        Button("打开携程普通查询") { openGroundTravel(nil, mode: mode) }
+                            .font(.subheadline.weight(.medium)).frame(minHeight: 44)
+                            .accessibilityIdentifier("ground.failure.search")
+                    }
                     if !model.conversation.storageError.isEmpty { AgentNotice(text: model.conversation.storageError, error: true) }
                     if !model.notice.isEmpty { AgentNotice(text: model.notice) }
                     if model.speech.usingAudio && !dictating { Text(model.speech.status).font(.footnote).foregroundStyle(.secondary) }
@@ -361,8 +412,14 @@ struct AssistantView: View {
                     }
                 }
                 .onChange(of: model.conversation.messages.count) { _, _ in
-                    if model.conversation.messages.last?.role == "user" { followingConversation = true }
-                    if followingConversation { reader.scrollTo("bottom", anchor: .bottom) }
+                    if let latest = model.conversation.messages.last, latest.didiSimulationID != nil {
+                        followingConversation = false
+                        let id = latest.id
+                        DispatchQueue.main.async { reader.scrollTo("didi-top-" + id.uuidString, anchor: .top) }
+                    } else {
+                        if model.conversation.messages.last?.role == "user" { followingConversation = true }
+                        if followingConversation { reader.scrollTo("bottom", anchor: .bottom) }
+                    }
                 }
                 .onChange(of: model.engine.state) { _, _ in
                     if followingConversation { reader.scrollTo("bottom", anchor: .bottom) }
@@ -371,7 +428,13 @@ struct AssistantView: View {
                     followingConversation = true
                     reader.scrollTo("bottom", anchor: .bottom)
                 }
-                .onAppear { reader.scrollTo("bottom", anchor: .bottom) }
+                .onAppear {
+                    if let latest = model.conversation.messages.last, latest.didiSimulationID != nil {
+                        followingConversation = false
+                        let id = latest.id
+                        DispatchQueue.main.async { reader.scrollTo("didi-top-" + id.uuidString, anchor: .top) }
+                    } else { reader.scrollTo("bottom", anchor: .bottom) }
+                }
         }
         .onChange(of: composing || dictating) { _, active in
             if model.conversation.ownsPresentation(presentationID) { model.assistantInputActive = active }
@@ -489,7 +552,8 @@ struct AssistantView: View {
         .confirmationDialog("清空本次对话？", isPresented: $clear, titleVisibility: .visible) {
             Button("清空", role: .destructive) { resetConversation() }
         }
-        .onChange(of: model.conversation.currentConversationID) { _, _ in
+        .onChange(of: model.conversation.currentConversationID) { previousID, _ in
+            DidiChatSimulationRegistry.shared.end(conversationID: previousID)
             synchronizeConversationDraft()
             guard model.conversation.ownsPresentation(presentationID) else { return }
             stopConversationMedia()
@@ -577,6 +641,7 @@ struct AssistantView: View {
                 attachmentDraft.cancelImport(); transcriptTask?.cancel(); videoQuestionTask?.cancel()
                 return
             }
+            DidiChatSimulationRegistry.shared.end(conversationID: model.conversation.currentConversationID)
             composing = false; model.assistantInputActive = false
             if let conversationID = attachmentConversationID {
                 model.conversation.retainDraftAttachments(attachmentDraft.items, conversationID: conversationID)
@@ -597,6 +662,19 @@ struct AssistantView: View {
                 HStack(spacing: 8) { conversationSuggestions }
                 VStack(spacing: 8) { conversationSuggestions }
             }
+            Button {
+                composing = false
+                stopConversationMedia()
+                _ = model.conversation.startDidiSimulation()
+            } label: {
+                Label("体验打车模拟", systemImage: "car.side")
+                    .font(.subheadline)
+                    .foregroundStyle(AgentPalette.ink)
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .background(AgentPalette.surface, in: Capsule())
+            }
+            .buttonStyle(AgentPressStyle())
+            .accessibilityIdentifier("conversation.didiSimulation")
         }.frame(maxWidth: .infinity).padding(.top, 24).padding(.bottom, 24)
     }
     @ViewBuilder private var conversationSuggestions: some View {

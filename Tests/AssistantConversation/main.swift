@@ -480,6 +480,169 @@ import Combine
         // original request into phone execution, trim history, or reuse a newly
         // selected frame in place of the original question's materials.
         let retrySettings = AgentSettings(), retryMemories = MemoryStore()
+        // Ground-query failure fallback is bound to the actual failed request,
+        // and opens nothing without a separate user action in the view.
+        do {
+            let ground = AssistantConversation(store: AssistantConversationStore(url: folder.appendingPathComponent("ground-fallback.json")))
+            let originalID = ground.currentConversationID
+            var automaticActions = 0
+            ground.onAction = { _, _ in automaticActions += 1 }
+            ground.unifiedRoute = { input in .init(mode: .groundQuery, request: input.question, message: "") }
+            ground.groundQuery = { _ in throw AgentError.message("携程暂不可用") }
+            let busQuestion = "查上海到杭州的汽车票"
+            ground.draft = busQuestion
+            expect(ground.send(settings: retrySettings, apiKey: "", memories: retryMemories), "Explicit bus query starts")
+            await settle { !ground.loading }
+            expect(ground.draft == busQuestion && ground.currentGroundFailureMode == "bus" && automaticActions == 0,
+                   "A failed bus provider query preserves its draft and offers only a manual bus search")
+            ground.draft = "另一件事"
+            expect(ground.currentGroundFailureMode == nil, "Changing the draft hides the prior request fallback")
+            ground.draft = busQuestion
+            ground.newConversation()
+            expect(ground.currentGroundFailureMode == nil, "A new conversation does not inherit the prior fallback")
+            expect(ground.openConversation(originalID), "Original failed conversation can be restored")
+            expect(ground.draft == busQuestion && ground.currentGroundFailureMode == "bus", "Restored failed request retains its own fallback")
+            ground.draft = "查上海到杭州的高铁"
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == "train" && ground.draft.contains("高铁"), "Train failure exposes train search only")
+            ground.draft = "查火车和汽车票"
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "Ambiguous mixed mode never exposes a fallback")
+            ground.unifiedRoute = { _ in .init(mode: .groundQuery, request: "查汽车票", message: "") }
+            ground.draft = "查火车票"
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "A model route that changes the user's mode cannot select a fallback")
+            ground.unifiedRoute = { _ in throw AgentError.message("普通模型错误") }
+            ground.draft = "聊天里提到汽车票"
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "Routing failure cannot be mistaken for ground-provider failure")
+            let trainRoutingQuestion = "查询2026年10月29日上海虹桥到杭州东的高铁"
+            ground.draft = trainRoutingQuestion
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.draft == trainRoutingQuestion && ground.currentGroundFailureMode == "train",
+                   "A failed router preserves a clearly requested train search and offers its manual fallback")
+            let busRoutingQuestion = "帮我查上海到杭州汽车票"
+            ground.draft = busRoutingQuestion
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.draft == busRoutingQuestion && ground.currentGroundFailureMode == "bus",
+                   "A failed router also supports an explicit bus search without auto-opening it")
+            for explanation in ["查询火车票怎么退票", "帮我查询汽车票的历史", "查火车和汽车票", "请翻译查询火车票", "查火车模型价格"] {
+                ground.draft = explanation
+                _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+                await settle { !ground.loading }
+                expect(ground.currentGroundFailureMode == nil, "Discussion, mixed mode, or translation is not a pre-routing search")
+            }
+            ground.unifiedRoute = { _ in throw CancellationError() }
+            ground.draft = trainRoutingQuestion
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "Router cancellation never offers generic search")
+            ground.unifiedRoute = { _ in throw URLError(.cancelled) }
+            ground.draft = trainRoutingQuestion
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "A cancelled routing URL request never offers search")
+            ground.unifiedRoute = { _ in throw AgentError.message("路由不可用") }
+            ground.draft = "明天上海到杭州高铁"
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == "train", "A compact and explicit natural route works without the word search")
+            ground.unifiedRoute = { input in .init(mode: .groundQuery, request: input.question, message: "") }
+            ground.groundQuery = { _ in throw CancellationError() }
+            ground.draft = busQuestion
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "Cancelled requests do not offer a search fallback")
+            ground.groundQuery = { _ in throw URLError(.cancelled) }
+            ground.draft = busQuestion
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "A cancelled provider URL request never offers search")
+            ground.unifiedRoute = { _ in .init(mode: .groundQuery, request: "查汽车票", message: "") }
+            ground.groundQuery = { _ in throw AgentError.message("携程暂不可用") }
+            for discussion in ["讨论汽车票是什么", "帮我解释怎么查询汽车票", "查汽车模型价格"] {
+                ground.draft = discussion
+                _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+                await settle { !ground.loading }
+                expect(ground.currentGroundFailureMode == nil, "A mistakenly routed discussion cannot expose ground search")
+            }
+            ground.unifiedRoute = { _ in .init(mode: .groundQuery, request: "查高铁", message: "") }
+            ground.draft = "明天上海到杭州高铁"
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == "train", "A confirmed compact natural train query supports manual fallback")
+            // Both pre-routing and provider failures suppress the fallback if
+            // the question carries a selected attachment or phone image.
+            for routeFails in [true, false] {
+                ground.unifiedRoute = { _ in
+                    if routeFails { throw AgentError.message("路由不可用") }
+                    return .init(mode: .groundQuery, request: "查汽车票", message: "")
+                }
+                ground.groundQuery = { _ in throw AgentError.message("携程暂不可用") }
+                ground.draft = busQuestion
+                _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories, attachments: [attachedText])
+                await settle { !ground.loading }
+                expect(ground.currentGroundFailureMode == nil && ground.retryAttachments == [attachedText], "Attachment failures preserve the attachment but do not expose fallback")
+                ground.selectFrame(ScreenFrame())
+                ground.draft = busQuestion
+                _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+                await settle { !ground.loading }
+                expect(ground.currentGroundFailureMode == nil, "Still-frame failures do not expose fallback")
+                ground.selectSequence([CameraObservationFrame(capturedUptime: 1)])
+                ground.draft = busQuestion
+                _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+                await settle { !ground.loading }
+                expect(ground.currentGroundFailureMode == nil, "Camera-sequence failures do not expose fallback")
+                ground.selectSequence([])
+            }
+            ground.unifiedRoute = { _ in .init(mode: .groundQuery, request: "查汽车票", message: "") }
+            ground.groundQuery = { _ in throw AgentError.message("携程暂不可用") }
+            ground.draft = "business"
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "English business is not an explicit bus request")
+            ground.unifiedRoute = { _ in .init(mode: .chat, request: "", message: "") }
+            ground.draft = "聊聊汽车票的历史"
+            let chatIndex = model.requests.count
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { model.requests.count > chatIndex }
+            model.complete(chatIndex, answer: "这里讨论汽车票的历史。")
+            await settle { !ground.loading }
+            expect(ground.currentGroundFailureMode == nil, "A normal chat mentioning bus tickets does not expose search")
+            var pendingGround: CheckedContinuation<String, Error>?
+            ground.unifiedRoute = { input in .init(mode: .groundQuery, request: input.question, message: "") }
+            ground.groundQuery = { _ in try await withCheckedThrowingContinuation { pendingGround = $0 } }
+            ground.draft = busQuestion
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { pendingGround != nil }
+            ground.draft = "新的未发送草稿"
+            pendingGround!.resume(throwing: AgentError.message("携程暂不可用"))
+            await settle { !ground.loading }
+            expect(ground.draft == "新的未发送草稿" && ground.currentGroundFailureMode == nil,
+                   "A later draft is preserved and cannot inherit the failed request's fallback")
+            pendingGround = nil
+            ground.draft = busQuestion
+            _ = ground.send(settings: retrySettings, apiKey: "", memories: retryMemories)
+            await settle { pendingGround != nil }
+            let failingID = ground.currentConversationID
+            ground.newConversation()
+            ground.draft = "另一会话的草稿"
+            pendingGround!.resume(throwing: AgentError.message("携程暂不可用"))
+            await settle { !ground.processingConversationIDs.contains(failingID) }
+            expect(ground.draft == "另一会话的草稿" && ground.currentGroundFailureMode == nil,
+                   "A background failure cannot alter another conversation")
+            expect(ground.openConversation(failingID) && ground.draft == busQuestion && ground.currentGroundFailureMode == "bus",
+                   "The originating conversation alone restores its failed request and fallback")
+            ground.clear()
+            ground.draft = busQuestion
+            expect(ground.currentGroundFailureMode == nil, "Clearing the conversation revokes its old fallback")
+        }
         func retryFixture(_ name: String, question: AssistantMessage = .init(role: "user", text: "解释这个问题"),
                           reply: AssistantMessage = .init(role: "assistant", text: "原回答"), prior: [AssistantMessage] = []) throws -> (AssistantConversation, URL) {
             let url = folder.appendingPathComponent("retry-" + name + ".json")
@@ -817,6 +980,477 @@ import Combine
         await settle { !invalidated.loading }
         expect(invalidated.messages.isEmpty && !invalidated.error.isEmpty && !invalidated.draft.isEmpty,
                "A forgotten memory cannot reappear in a late ordinary answer")
+        // The chat ride preview is a host-owned local interaction, never an
+        // excuse to classify a request or restore execution from saved JSON.
+        do {
+            let didiPath = folder.appendingPathComponent("didi-preview.json")
+            let didiStore = AssistantConversationStore(url: didiPath)
+            let didi = AssistantConversation(store: didiStore)
+            let didiConversationID = didi.currentConversationID
+            let priorRequestCount = model.requests.count
+            var routeCalls = 0
+            didi.unifiedRoute = { _ in routeCalls += 1; return .init(mode: .chat, request: "", message: "") }
+            let priorConsent = PrivacyConsent.permitted
+            PrivacyConsent.permitted = false
+            didi.draft = "保留为当前显式模拟请求"
+            let session = didi.startDidiSimulation()
+            PrivacyConsent.permitted = priorConsent
+            expect(session != nil, "A local ride preview starts without a configured or authorized model")
+            let sessionID = session!
+            let anchor = didi.messages.last!
+            expect(didi.messages.count == 2 && didi.messages[0].role == "user" && anchor.role == "assistant",
+                   "Starting the preview creates exactly one actual user turn and one assistant anchor")
+            expect(didi.messages[0].didiSimulationID == nil && anchor.didiSimulationID == sessionID && anchor.text == "打车模拟 · 先确定行程",
+                   "Only the assistant message owns the new preview identifier")
+            expect(didi.draft.isEmpty && !didi.loading && model.requests.count == priorRequestCount && routeCalls == 0,
+                   "Starting clears the sent draft and dispatches neither a model nor an intent route")
+            expect(didi.isCurrentDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: didiConversationID),
+                   "The exact latest anchor owns this in-memory preview")
+            expect(!didi.isCurrentDidiSimulation(sessionID: UUID(), messageID: anchor.id, conversationID: didiConversationID) &&
+                   !didi.isCurrentDidiSimulation(sessionID: sessionID, messageID: UUID(), conversationID: didiConversationID) &&
+                   !didi.isCurrentDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: UUID()),
+                   "Wrong session, message, or conversation identities cannot claim the preview")
+            expect(!didi.canRetry(anchor), "A ride preview anchor cannot enter ordinary answer retry")
+            let initialPreviewBytes = try Data(contentsOf: didiPath)
+            var publications = 0
+            let observation = didi.$messages.dropFirst().sink { _ in publications += 1 }
+            expect(didi.updateDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: didiConversationID,
+                                            summary: anchor.text), "Repeating the displayed summary is a successful no-op")
+            expect(publications == 0 && (try? Data(contentsOf: didiPath)) == initialPreviewBytes,
+                   "Initial appearance cannot republish messages or rewrite an unchanged preview archive")
+            expect(!didi.updateDidiSimulation(sessionID: UUID(), messageID: anchor.id, conversationID: didiConversationID, summary: "错误会话") &&
+                   !didi.updateDidiSimulation(sessionID: sessionID, messageID: UUID(), conversationID: didiConversationID, summary: "错误消息") &&
+                   !didi.updateDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: UUID(), summary: "错误对话"),
+                   "Updates reject each wrong ownership identity")
+            expect((try? Data(contentsOf: didiPath)) == initialPreviewBytes && publications == 0,
+                   "Rejected updates leave both the archived bytes and visible messages unchanged")
+            didi.draft = "另外一个还没有发送的问题"
+            expect(didi.updateDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: didiConversationID, summary: "司机已接单"),
+                   "The current preview can update its own assistant summary")
+            expect(didi.messages.count == 2 && didi.messages.last?.id == anchor.id && didi.messages.last?.text == "打车模拟 · 司机已接单" &&
+                   didi.draft == "另外一个还没有发送的问题", "Dynamic updates keep the same message anchor and preserve other unsent input")
+            observation.cancel()
+
+            let previewDocument = try JSONSerialization.jsonObject(with: Data(contentsOf: didiPath)) as! [String: Any]
+            let previewRecords = previewDocument["records"] as! [[String: Any]]
+            let savedAnchor = (previewRecords[0]["messages"] as! [[String: Any]]).last!
+            expect(savedAnchor["didiSimulationID"] as? String == sessionID.uuidString &&
+                   Set(savedAnchor.keys) == Set(["id", "role", "text", "createdAt", "didiSimulationID"]),
+                   "Only a UUID display anchor is added to JSON; no coordinate, credential, car, or running-state payload is archived")
+            let replacement = didi.startDidiSimulation(prompt: "再体验一次打车模拟")!
+            let replacementAnchor = didi.messages.last!
+            expect(replacement != sessionID && didi.messages.count == 4 &&
+                   !DidiChatSimulationRegistry.shared.contains(sessionID: sessionID, conversationID: didiConversationID),
+                   "Starting again retires the previous session while retaining its message history")
+            expect(!didi.isCurrentDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: didiConversationID) &&
+                   didi.isCurrentDidiSimulation(sessionID: replacement, messageID: replacementAnchor.id, conversationID: didiConversationID),
+                   "Only the latest registered anchor remains interactive")
+            expect(!didi.updateDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: didiConversationID, summary: "迟到的司机状态"),
+                   "A late callback cannot modify the retired anchor")
+            expect(didi.endDidiSimulation(sessionID: replacement, messageID: replacementAnchor.id, conversationID: didiConversationID),
+                   "Ending the current preview settles its own summary")
+            expect(!DidiChatSimulationRegistry.shared.contains(sessionID: replacement, conversationID: didiConversationID) &&
+                   !didi.isCurrentDidiSimulation(sessionID: replacement, messageID: replacementAnchor.id, conversationID: didiConversationID) &&
+                   didi.messages.last?.text == "打车模拟 · 本次演示已结束", "Ending removes authority and retains an explicitly simulated summary")
+            let endedBytes = try Data(contentsOf: didiPath)
+            expect(!didi.endDidiSimulation(sessionID: replacement, messageID: replacementAnchor.id, conversationID: didiConversationID) &&
+                   (try? Data(contentsOf: didiPath)) == endedBytes, "A repeated stale end cannot rewrite the archive")
+            let reopenedDidi = AssistantConversation(store: AssistantConversationStore(url: didiPath))
+            expect(reopenedDidi.messages.last?.didiSimulationID == replacement &&
+                   !reopenedDidi.isCurrentDidiSimulation(sessionID: replacement, messageID: replacementAnchor.id, conversationID: didiConversationID),
+                   "Reloaded anchors do not recreate an in-memory session or resume a preview")
+
+            var legacyDocument = previewDocument
+            var legacyRecords = previewRecords
+            var legacyMessages = legacyRecords[0]["messages"] as! [[String: Any]]
+            for index in legacyMessages.indices { legacyMessages[index].removeValue(forKey: "didiSimulationID") }
+            legacyRecords[0]["messages"] = legacyMessages; legacyDocument["records"] = legacyRecords
+            let legacyDidiPath = folder.appendingPathComponent("before-didi-field.json")
+            try JSONSerialization.data(withJSONObject: legacyDocument).write(to: legacyDidiPath)
+            let beforeDidi = AssistantConversationStore(url: legacyDidiPath)
+            expect(beforeDidi.error.isEmpty && beforeDidi.records[0].messages.allSatisfy { $0.didiSimulationID == nil },
+                   "Existing JSON without the optional anchor field still loads unchanged")
+            var invalidDidi = didiStore.records.first!
+            invalidDidi.messages[0].didiSimulationID = UUID()
+            rejects({ try didiStore.upsert(invalidDidi, currentConversationID: didiConversationID) },
+                    "A user-role message cannot carry an assistant ride anchor")
+            expect((try? Data(contentsOf: didiPath)) == endedBytes, "Rejected user-role anchors preserve the valid archive bytes")
+            let switchSession = didi.startDidiSimulation()!
+            let switchAnchor = didi.messages.last!
+            didi.newConversation()
+            expect(!didi.isCurrentDidiSimulation(sessionID: switchSession, messageID: switchAnchor.id, conversationID: didiConversationID),
+                   "Switching conversation immediately prevents callbacks from claiming the old chat")
+            DidiChatSimulationRegistry.shared.end(conversationID: didiConversationID)
+            expect(!DidiChatSimulationRegistry.shared.contains(sessionID: switchSession, conversationID: didiConversationID),
+                   "The presentation owner can retire all sessions belonging to the departed chat")
+            let beforeEmptyPrompt = didi.messages
+            expect(didi.startDidiSimulation(prompt: " \n ") == nil && didi.messages == beforeEmptyPrompt,
+                   "An empty preview prompt cannot append messages")
+            let limitedPath = folder.appendingPathComponent("didi-message-limit.json")
+            let limitedID = UUID()
+            let limitedRecord = AssistantConversationRecord(id: limitedID, title: "已有历史", messages: (0..<99).map {
+                AssistantMessage(role: $0 % 2 == 0 ? "user" : "assistant", text: "已有消息 \($0)")
+            }, createdAt: now, updatedAt: now, recipient: "")
+            let limitedStore = AssistantConversationStore(url: limitedPath)
+            try limitedStore.save([limitedRecord], currentConversationID: limitedID)
+            let limited = AssistantConversation(store: limitedStore)
+            expect(limited.startDidiSimulation() == nil && limited.messages == limitedRecord.messages,
+                   "Starting cannot drop earlier history to make room beyond the 100-message archive bound")
+            expect(model.requests.count == priorRequestCount && routeCalls == 0,
+                   "Preview starts, updates, ending, persistence, and ownership checks never call a model or router")
+        }
+        do {
+            let integrated = AssistantConversation(store: AssistantConversationStore(url: folder.appendingPathComponent("didi-route.json")))
+            let integratedID = integrated.currentConversationID
+            var anchorID: UUID?
+            integrated.unifiedRoute = { input in
+                if let anchorID {
+                    return .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [anchorID], relation: .reference)
+                }
+                return .init(mode: .didiRide, request: input.question, message: "", relation: .independent)
+            }
+            integrated.draft = "帮我打车，从人民广场到虹桥机场"
+            expect(integrated.send(settings: settings, apiKey: "", memories: memories), "Didi ride enters normal conversation routing")
+            await settle { !integrated.loading }
+            let anchor = integrated.messages.last!
+            let sessionID = anchor.didiSimulationID!
+            anchorID = anchor.id
+            expect(integrated.isCurrentDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: integratedID), "Recognized ride attaches an active simulation card")
+            expect(DidiChatSimulationRegistry.shared.request(sessionID: sessionID) == "帮我打车，从人民广场到虹桥机场", "Original itinerary reaches the active card")
+            let hints = DidiRequestHints(DidiChatSimulationRegistry.shared.request(sessionID: sessionID))
+            expect(hints.pickup == "人民广场" && hints.destination == "虹桥机场", "Explicit route populates search drafts only")
+            let beforeUnboundReference = DidiChatSimulationRegistry.shared.request(sessionID: sessionID)
+            var registryChanges = 0
+            let registryObservation = DidiChatSimulationRegistry.shared.objectWillChange.sink { registryChanges += 1 }
+            for question in ["第二个", "选第2个", "它", "就这个吧", "最后一个", "select this one"] {
+                integrated.draft = question
+                expect(integrated.send(settings: settings, apiKey: "", memories: memories), "An unbound Didi reference can be clarified: " + question)
+                await settle { !integrated.loading }
+                expect(integrated.messages.last?.intent?.mode == .clarify &&
+                       integrated.messages.last?.intent?.diagnostics?.decisionSource == "didiUnboundReference" &&
+                       integrated.messages.last?.text.contains("未修改行程") == true,
+                       "A bare reference reports clarification without claiming an itinerary update: " + question)
+                expect(DidiChatSimulationRegistry.shared.request(sessionID: sessionID) == beforeUnboundReference && registryChanges == 0,
+                       "A bare reference cannot publish a registry change that clears selected places or quotes: " + question)
+                expect(integrated.messages.last?.intent?.pending == nil &&
+                       integrated.messages.filter { $0.didiSimulationID != nil }.count == 1 &&
+                       integrated.isCurrentDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: integratedID),
+                       "A card clarification retains its active card without creating a task clarification ledger")
+            }
+            registryObservation.cancel()
+            integrated.draft = "目的地改成第二人民医院"
+            expect(integrated.send(settings: settings, apiKey: "", memories: memories), "A concrete place containing an ordinal remains a normal Didi update")
+            await settle { !integrated.loading }
+            expect(integrated.messages.last?.intent?.mode == .didiRide &&
+                   DidiChatSimulationRegistry.shared.request(sessionID: sessionID).contains("目的地改成第二人民医院"),
+                   "The bare-reference guard does not block concrete place names or their original wording")
+            integrated.draft = "目的地改成浦东机场"
+            expect(integrated.send(settings: settings, apiKey: "", memories: memories), "A related follow-up enters the same intent path")
+            await settle { !integrated.loading }
+            let request = DidiChatSimulationRegistry.shared.request(sessionID: sessionID)
+            expect(request.contains("人民广场") && request.contains("虹桥机场") && request.contains("目的地改成浦东机场"), "Follow-up preserves the original and correction verbatim")
+            expect(integrated.messages.filter { $0.didiSimulationID != nil }.count == 1 && integrated.isCurrentDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: integratedID), "A verified follow-up does not create or take over another card")
+            expect(DidiRequestHints(request).pickup.isEmpty, "Corrections do not silently reuse a stale parsed route")
+            integrated.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [UUID()], relation: .reference)
+            }
+            integrated.draft = "改到另一处"
+            expect(integrated.send(settings: settings, apiKey: "", memories: memories), "A later unbound correction can be submitted")
+            await settle { !integrated.loading }
+            expect(DidiChatSimulationRegistry.shared.request(sessionID: sessionID) == request &&
+                   integrated.messages.last?.text.contains("没有找到可关联") == true &&
+                   integrated.messages.filter { $0.didiSimulationID != nil }.count == 1,
+                   "A fabricated card reference cannot mutate the ride or silently start a new card")
+            DidiChatSimulationRegistry.shared.end(conversationID: integratedID)
+            expect(DidiChatSimulationRegistry.shared.request(sessionID: sessionID).isEmpty, "Ended session clears its request")
+        }
+        do {
+            struct LiveRideFixture: Decodable { let sourceConversationID: UUID; let messages: [AssistantMessage] }
+            let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appendingPathComponent("Fixtures/didi230-live-reference-chain.json")
+            let fixture = try JSONDecoder().decode(LiveRideFixture.self, from: Data(contentsOf: fixtureURL))
+            expect(fixture.messages.count == 6 && fixture.messages[3].intent?.relatedMessageIDs == [fixture.messages[1].id] &&
+                   fixture.messages[5].intent?.relatedMessageIDs == [fixture.messages[3].id],
+                   "The real230 failure fixture retains two supplements and the second reply-to-reply reference")
+            let replayPath = folder.appendingPathComponent("didi-live-chain.json")
+            let replay = AssistantConversation(store: AssistantConversationStore(url: replayPath))
+            let replayID = replay.currentConversationID
+            var actualIDs: [UUID: UUID] = [:]
+            for userIndex in stride(from: 0, to: fixture.messages.count, by: 2) {
+                let intent = fixture.messages[userIndex + 1].intent!
+                let references = intent.relatedMessageIDs.map { actualIDs[$0]! }
+                replay.unifiedRoute = { input in
+                    .init(mode: intent.mode, request: input.question, message: "", relatedMessageIDs: references, relation: intent.relation)
+                }
+                replay.draft = fixture.messages[userIndex].text
+                expect(replay.send(settings: settings, apiKey: "", memories: memories), "Replay the actual230 ride turn " + String(userIndex / 2))
+                await settle { !replay.loading }
+                actualIDs[fixture.messages[userIndex + 1].id] = replay.messages.last!.id
+                expect(!replay.messages.last!.text.contains("没有找到可关联"), "A live same-card supplement can cite its previous assistant supplement")
+            }
+            let anchor = replay.messages.first(where: { $0.didiSimulationID != nil })!, session = anchor.didiSimulationID!
+            let fullRequest = DidiChatSimulationRegistry.shared.request(sessionID: session)
+            expect(fullRequest.contains(fixture.messages[2].text) && fullRequest.contains(fixture.messages[4].text) &&
+                   replay.messages.filter { $0.didiSimulationID != nil }.count == 1,
+                   "Both actual supplements reach the same live card without a new session")
+            let lastSupplement = replay.messages.last!.id
+            replay.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [lastSupplement], relation: .reference)
+            }
+            var changes = 0
+            let observation = DidiChatSimulationRegistry.shared.objectWillChange.sink { changes += 1 }
+            replay.draft = "第二个"
+            expect(replay.send(settings: settings, apiKey: "", memories: memories), "A chained ordinal still enters the host clarification guard")
+            await settle { !replay.loading }
+            let clarification = replay.messages.last!
+            expect(clarification.intent?.diagnostics?.decisionSource == "didiUnboundReference" &&
+                   DidiChatSimulationRegistry.shared.request(sessionID: session) == fullRequest && changes == 0,
+                   "A bare ordinal through the reply chain cannot publish a route/quote-clearing change")
+            observation.cancel()
+            replay.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [clarification.id], relation: .reference)
+            }
+            replay.draft = "目的地改成上海浦东机场"
+            expect(replay.send(settings: settings, apiKey: "", memories: memories), "A concrete correction can cite this flow's card clarification")
+            await settle { !replay.loading }
+            expect(replay.messages.last?.intent?.mode == .didiRide &&
+                   DidiChatSimulationRegistry.shared.request(sessionID: session).contains("目的地改成上海浦东机场") &&
+                   replay.messages.filter { $0.didiSimulationID != nil }.count == 1,
+                   "The host's unbound-reference clarification does not break the next concrete same-card update")
+
+            func relay(_ parents: [UUID], mode: ConversationRoute.Mode = .didiRide,
+                       decision: String = "model") -> AssistantMessage {
+                var node = AssistantMessage(role: "assistant", text: "只读引用节点")
+                node.intent = ConversationRoute(mode: mode, request: "", message: "", relatedMessageIDs: parents, relation: .reference).record
+                node.intent?.diagnostics = .init(memoryMilliseconds: 0, routingMilliseconds: 0,
+                    recalledSourceCount: 0, recentMessageCount: 0, decisionSource: decision)
+                return node
+            }
+            func bound(_ references: [UUID], _ history: [AssistantMessage]) -> Bool {
+                AssistantConversation.didiReferenceChainResolves(references, history: history, anchorID: anchor.id)
+            }
+            let valid = relay([anchor.id])
+            expect(bound([valid.id, anchor.id], [anchor, valid]), "Every valid branch may share the same explicit live-card ancestor")
+            for mode in [ConversationRoute.Mode.chat, .flightQuery, .clarify] {
+                let wrong = relay([anchor.id], mode: mode, decision: mode == .clarify ? "localFlightSelection" : "model")
+                expect(!bound([wrong.id], [anchor, wrong]) && !bound([valid.id, wrong.id], [anchor, valid, wrong]),
+                       "An unrelated or flight clarification branch cannot borrow the valid Didi branch: " + mode.rawValue)
+            }
+            let ordinaryClarification = relay([anchor.id], mode: .clarify)
+            expect(!bound([ordinaryClarification.id], [anchor, ordinaryClarification]), "Only the host-generated Didi clarification is accepted")
+            let missing = relay([UUID()])
+            expect(!bound([missing.id], [anchor, missing]), "A missing reference cannot fall back to the nearest card")
+            let otherAnchor = AssistantMessage(role: "assistant", text: "另一张旧卡", didiSimulationID: UUID())
+            let wrongCard = relay([otherAnchor.id])
+            expect(!bound([wrongCard.id], [anchor, otherAnchor, wrongCard]), "A different card cannot terminate the current anchor's reference chain")
+            var cyclicA = relay([]), cyclicB = relay([])
+            cyclicA.intent?.relatedMessageIDs = [cyclicB.id]; cyclicB.intent?.relatedMessageIDs = [cyclicA.id]
+            expect(!bound([cyclicB.id], [anchor, cyclicA, cyclicB]), "A cycle and its forward edge are rejected")
+            var selfCycle = relay([]); selfCycle.intent?.relatedMessageIDs = [selfCycle.id]
+            expect(!bound([selfCycle.id], [anchor, selfCycle]), "A self reference is rejected")
+            expect(!bound([valid.id], [anchor, valid, valid]), "Duplicate message identities fail closed before building an index")
+            expect(!bound([valid.id], [valid, anchor]), "A historical node preceding a new anchor cannot point forward to take it over")
+            var longHistory = [anchor], parent = anchor.id
+            for _ in 0..<65 { let next = relay([parent]); longHistory.append(next); parent = next.id }
+            expect(!bound([parent], longHistory), "A reference chain has a bounded node budget")
+
+            let other = AssistantConversation(store: AssistantConversationStore(url: folder.appendingPathComponent("didi-other-chain.json")))
+            let otherSession = other.startDidiSimulation(prompt: "另一对话的独立行程")!
+            let otherBefore = DidiChatSimulationRegistry.shared.request(sessionID: otherSession)
+            other.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [lastSupplement], relation: .reference)
+            }
+            other.draft = "目的地改成虹桥机场"
+            expect(other.send(settings: settings, apiKey: "", memories: memories), "An attempted cross-conversation reference is handled")
+            await settle { !other.loading }
+            expect(other.messages.last!.text.contains("没有找到可关联") &&
+                   DidiChatSimulationRegistry.shared.request(sessionID: otherSession) == otherBefore,
+                   "A foreign conversation's reply cannot change the local card")
+            DidiChatSimulationRegistry.shared.end(sessionID: otherSession)
+            let replacement = replay.startDidiSimulation(prompt: "同对话的新行程")!, replacementAnchor = replay.messages.last!
+            replay.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [lastSupplement], relation: .reference)
+            }
+            replay.draft = "目的地改成旧卡的位置"
+            expect(replay.send(settings: settings, apiKey: "", memories: memories), "An old chain cannot capture a replacement card")
+            await settle { !replay.loading }
+            expect(DidiChatSimulationRegistry.shared.request(sessionID: replacement) == "同对话的新行程" &&
+                   DidiChatSimulationRegistry.shared.request(sessionID: session).isEmpty,
+                   "Replacing the anchor revokes the former chain without altering the new trip")
+            expect(replay.endDidiSimulation(sessionID: replacement, messageID: replacementAnchor.id, conversationID: replayID), "End the replay card before archive restoration")
+            let reopened = AssistantConversation(store: AssistantConversationStore(url: replayPath))
+            reopened.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [replacementAnchor.id], relation: .reference)
+            }
+            reopened.draft = "目的地改成机场"
+            expect(reopened.send(settings: settings, apiKey: "", memories: memories), "An archived reference is handled without restoring authority")
+            await settle { !reopened.loading }
+            expect(reopened.messages.last!.text.contains("没有找到可关联") &&
+                   !DidiChatSimulationRegistry.shared.contains(sessionID: replacement, conversationID: replayID),
+                   "An ended or cold-restored archive cannot recreate the live registry owner")
+        }
+        do {
+            struct CreationRequestFixture: Decodable { let messages: [AssistantMessage] }
+            let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appendingPathComponent("Fixtures/didi232-live-anchor-and-creation-request.json")
+            let fixture = try JSONDecoder().decode(CreationRequestFixture.self, from: Data(contentsOf: fixtureURL))
+            expect(fixture.messages.count == 6 && Set(fixture.messages[5].intent!.relatedMessageIDs) ==
+                   Set([fixture.messages[0].id, fixture.messages[1].id]),
+                   "The real232 failure retains both its current card and exact creation-request references")
+            let replayPath = folder.appendingPathComponent("didi-mixed-creator.json")
+            let replay = AssistantConversation(store: AssistantConversationStore(url: replayPath))
+            var actualIDs: [UUID: UUID] = [:]
+            for userIndex in stride(from: 0, to: fixture.messages.count, by: 2) {
+                let intent = fixture.messages[userIndex + 1].intent!
+                let references = intent.relatedMessageIDs.map { actualIDs[$0]! }
+                replay.unifiedRoute = { input in
+                    .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: references, relation: intent.relation)
+                }
+                let oldRequest = replay.messages.first(where: { $0.didiSimulationID != nil }).flatMap {
+                    $0.didiSimulationID.map { DidiChatSimulationRegistry.shared.request(sessionID: $0) }
+                }
+                replay.draft = fixture.messages[userIndex].text
+                expect(replay.send(settings: settings, apiKey: "", memories: memories), "Replay actual232 mixed-reference turn " + String(userIndex / 2))
+                await settle { !replay.loading }
+                actualIDs[fixture.messages[userIndex].id] = replay.messages.last(where: { $0.role == "user" })!.id
+                actualIDs[fixture.messages[userIndex + 1].id] = replay.messages.last!.id
+                if userIndex == 2 {
+                    let session = replay.messages.first(where: { $0.didiSimulationID != nil })!.didiSimulationID!
+                    expect(replay.messages.last?.intent?.diagnostics?.decisionSource == "didiUnboundReference" &&
+                           DidiChatSimulationRegistry.shared.request(sessionID: session) == oldRequest,
+                           "The actual232 ordinal still clarifies without changing the current trip")
+                }
+            }
+            let anchor = replay.messages.first(where: { $0.didiSimulationID != nil })!, session = anchor.didiSimulationID!
+            let creation = replay.messages.first(where: { $0.role == "user" })!
+            let mixedReply = replay.messages.last!
+            expect(mixedReply.intent?.mode == .didiRide && !mixedReply.text.contains("没有找到可关联") &&
+                   DidiChatSimulationRegistry.shared.request(sessionID: session).contains(fixture.messages[4].text) &&
+                   replay.messages.filter { $0.didiSimulationID != nil }.count == 1,
+                   "The actual anchor-plus-creation-user update reaches the same live card after clarification")
+            replay.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [mixedReply.id], relation: .reference)
+            }
+            replay.draft = "目的地再改成上海虹桥机场"
+            expect(replay.send(settings: settings, apiKey: "", memories: memories), "The next supplement can cite the accepted mixed-reference reply")
+            await settle { !replay.loading }
+            expect(DidiChatSimulationRegistry.shared.request(sessionID: session).contains("目的地再改成上海虹桥机场"),
+                   "A mixed anchor/user reference also remains valid inside a later strict Didi chain")
+
+            let unrelatedUser = replay.messages.first(where: { $0.role == "user" && $0.id != creation.id })!
+            for references in [[creation.id], [anchor.id, unrelatedUser.id]] {
+                let unchanged = DidiChatSimulationRegistry.shared.request(sessionID: session)
+                replay.unifiedRoute = { input in
+                    .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: references, relation: .reference)
+                }
+                replay.draft = "目的地改成另一个机场"
+                expect(replay.send(settings: settings, apiKey: "", memories: memories), "A user-only or unrelated-user reference is handled")
+                await settle { !replay.loading }
+                expect(replay.messages.last!.text.contains("没有找到可关联") &&
+                       DidiChatSimulationRegistry.shared.request(sessionID: session) == unchanged,
+                       "A creation user alone or a different user beside the anchor grants no update authority")
+            }
+            var userOnlyRelay = AssistantMessage(role: "assistant", text: "不能靠用户引用取得权限")
+            userOnlyRelay.intent = ConversationRoute(mode: .didiRide, request: "", message: "", relatedMessageIDs: [creation.id], relation: .reference).record
+            expect(!AssistantConversation.didiReferenceChainResolves([userOnlyRelay.id], history: [creation, anchor, userOnlyRelay], anchorID: anchor.id),
+                   "An assistant relay containing only the creation user cannot launder user context into authority")
+            let earlierUser = AssistantMessage(role: "user", text: "另一段先前请求")
+            expect(!AssistantConversation.didiReferenceChainResolves([anchor.id, earlierUser.id], history: [earlierUser, creation, anchor], anchorID: anchor.id),
+                   "An earlier unrelated user is not substituted for the current anchor's exact adjacent creation request")
+            let beforeOrdinal = DidiChatSimulationRegistry.shared.request(sessionID: session)
+            var publications = 0
+            let observation = DidiChatSimulationRegistry.shared.objectWillChange.sink { publications += 1 }
+            replay.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [anchor.id, creation.id], relation: .reference)
+            }
+            replay.draft = "第二个"
+            expect(replay.send(settings: settings, apiKey: "", memories: memories), "A mixed anchor/user ordinal is clarified")
+            await settle { !replay.loading }
+            expect(replay.messages.last?.intent?.diagnostics?.decisionSource == "didiUnboundReference" &&
+                   publications == 0 && DidiChatSimulationRegistry.shared.request(sessionID: session) == beforeOrdinal,
+                   "Mixed-reference ordinals cannot publish a change that clears selected places or quotes")
+            observation.cancel()
+            let endedConversationID = replay.currentConversationID
+            expect(replay.endDidiSimulation(sessionID: session, messageID: anchor.id, conversationID: endedConversationID), "End the mixed-reference card")
+            let reopened = AssistantConversation(store: AssistantConversationStore(url: replayPath))
+            reopened.unifiedRoute = { input in
+                .init(mode: .didiRide, request: input.question, message: "", relatedMessageIDs: [anchor.id, creation.id], relation: .reference)
+            }
+            reopened.draft = "目的地改成上海浦东机场"
+            expect(reopened.send(settings: settings, apiKey: "", memories: memories), "A mixed reference to an ended archive is handled")
+            await settle { !reopened.loading }
+            expect(reopened.messages.last!.text.contains("没有找到可关联") &&
+                   !DidiChatSimulationRegistry.shared.contains(sessionID: session, conversationID: endedConversationID),
+                   "Adding the creation request cannot restore an ended or cold-restored card")
+        }
+        // Real, public test conversations written by both independent builds.
+        // This checks migration by decoding both historical shapes together;
+        // it does not treat saved rides or quotes as execution authority.
+        do {
+            let fixtureRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appendingPathComponent("Fixtures/UnifiedArchive", isDirectory: true)
+            let fixtureNames = ["ctrip-flight227.json", "ctrip-train224.json", "ctrip-bus224.json", "didi225.json", "didi-followup225.json"]
+            let fixtures = try fixtureNames.map { name in try JSONDecoder().decode(AssistantConversationRecord.self,
+                from: Data(contentsOf: fixtureRoot.appendingPathComponent(name))) }
+            expect(fixtures.count == 5, "Both shipped conversation shapes decode in the unified model")
+            expect(fixtures[0].messages.last?.flightQuery != nil && fixtures[0].messages.last?.intent?.mode == .flightQuery,
+                   "Ctrip flight source and archived intent survive integration")
+            expect(fixtures[1].messages.last?.groundTravelMode == "train" && fixtures[1].messages.last?.intent?.mode == .groundQuery,
+                   "Ctrip train query and mode survive integration")
+            expect(fixtures[2].messages.last?.groundTravelMode == "bus" && fixtures[2].messages.last?.groundQuery != nil,
+                   "Ctrip bus source and transport category survive integration")
+            expect(fixtures[3].messages.last?.didiSimulationID != nil && fixtures[3].messages.last?.intent?.mode == .didiRide,
+                   "Didi card anchor and archived intent survive integration")
+            expect(fixtures[4].messages.contains { $0.didiSimulationID != nil } && fixtures[4].messages.last?.intent?.mode == .clarify,
+                   "A Didi follow-up ledger and the original card decode together")
+            let archivePath = folder.appendingPathComponent("unified-history.json")
+            let payloads = try fixtureNames.map { name in try JSONSerialization.jsonObject(with:
+                Data(contentsOf: fixtureRoot.appendingPathComponent(name))) }
+            let archive: [String: Any] = ["version": 1, "currentConversationID": fixtures[4].id.uuidString, "records": payloads]
+            try JSONSerialization.data(withJSONObject: archive).write(to: archivePath)
+            let integratedStore = AssistantConversationStore(url: archivePath)
+            expect(integratedStore.error.isEmpty && integratedStore.records.count == fixtures.count,
+                   "A single archive containing flight, train, bus and Didi histories loads without isolation")
+            expect(Set(integratedStore.records.map(\.id)) == Set(fixtures.map(\.id)), "All original history identities remain present")
+            for fixture in fixtures {
+                expect(integratedStore.records.first(where: { $0.id == fixture.id }) == fixture,
+                       "Historical content and fields are preserved: " + fixture.title)
+            }
+            let restoredConversation = AssistantConversation(store: integratedStore)
+            let oldAnchor = fixtures[4].messages.first(where: { $0.didiSimulationID != nil })!
+            expect(!restoredConversation.isCurrentDidiSimulation(sessionID: oldAnchor.didiSimulationID!,
+                    messageID: oldAnchor.id, conversationID: fixtures[4].id),
+                   "Decoding an old Didi anchor never restores an active ride or connection")
+            var extra = fixtures[0]
+            extra.id = UUID(); extra.title = "合并回归：新会话"; extra.messages = [AssistantMessage(role: "user", text: "新会话不继承历史地点或报价")]
+            try integratedStore.upsert(extra, currentConversationID: extra.id)
+            let roundTrip = AssistantConversationStore(url: archivePath)
+            expect(roundTrip.error.isEmpty && roundTrip.records.count == fixtures.count + 1,
+                   "Appending a new conversation does not discard either historical schema")
+            for fixture in fixtures {
+                expect(roundTrip.records.first(where: { $0.id == fixture.id }) == fixture,
+                       "Read-write round trip retains original content: " + fixture.title)
+            }
+            var futureArchive = archive
+            var futureRecords = payloads as! [[String: Any]]
+            var futureMessages = futureRecords[3]["messages"] as! [[String: Any]]
+            let assistantIndex = futureMessages.firstIndex { $0["role"] as? String == "assistant" }!
+            var unknownIntent = futureMessages[assistantIndex]["intent"] as! [String: Any]
+            unknownIntent["mode"] = "futureRideSchemaV9"
+            futureMessages[assistantIndex]["intent"] = unknownIntent
+            futureRecords[3]["messages"] = futureMessages
+            futureArchive["records"] = futureRecords
+            let futureModePath = folder.appendingPathComponent("future-mode-history.json")
+            let futureBytes = try JSONSerialization.data(withJSONObject: futureArchive)
+            try futureBytes.write(to: futureModePath)
+            let futureModeStore = AssistantConversationStore(url: futureModePath)
+            expect(!futureModeStore.error.isEmpty, "An unknown future route mode exposes a storage error")
+            rejects({ try futureModeStore.upsert(extra, currentConversationID: extra.id) },
+                    "A future mode blocks a save rather than silently dropping or relabelling history")
+            rejects({ try futureModeStore.activate(extra.id) }, "A future mode also blocks activation writes")
+            expect((try? Data(contentsOf: futureModePath)) == futureBytes,
+                   "Unsupported future-mode archive remains byte-identical and recoverable")
+        }
         print("Assistant conversation checks passed (\(checks) checks; offline continuations only)")
     }
 }

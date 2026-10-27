@@ -17,13 +17,32 @@ struct ChatGPTPlanSettingsView: View {
             }
             if selected?.sharing == true {
                 Label("正在使用 ChatGPT 计划", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                if !auth.models.isEmpty {
-                    Picker("模型", selection: $model.settings.model) {
-                        if !auth.models.contains(where: { $0.id == model.settings.model }) { Text(model.settings.model + "（当前不可用）").tag(model.settings.model) }
+                Button("刷新可用模型") { Task { await auth.loadModels() } }.disabled(auth.connecting)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("模型").font(.subheadline.weight(.medium))
+                Button {
+                    model.settings.model = "gpt-6.1-terra"
+                } label: {
+                    Label("GPT-6.1 Terra", systemImage: model.settings.model == "gpt-6.1-terra" ? "checkmark.circle.fill" : "circle")
+                }
+                .accessibilityIdentifier("chatgpt.model.terra")
+                TextField("填写模型 ID", text: Binding(
+                    get: { model.settings.model },
+                    set: { model.settings.model = $0.trimmingCharacters(in: .whitespacesAndNewlines) }))
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .agentField().accessibilityLabel("ChatGPT 模型 ID")
+                    .accessibilityIdentifier("chatgpt.modelID")
+                if selected?.sharing == true, !auth.models.isEmpty {
+                    Picker("账户模型列表", selection: $model.settings.model) {
+                        if !auth.models.contains(where: { $0.id == model.settings.model }) {
+                            Text(model.settings.model + "（未在列表中）").tag(model.settings.model)
+                        }
                         ForEach(auth.models) { item in Text(item.name).tag(item.id) }
                     }
-                } else { Text("模型：" + model.settings.model).font(.subheadline) }
-                Button("刷新可用模型") { Task { await auth.loadModels() } }.disabled(auth.connecting)
+                }
+                Text("列表暂时无法读取时，也可选择或填写模型。账户能否使用该模型，以实际连接测试为准。")
+                    .font(.caption).foregroundStyle(AgentPalette.secondaryText)
             }
             if auth.connecting {
                 ProgressView("正在连接 ChatGPT…")

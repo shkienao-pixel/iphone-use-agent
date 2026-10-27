@@ -7,7 +7,7 @@ coordinator=(root/'PhoneAgent/Services/UnifiedConversationCoordinator.swift').re
 start=coordinator.index('    func openConversationFlight(')
 end=re.search(r'\n}\s*\n(?=struct CtripFlightHandoffOrigin)',coordinator[start:])
 assert end
-body='import Foundation\n@MainActor extension PhoneAgentViewModel {\n'+coordinator[start:start+end.start()]+'\n}\n\n'+coordinator[start+end.end():]
+body='import Foundation\nimport Combine\n@MainActor extension PhoneAgentViewModel {\n'+coordinator[start:start+end.start()]+'\n}\n\n'+coordinator[start+end.end():]
 (out/'ProductionFlightOpen.swift').write_text(body)
 conversation=(root/'PhoneAgent/Services/AssistantConversation.swift').read_text()
 a=conversation.index('    private var flightOpeningVisibleOwners = ')
@@ -30,7 +30,7 @@ data=json.loads(r.stdout) if r.stdout else {};print(json.dumps({'passed':data.ge
 if r.returncode: sys.exit(r.returncode)
 lifecycle=['xcrun','swiftc','-parse-as-library','-module-cache-path',str(out/'module-cache'),
     *[str(root/p) for p in inputs[:4]],str(root/'PhoneAgent/Stores/AssistantConversationStore.swift'),
-    str(root/'PhoneAgent/Services/AssistantConversation.swift'),str(root/'Tests/AssistantConversation/Environment.swift'),
+    str(root/'PhoneAgent/Services/DidiChatSimulationRegistry.swift'),str(root/'PhoneAgent/Services/AssistantConversation.swift'),str(root/'Tests/AssistantConversation/Environment.swift'),
     str(root/'Tests/FlightSelection/Lifecycle.swift'),'-o',str(out/'lifecycle')]
 r=subprocess.run(lifecycle,capture_output=True,text=True);(out/'lifecycle-compile.log').write_text(r.stdout+r.stderr)
 if r.returncode: print(r.stdout+r.stderr);sys.exit(r.returncode)

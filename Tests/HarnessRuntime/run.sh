@@ -17,7 +17,7 @@ source = Path(sys.argv[3]).read_text()
 replacements = {
     'let capturedAt: Date, fullDisplay = true': 'let capturedAt: Date\n    var fullDisplay = true',
     'let width = 2, height = 2, sourceWidth = 2, sourceHeight = 2': 'var width = 2, height = 2, sourceWidth = 2, sourceHeight = 2',
-    'let image: UIImage, jpeg = Data()': 'var image: UIImage\n    let jpeg = Data()',
+    'let image: UIImage, jpeg: Data': 'var image: UIImage\n    let jpeg: Data',
     'let cgImage: CGImage?': 'let cgImage: CGImage?\n    init(cgImage: CGImage) { self.cgImage = cgImage }',
 }
 for before, after in replacements.items():

@@ -18,6 +18,14 @@ final class AssistantConversation: ObservableObject {
     @Published private(set) var processingConversationIDs: Set<UUID> = []
     @Published private(set) var lastRoute: ConversationRoute?
     @Published private(set) var error = ""
+    @Published private(set) var groundFailureMode: String?
+    private var groundFailureQuestion = ""
+    /// The fallback belongs only to the failed request and its untouched draft.
+    var currentGroundFailureMode: String? {
+        guard !error.isEmpty, !groundFailureQuestion.isEmpty,
+              draft.trimmingCharacters(in: .whitespacesAndNewlines) == groundFailureQuestion else { return nil }
+        return groundFailureMode
+    }
     @Published private(set) var selectedFrame: ScreenFrame?
     @Published private(set) var retryAttachments: [ComposerAttachment] = []
     var taskContext: (() -> String)?
@@ -30,6 +38,8 @@ final class AssistantConversation: ObservableObject {
     var onAction: ((ConversationRoute, UUID) -> Void)?
     var onActionInConversation: ((ConversationRoute, UUID, UUID) -> Void)?
     var flightQuery: ((String) async throws -> String)?
+    /// Read-only train/coach lookup using the phone's configured Ctrip connection.
+    var groundQuery: ((String) async throws -> String)?
     var onProcessingChange: (() -> Void)?
     var paotuiQuery: ((ConversationRoutingInput, PaotuiHostContext) async throws -> PaotuiChatReply)?
     var paotuiSelection: ((PaotuiChatCard, PaotuiChatSelection, PaotuiHostContext) async throws -> PaotuiChatReply)?
@@ -65,6 +75,8 @@ final class AssistantConversation: ObservableObject {
         var attachments: [ComposerAttachment] = []
         var route: ConversationRoute?
         var replyID: UUID?
+        var groundFailureMode: String?
+        var groundFailureQuestion = ""
     }
     private var liveRequests: [UUID: LiveRequest] = [:]
     private var transientStates: [UUID: TransientState] = [:]
@@ -214,7 +226,7 @@ final class AssistantConversation: ObservableObject {
     }
 
     private func leaveCurrentConversation() {
-        transientStates[currentConversationID] = .init(error: error, attachments: retryAttachments, route: lastRoute, replyID: lastRoutedReplyID)
+        transientStates[currentConversationID] = .init(error: error, attachments: retryAttachments, route: lastRoute, replyID: lastRoutedReplyID, groundFailureMode: groundFailureMode, groundFailureQuestion: groundFailureQuestion)
         if let live = liveRequests[currentConversationID], live.canBackground, storageError.isEmpty {
             saveCurrent()
             request = nil; pendingMessageID = nil; loading = false; generation = UUID()
@@ -264,14 +276,16 @@ final class AssistantConversation: ObservableObject {
     }
 
     private func failRequest(_ token: UUID, in id: UUID, user: AssistantMessage,
-                             attachments: [ComposerAttachment], failure: String) {
+                             attachments: [ComposerAttachment], failure: String, groundFallback: String? = nil) {
         guard isLiveRequest(token, in: id) else { return }
         finishRequest(token, in: id)
         defer { finishActivityRequest(token, in: id, succeeded: false) }
-        transientStates[id] = .init(error: failure, attachments: attachments)
+        let question = groundFallback == nil ? "" : user.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        transientStates[id] = .init(error: failure, attachments: attachments, groundFailureMode: groundFallback, groundFailureQuestion: question)
         if id == currentConversationID {
             if draft.isEmpty { draft = user.text }
             error = failure; retryAttachments = attachments
+            groundFailureMode = groundFallback; groundFailureQuestion = question
             if messages.last?.id == user.id { messages.removeLast() }
             contextReferences = messages.last(where: { $0.role == "assistant" }).map { references(for: $0) } ?? []
             saveCurrent(); return
@@ -409,6 +423,128 @@ final class AssistantConversation: ObservableObject {
         }
         return paotuiPresentation?(card, currentConversationID) ?? .init(isCurrent: false, allowedActions: [])
     }
+    /// Opens a host-owned preview in this actual chat, without model routing or
+    /// execution authority. Only the anchor identifier is archived.
+    @discardableResult
+    func startDidiSimulation(prompt: String = "帮我叫辆车（模拟）") -> UUID? {
+        guard !loading else { return nil }
+        let prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, prompt.count <= 4000 else {
+            error = "请输入 1–4000 字的问题"
+            return nil
+        }
+        guard messages.count <= 98 else {
+            error = "这段对话已达到保存上限，请开始新对话；已有内容不会被删除"
+            return nil
+        }
+        let sessionID = UUID()
+        DidiChatSimulationRegistry.shared.end(conversationID: currentConversationID)
+        DidiChatSimulationRegistry.shared.begin(sessionID: sessionID, conversationID: currentConversationID, request: prompt)
+        messages.append(AssistantMessage(role: "user", text: prompt))
+        messages.append(AssistantMessage(role: "assistant", text: "打车模拟 · 先确定行程", didiSimulationID: sessionID))
+        draft = ""
+        error = ""
+        saveCurrent()
+        return sessionID
+    }
+
+    func isCurrentDidiSimulation(sessionID: UUID, messageID: UUID, conversationID: UUID) -> Bool {
+        guard conversationID == currentConversationID,
+              let message = messages.first(where: { $0.id == messageID }),
+              message.role == "assistant", message.didiSimulationID == sessionID,
+              messages.last(where: { $0.didiSimulationID != nil })?.id == messageID else { return false }
+        return DidiChatSimulationRegistry.shared.contains(sessionID: sessionID, conversationID: conversationID)
+    }
+
+    @discardableResult
+    func updateDidiSimulation(sessionID: UUID, messageID: UUID, conversationID: UUID, summary: String) -> Bool {
+        guard isCurrentDidiSimulation(sessionID: sessionID, messageID: messageID, conversationID: conversationID),
+              let index = messages.firstIndex(where: { $0.id == messageID }) else { return false }
+        let summary = Self.didiSimulationSummary(summary)
+        guard messages[index].text != summary else { return storageError.isEmpty }
+        messages[index].text = summary
+        saveCurrent()
+        return storageError.isEmpty
+    }
+
+    @discardableResult
+    func endDidiSimulation(sessionID: UUID, messageID: UUID, conversationID: UUID,
+                           summary: String = "本次演示已结束") -> Bool {
+        guard isCurrentDidiSimulation(sessionID: sessionID, messageID: messageID, conversationID: conversationID),
+              let index = messages.firstIndex(where: { $0.id == messageID }) else { return false }
+        let summary = Self.didiSimulationSummary(summary)
+        let changed = messages[index].text != summary
+        if changed { messages[index].text = summary }
+        DidiChatSimulationRegistry.shared.end(sessionID: sessionID)
+        if changed { saveCurrent() }
+        return storageError.isEmpty
+    }
+
+    private static func didiSimulationSummary(_ value: String) -> String {
+        let summary = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = summary.hasPrefix("打车模拟") ? summary : "打车模拟" + (summary.isEmpty ? "" : " · " + summary)
+        return String(text.prefix(4000))
+    }
+
+    /// Native picker candidates have no chat selection IDs. A bare reference
+    /// cannot change their route or invalidate a verified place/quote.
+    private static func isUnboundDidiSelectionReference(_ value: String) -> Bool {
+        let text = value.replacingOccurrences(of: #"\s"#, with: "", options: .regularExpression)
+        guard text.count <= 40 else { return false }
+        let ordinal = #"(?:倒数)?第(?:[1-9]\d?|[一二三四五六七八九十两]{1,3})(?:个|项|辆|款|条)?"#
+        let reference = #"(?:"# + ordinal + #"|最后(?:一个|一项|一辆|一款)|首个|这个|那个|这一个|那一个|它|这辆|那辆|这款|那款)"#
+        let chinese = #"(?:请(?:帮我|你)?|帮我|麻烦(?:你)?)?(?:就)?(?:选择|选|要|用|换成|改成|换|改|查看|打开)?"# + reference + #"(?:地点|上车点|目的地)?(?:吧|就行|就可以)?"#
+        let english = #"(?:please)?(?:choose|select|use)?(?:thisone|thatone|it|firstone|secondone|thirdone|lastone)"#
+        return text.range(of: #"^(?:"# + chinese + #"|"# + english + #")[。！!？?，,]*$"#,
+                          options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// Only assistant edges establish a path to this anchor. Its immediately
+    /// preceding creation request may accompany that path as context, not authority.
+    static func didiReferenceChainResolves(_ references: [UUID], history: [AssistantMessage], anchorID: UUID) -> Bool {
+        guard !references.isEmpty, references.count <= ConversationWorkingMemory.maximumSources,
+              history.count <= 100, Set(history.map(\.id)).count == history.count,
+              let anchorIndex = history.firstIndex(where: { $0.id == anchorID }),
+              history[anchorIndex].role == "assistant", history[anchorIndex].didiSimulationID != nil else { return false }
+        let creationRequestID = anchorIndex > 0 && history[anchorIndex - 1].role == "user" ? history[anchorIndex - 1].id : nil
+        guard references.contains(where: { $0 != creationRequestID }) else { return false }
+        let indices = Dictionary(uniqueKeysWithValues: history.enumerated().map { ($0.element.id, $0.offset) })
+        var visiting = Set<UUID>(), verified = Set<UUID>(), visited = Set<UUID>()
+        func resolves(_ id: UUID, before index: Int) -> Bool {
+            guard let sourceIndex = indices[id], sourceIndex >= anchorIndex, sourceIndex < index else { return false }
+            if id == anchorID { return true }
+            if verified.contains(id) { return true }
+            guard visited.insert(id).inserted, visited.count <= 64,
+                  visiting.insert(id).inserted else { return false }
+            defer { visiting.remove(id) }
+            let source = history[sourceIndex]
+            guard source.role == "assistant", source.didiSimulationID == nil,
+                  let intent = source.intent, intent.relation == .reference else { return false }
+            let isSupplement = intent.mode == .didiRide && intent.module == "didi-ride"
+            let isCardClarification = intent.mode == .clarify && intent.module == "clarification" &&
+                intent.diagnostics?.decisionSource == "didiUnboundReference" && intent.pending == nil
+            guard isSupplement || isCardClarification,
+                  !intent.relatedMessageIDs.isEmpty,
+                  intent.relatedMessageIDs.count <= ConversationWorkingMemory.maximumSources,
+                  intent.relatedMessageIDs.contains(where: { $0 != creationRequestID }),
+                  intent.relatedMessageIDs.allSatisfy({ $0 == creationRequestID || resolves($0, before: sourceIndex) }) else { return false }
+            verified.insert(id)
+            return true
+        }
+        return references.allSatisfy { $0 == creationRequestID || resolves($0, before: history.count) }
+    }
+
+    /// Saved intent edges describe context, never restore a live simulation.
+    private func referencedDidiSimulation(_ route: ConversationRoute, history: [AssistantMessage],
+                                          conversationID: UUID) -> (sessionID: UUID, anchorID: UUID)? {
+        guard route.mode == .didiRide, route.relation == .reference,
+              let anchor = history.last(where: { $0.role == "assistant" && $0.didiSimulationID != nil }),
+              let sessionID = anchor.didiSimulationID,
+              isCurrentDidiSimulation(sessionID: sessionID, messageID: anchor.id, conversationID: conversationID),
+              Self.didiReferenceChainResolves(route.relatedMessageIDs ?? [], history: history, anchorID: anchor.id) else { return nil }
+        return (sessionID, anchor.id)
+    }
+
     func isCurrentPaotuiCard(_ card: PaotuiChatCard) -> Bool { paotuiCardPresentation(card).isCurrent }
     func selectPaotui(_ card: PaotuiChatCard, _ selection: PaotuiChatSelection) {
         guard paotuiCardPresentation(card).allows(selection.action), let handler = paotuiSelection,
@@ -523,7 +659,7 @@ final class AssistantConversation: ObservableObject {
         contextReferences = messages.last(where: { $0.role == "assistant" }).map { references(for: $0) } ?? []
         loading = false
         saveCurrent()
-        transientStates[currentConversationID] = .init(error: error, attachments: retryAttachments, route: lastRoute, replyID: lastRoutedReplyID)
+        transientStates[currentConversationID] = .init(error: error, attachments: retryAttachments, route: lastRoute, replyID: lastRoutedReplyID, groundFailureMode: groundFailureMode, groundFailureQuestion: groundFailureQuestion)
     }
 
     /// Keep background entries until their cancellation handlers restore each
@@ -563,7 +699,7 @@ final class AssistantConversation: ObservableObject {
         focusedTaskID = nil
         messages = []; draft = ""; selectedFrame = nil; selectedSequence = []
         retryAttachments = []
-        contextReferences = []; error = ""
+        contextReferences = []; error = ""; groundFailureMode = nil; groundFailureQuestion = ""
         lastRoutedReplyID = nil; lastRoute = nil
         persist()
     }
@@ -586,7 +722,8 @@ final class AssistantConversation: ObservableObject {
         focusedTaskID = nil
         cancel()
         onConversationCleared?(currentConversationID)
-        messages = []; draft = ""; selectedFrame = nil; selectedSequence = []; error = ""; contextReferences = []; retryAttachments = []
+        messages = []; draft = ""; selectedFrame = nil; selectedSequence = []; error = ""; groundFailureMode = nil; groundFailureQuestion = ""; contextReferences = []; retryAttachments = []
+        transientStates.removeValue(forKey: currentConversationID)
         clearFlightPresentations()
         saveCurrent()
     }
@@ -643,7 +780,7 @@ final class AssistantConversation: ObservableObject {
             $0.id != origin && $0.recipient == targetRecipient && !$0.messages.contains { excludedMessageIDs.contains($0.id) }
         }.map { record in
             AssistantConversationContextSource(id: record.id, kind: .conversation, title: record.title,
-                text: record.messages.map { ($0.role == "user" ? "用户：" : "助手：") + $0.text }.joined(separator: "\n"),
+                text: record.messages.map(ConversationQueuePresentation.contextMessage).map { ($0.role == "user" ? "用户：" : "助手：") + $0.text }.joined(separator: "\n"),
                 updatedAt: record.updatedAt)
         }
         let tasks = taskRecords.filter { !blockedTasks.contains($0.id) }.map { record in
@@ -722,6 +859,7 @@ final class AssistantConversation: ObservableObject {
         contextReferences = messages.last(where: { $0.role == "assistant" }).map { references(for: $0) } ?? []
         let transient = transientStates[record.id]
         error = transient?.error ?? ""; retryAttachments = transient?.attachments ?? record.draftAttachments ?? []
+        groundFailureMode = transient?.groundFailureMode; groundFailureQuestion = transient?.groundFailureQuestion ?? ""
         lastRoute = transient?.route; lastRoutedReplyID = transient?.replyID
         if let live = liveRequests[record.id] {
             generation = live.token; request = live.task; pendingMessageID = live.userMessageID
@@ -774,6 +912,7 @@ final class AssistantConversation: ObservableObject {
         guard !loading else { return "请等待当前回答完成后再重试" }
         guard message.role == "assistant", messages.last == message else { return "只能重试当前对话的最新回答，已有后续对话会完整保留" }
         guard message.paotuiCard == nil else { return "跑腿卡片请在当前对话修改信息或重新询价，不能通过重试文字重复创建订单" }
+        guard message.didiSimulationID == nil else { return "打车模拟请使用卡片继续或重新体验，不通过重试文字重新执行。" }
         guard message.xhsCard == nil else { return "小红书接入已暂缓；这条历史结果仅供查看。" }
         guard message.taskID == nil, let question = messages.dropLast().last(where: { $0.role == "user" }), question.taskID == nil else {
             return "这是手机任务回执，请使用任务的重试或继续操作"
@@ -793,6 +932,9 @@ final class AssistantConversation: ObservableObject {
         guard messages.count < 100 else { return "这段对话已达到保存上限，请开始新对话；已有内容不会被删除" }
         if message.flightOffers != nil || message.flightQuery != nil {
             guard flightQuery != nil, (question.attachments ?? []).isEmpty else { return "当前旅行查询暂不可重试，请重新提问" }
+        }
+        if message.groundQuery != nil {
+            guard groundQuery != nil, ["train", "bus"].contains(message.groundTravelMode ?? ""), (question.attachments ?? []).isEmpty else { return "当前车票查询暂不可重试，请重新提问" }
         }
         return nil
     }
@@ -824,13 +966,14 @@ final class AssistantConversation: ObservableObject {
         guard !recipient.isEmpty, recipient == key else { error = "当前模型服务与原对话不同，请返回原服务后重试"; return false }
         guard let questionIndex = messages.dropLast().lastIndex(where: { $0.role == "user" }) else { return false }
         let question = messages[questionIndex], attachments = question.attachments ?? []
-        let history = Array(messages[..<questionIndex])
+        let history = Array(messages[..<questionIndex]).map(ConversationQueuePresentation.contextMessage)
         let shareHistory = sharedContextEnabled, submittedConversations = conversations
         let submittedTaskContext = ConversationTaskScope.taskContext(taskContext?() ?? "{}",
             taskIDs: ConversationTaskScope.linkedTaskIDs(in: history, selectedTaskID: focusedTaskID))
         let nativeFlightQuery = message.flightOffers != nil || message.flightQuery != nil
-        let providerQuery = message.flightQuery ?? message.flightOffers?.first?.query ?? question.text
-        if nativeFlightQuery, providerQuery.isEmpty || providerQuery.count > 4000 {
+        let nativeGroundQuery = message.groundQuery != nil
+        let providerQuery = message.groundQuery ?? message.flightQuery ?? message.flightOffers?.first?.query ?? question.text
+        if (nativeFlightQuery || nativeGroundQuery), providerQuery.isEmpty || providerQuery.count > 4000 {
             error = "原旅行查询内容无效，请重新提问"; return false
         }
         activeMemoryStore = memories
@@ -868,6 +1011,9 @@ final class AssistantConversation: ObservableObject {
                     guard let query = self?.flightQuery else { throw RetryIssue(message: "旅行查询已关闭，已保留原回答") }
                     answer = try await query(providerQuery + "\n本次仅重新查询，不预订、不创建订单、不付款、不修改行程。")
                     offers = CtripFlightParser.offers(answer, query: providerQuery)
+                } else if nativeGroundQuery {
+                    guard let query = self?.groundQuery else { throw RetryIssue(message: "车票查询已关闭，已保留原回答") }
+                    answer = try await query(providerQuery + "\n本次仅重新查询，不预订、不创建订单、不付款、不修改行程。")
                 } else if attachments.isEmpty, recent.allSatisfy({ ($0.attachments ?? []).isEmpty }), ConnectedConversationClient.supports(settings) {
                     usedReferences = references; self?.contextReferences = references
                     let reply = try await ConnectedConversationClient(settings: settings, apiKey: apiKey).answer(question: question.text, history: recent, memoryContext: context, assistantIdentity: prepared.identity)
@@ -882,11 +1028,12 @@ final class AssistantConversation: ObservableObject {
                 guard prepared.recallRevision == nil || prepared.recallRevision == memories.recallRevision else { throw RetryIssue(message: "记忆已更新，旧的回答未采用，原回答已保留") }
                 guard !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, answer.count <= 60_000 else { throw RetryIssue(message: "重试没有返回有效回答，原回答已保留") }
                 self.messages.append(AssistantMessage(role: "assistant", text: answer, references: usedReferences.isEmpty ? nil : usedReferences,
-                    responseModel: responseModel, usedWebSearch: searched, flightOffers: offers, flightQuery: nativeFlightQuery ? providerQuery : nil))
+                    responseModel: responseModel, usedWebSearch: searched, flightOffers: offers, flightQuery: nativeFlightQuery ? providerQuery : nil,
+                    groundQuery: nativeGroundQuery ? providerQuery : nil, groundTravelMode: nativeGroundQuery ? message.groundTravelMode : nil))
                 self.lastRoutedReplyID = nil
                 self.contextReferences = usedReferences
                 self.loading = false; self.request = nil; self.error = ""; self.saveCurrent()
-                if settings.useMemories == true { memories.learnConversation(id: conversationID, messages: self.messages, settings: settings, apiKey: apiKey) }
+                if settings.useMemories == true { memories.learnConversation(id: conversationID, messages: self.messages.map(ConversationQueuePresentation.contextMessage), settings: settings, apiKey: apiKey) }
             } catch {
                 guard let self, self.generation == token, self.currentConversationID == conversationID else { return }
                 self.loading = false; self.request = nil
@@ -895,6 +1042,33 @@ final class AssistantConversation: ObservableObject {
             }
         }
         return true
+    }
+
+    private static func explicitGroundFailureMode(_ question: String) -> String? {
+        let lower = question.lowercased()
+        let coach = ["汽车票", "大巴", "长途客车", "长途汽车", "客运"].contains { lower.contains($0) } ||
+            lower.range(of: #"(?<![a-z])bus(?![a-z])"#, options: .regularExpression) != nil
+        let rail = ["火车", "高铁", "动车", "铁路"].contains { lower.contains($0) } ||
+            lower.range(of: #"(?<![a-z])train(?![a-z])"#, options: .regularExpression) != nil
+        guard coach != rail else { return nil }
+        return coach ? "bus" : "train"
+    }
+
+    /// A fallback requires the original human text to be a direct query. A
+    /// model route alone is insufficient for discussion or translation.
+    private static func explicitGroundSearch(_ question: String) -> String? {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !["如何", "怎么", "为什么", "讲解", "解释", "讨论", "介绍", "翻译", "含义", "历史", "原理", "攻略", "政策", "教程", "退票", "改签", "模型", "玩具", "绘画", "壁纸", "图片", "图像"].contains(where: { trimmed.contains($0) }) else { return nil }
+        let query = trimmed.range(of: #"^(?:(?:请|麻烦|帮我|给我|我想|我要|想要|现在|能否|能不能|可以|能帮我)\s*)*(?:查(?:询)?|搜(?:索)?)"#, options: .regularExpression) != nil
+        let route = trimmed.range(of: #"[\p{Han}0-9]{2,40}(?:到|至|→)[\p{Han}0-9]{2,40}"#, options: .regularExpression) != nil
+        let ticket = ["票", "车次", "班次", "余票", "时刻"].contains { trimmed.contains($0) }
+        let compactRoute = trimmed.range(of: #"^[\p{Han}0-9\s./-]{1,40}(?:到|至|→)[\p{Han}0-9\s./-]{1,40}(?:火车票|高铁|动车|铁路|汽车票|大巴|长途客车|长途汽车|客运)$"#, options: .regularExpression) != nil
+        guard (query && (ticket || route)) || compactRoute else { return nil }
+        return explicitGroundFailureMode(trimmed)
+    }
+
+    private static func groundFallbackCancelled(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
     }
 
     @discardableResult
@@ -915,7 +1089,7 @@ final class AssistantConversation: ObservableObject {
         let key = settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines) + "|" + PrivacyConsent.recipient(settings)
         if !recipient.isEmpty, recipient != key { newConversation() }
         recipient = key
-        let memoryHistory = messages
+        let memoryHistory = messages.map(ConversationQueuePresentation.contextMessage)
         let submittedFlightOpeningRevision = flightOpeningPresentationRevision
         let submittedSelectedTaskID = focusedTaskID
         let submittedPendingTask = pendingTaskSubmission?().flatMap { $0.conversationID == currentConversationID ? $0 : nil }
@@ -924,7 +1098,7 @@ final class AssistantConversation: ObservableObject {
             routingTaskContextInConversation?(text, memoryHistory, currentConversationID) ?? routingTaskContext?(text, memoryHistory) ?? taskContext?() ?? "{}", taskIDs: sessionTaskIDs)
         let submittedControlContext = ConversationTaskScope.controlContext(taskControlContext?(), taskIDs: sessionTaskIDs, pendingTaskID: submittedPendingTask?.taskID)
         let submittedBackgroundSessions = ConversationTaskScope.backgroundSessions(backgroundTaskSessions?() ?? [:], taskIDs: sessionTaskIDs)
-        let routeRequest = unifiedRoute, flightRequest = flightQuery, errandsRequest = paotuiQuery
+        let routeRequest = unifiedRoute, flightRequest = flightQuery, groundRequest = groundQuery, errandsRequest = paotuiQuery
         let shareHistory = sharedContextEnabled, submittedConversations = conversations
         contextReferences = []
         let message = AssistantMessage(role: "user", text: text, screenDate: frame?.capturedAt ?? sequence.last?.capturedAt,
@@ -933,12 +1107,13 @@ final class AssistantConversation: ObservableObject {
                                         timeZoneIdentifier: TimeZone.current.identifier)
         messages.append(message); pendingMessageID = message.id
         if messages.count > 100 { messages.removeFirst(messages.count - 100) }
-        draft = ""; error = ""
+        draft = ""; error = ""; groundFailureMode = nil; groundFailureQuestion = ""
         let conversationID = currentConversationID
         let live = beginRequest(message: message, canBackground: frame == nil && sequence.isEmpty, in: conversationID)
         let token = live.token
         saveCurrent()
         let work = Task { [weak self] in
+            var groundFallback: String?
             do {
                 let memoryStarted = ProcessInfo.processInfo.systemUptime
                 let preparedMemory = await memories.prepareConversation(id: conversationID, messages: memoryHistory, question: text, settings: settings)
@@ -973,7 +1148,29 @@ final class AssistantConversation: ObservableObject {
                     timeZoneIdentifier: message.timeZoneIdentifier ?? TimeZone.current.identifier, backgroundSessions: submittedBackgroundSessions,
                     selectedTaskID: submittedSelectedTaskID, conversationID: conversationID, pendingTask: submittedPendingTask)
                 let routingStarted = ProcessInfo.processInfo.systemUptime
-                var route = try await Self.retryReadOnly(settings: settings) { try await routeRequest?(routingInput) }
+                var route: ConversationRoute?
+                do {
+                    route = try await Self.retryReadOnly(settings: settings) { try await routeRequest?(routingInput) }
+                } catch {
+                    // Routing may be unavailable before any provider call.
+                    // Only offer a user-triggered generic lookup when the
+                    // original text is itself a clear single-mode search.
+                    if !Self.groundFallbackCancelled(error), attachments.isEmpty, frame == nil, sequence.isEmpty {
+                        groundFallback = Self.explicitGroundSearch(text)
+                    }
+                    throw error
+                }
+                let didiReference = route.flatMap { self?.referencedDidiSimulation($0, history: safeHistory, conversationID: conversationID) }
+                if route?.mode == .didiRide, route?.relation == .reference,
+                   Self.isUnboundDidiSelectionReference(text),
+                   let didiReference {
+                    // This is a card-selection clarification, not a pending
+                    // task form. Keep the active itinerary and registry intact.
+                    route = .init(mode: .clarify, request: "",
+                        message: "请说明具体地点，或在上方打车卡片中选择；本次未修改行程。",
+                        relatedMessageIDs: [didiReference.anchorID], relation: .reference)
+                    route?.decisionSource = "didiUnboundReference"
+                }
                 if route?.mode == .flightOpen {
                     // Only this live human turn supplies the process-local
                     // opening lease. Decoded/archived model fields cannot do so.
@@ -1006,10 +1203,35 @@ final class AssistantConversation: ObservableObject {
                 var searched: Bool? = nil
                 var flightOffers: [CtripFlightOffer]? = nil
                 var completedFlightQuery: String? = nil
+                var completedGroundQuery: String? = nil
+                var completedGroundMode: String? = nil
                 var paotuiCard: PaotuiChatCard? = nil
+                var didiSessionID: UUID? = nil
+                var didiFollowUpID: UUID? = nil
                 var usedReferences: [AssistantConversationContextHit] = []
                 if route?.mode == .xiaohongshuQuery {
                     throw RetryIssue(message: "小红书 MCP 暂未接入。")
+                }
+                else if route?.mode == .didiRide {
+                    guard attachments.isEmpty, visuals.isEmpty else { throw RetryIssue(message: "打车模拟暂不读取附件或画面，请用文字说明行程。") }
+                    if self?.currentConversationID == conversationID {
+                        if route?.relation == .reference, let existingID = didiReference?.sessionID {
+                            let prior = DidiChatSimulationRegistry.shared.request(sessionID: existingID)
+                            if prior.count + text.count + 6 <= 4000 {
+                                didiFollowUpID = existingID
+                                answer = "已记录补充，请在上方打车模拟卡片中核对并选择地点。"
+                            } else {
+                                answer = "行程补充较长，请重新发起并完整说明行程，原卡片未变。"
+                            }
+                        } else if route?.relation == .reference {
+                            answer = "没有找到可关联的打车模拟，请重新完整说明上车点和目的地。原对话内容已保留。"
+                        } else {
+                            didiSessionID = UUID()
+                            answer = "打车模拟 · 先确定行程"
+                        }
+                    } else {
+                        answer = "打车模拟尚未开始，请回到本对话重新发起。"
+                    }
                 }
                 else if route?.mode == .paotuiQuery {
                     guard let query = errandsRequest else { throw RetryIssue(message: "美团会话模块尚未就绪，请稍后重试") }
@@ -1022,6 +1244,28 @@ final class AssistantConversation: ObservableObject {
                     answer = try await flightQuery(flightQuestion)
                     flightOffers = CtripFlightParser.offers(answer, query: flightQuestion)
                     completedFlightQuery = flightQuestion
+                } else if route?.mode == .groundQuery {
+                    guard let groundQuery = groundRequest else { throw RetryIssue(message: "车票查询模块尚未就绪，请检查携程连接后重试") }
+                    let query = route!.request
+                    let lowered = query.lowercased()
+                    let isCoach = ["汽车票", "大巴", "长途客车", "长途汽车", "客运", "bus"].contains { lowered.contains($0) }
+                    let isRail = ["火车", "高铁", "动车", "铁路", "train"].contains { lowered.contains($0) } || (!isCoach && lowered.contains("车次"))
+                    guard isRail != isCoach else { throw RetryIssue(message: "请明确查询火车票还是长途汽车票") }
+                    do {
+                        answer = try await groundQuery(query)
+                    } catch {
+                        // Only this specific provider failure can offer a
+                        // user-initiated generic search, and only when the
+                        // original human question explicitly names one mode.
+                        let mode = isRail ? "train" : "bus"
+                        if !Self.groundFallbackCancelled(error), attachments.isEmpty, frame == nil, sequence.isEmpty,
+                           Self.explicitGroundSearch(text) == mode {
+                            groundFallback = mode
+                        }
+                        throw error
+                    }
+                    completedGroundQuery = query
+                    completedGroundMode = isRail ? "train" : "bus"
                 } else if frame == nil, sequence.isEmpty, attachments.isEmpty,
                    rememberedRecent.allSatisfy({ ($0.attachments ?? []).isEmpty }), ConnectedConversationClient.supports(settings) {
                     usedReferences = references
@@ -1046,7 +1290,7 @@ final class AssistantConversation: ObservableObject {
                 if (route == nil || route?.mode == .chat), Self.unhandedActionClaim(question: text, answer: answer) {
                     throw AgentError.message("本次只收到文字回复，尚未交接手机执行；没有据此创建或修改手机内容。原请求已保留，请重新发送。")
                 }
-                var reply = AssistantMessage(role: "assistant", text: answer, references: usedReferences.isEmpty ? nil : usedReferences, responseModel: responseModel, usedWebSearch: searched, flightOffers: flightOffers, flightQuery: completedFlightQuery, paotuiCard: paotuiCard)
+                var reply = AssistantMessage(role: "assistant", text: answer, references: usedReferences.isEmpty ? nil : usedReferences, responseModel: responseModel, usedWebSearch: searched, flightOffers: flightOffers, flightQuery: completedFlightQuery, groundQuery: completedGroundQuery, groundTravelMode: completedGroundMode, paotuiCard: paotuiCard, didiSimulationID: didiSessionID)
                 if let route {
                     var intent = ConversationWorkingMemory.record(route: route, user: message, replyID: reply.id,
                         history: safeHistory)
@@ -1059,6 +1303,13 @@ final class AssistantConversation: ObservableObject {
                 // synchronous route-to-worker handoff, even after backgrounding.
                 defer { self.onProcessingChange?() }
                 let saved = self.appendReply(reply, token: token, in: conversationID, references: usedReferences, route: route, notifyActivity: false)
+                if saved, let didiFollowUpID, self.currentConversationID == conversationID {
+                    _ = DidiChatSimulationRegistry.shared.appendRequest(text, sessionID: didiFollowUpID, conversationID: conversationID)
+                }
+                if saved, let didiSessionID, self.currentConversationID == conversationID {
+                    DidiChatSimulationRegistry.shared.end(conversationID: conversationID)
+                    DidiChatSimulationRegistry.shared.begin(sessionID: didiSessionID, conversationID: conversationID, request: text)
+                }
                 if let actionRoute {
                     let handler = self.onActionInConversation
                     let legacyHandler = self.currentConversationID == conversationID ? self.onAction : nil
@@ -1077,12 +1328,13 @@ final class AssistantConversation: ObservableObject {
                 if saved, settings.useMemories == true {
                     let completedMessages = self.currentConversationID == conversationID ? self.messages :
                         self.conversations.first(where: { $0.id == conversationID })?.messages ?? []
-                    if !completedMessages.isEmpty { memories.learnConversation(id: conversationID, messages: completedMessages, settings: settings, apiKey: apiKey) }
+                    if !completedMessages.isEmpty { memories.learnConversation(id: conversationID, messages: completedMessages.map(ConversationQueuePresentation.contextMessage), settings: settings, apiKey: apiKey) }
                 }
             } catch {
                 guard let self, self.isLiveRequest(token, in: conversationID) else { return }
                 self.failRequest(token, in: conversationID, user: message, attachments: attachments,
-                    failure: error is CancellationError ? "请求已中断，问题已保留，请重新发送" : Self.requestFailure(error))
+                    failure: error is CancellationError ? "请求已中断，问题已保留，请重新发送" : Self.requestFailure(error),
+                    groundFallback: groundFallback)
             }
         }
         live.task = work; request = work

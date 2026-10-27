@@ -16,10 +16,10 @@ environment = (root / 'Tests/ProductState/Environment.swift').read_text()
 needle = '    init(shade: CGFloat = 1) {'
 assert environment.count(needle) == 1
 environment = environment.replace(needle, '    init(cgImage: CGImage) { self.cgImage = cgImage }\n' + needle)
-needle = '    init(capturedAt: Date = Date(), captureID: UUID? = nil, shade: CGFloat = 1) {'
+needle = '    init(capturedAt: Date = Date(), captureID: UUID? = nil, shade: CGFloat = 1, jpeg: Data = Data()) {'
 assert environment.count(needle) == 1
 environment = environment.replace(needle, '''    init(image: UIImage, capturedAt: Date = Date(), captureID: UUID? = nil) {
-        self.capturedAt = capturedAt; self.captureID = captureID; self.image = image
+        self.capturedAt = capturedAt; self.captureID = captureID; self.image = image; self.jpeg = Data()
     }
 ''' + needle)
 assert environment.count('var selectedID: String? = \"offline-device\"') == 1

@@ -663,8 +663,7 @@ final class AgentEngine: ObservableObject {
             try stillCurrent(token)
             transition(.observing, "正在观察并规划当前步骤")
             let captureStarted = Date()
-            let frame = try await freshFrame(after: after, token: token, allowPointerWake: !settings.previewOnly)
-            if !settings.previewOnly { recordObservation(frame) }
+            var frame = try await freshFrame(after: after, token: token, allowPointerWake: !settings.previewOnly)
             log("取屏耗时", String(format: "%.2f 秒", Date().timeIntervalSince(captureStarted)))
             if !settings.previewOnly { _ = try executor.validateCalibration(frame: frame) }
             do {
@@ -686,15 +685,19 @@ final class AgentEngine: ObservableObject {
                           current.width == frame.width, current.height == frame.height,
                           current.sourceWidth == frame.sourceWidth, current.sourceHeight == frame.sourceHeight,
                           current.capturedAt > frame.capturedAt, current.confirmedAt >= current.capturedAt,
+                          current.confirmedAt >= frame.confirmedAt, current.confirmedAt > after,
                           Date().timeIntervalSince(current.confirmedAt) >= 0,
                           Date().timeIntervalSince(current.confirmedAt) < 1.5 else { throw issue }
-                    // Discard every OCR ID. The model sees this actual frame, and
-                    // the ordinary pre-action validation still checks newer pixels.
+                    // Discard every OCR ID and bind both the model request and
+                    // its subsequent action validation to the same current frame.
+                    if !settings.previewOnly { _ = try executor.validateCalibration(frame: current) }
+                    frame = current
                     harnessContext = "Local OCR changed during recognition and was discarded. Use only the attached current screenshot and visual coordinates; no OCR element IDs are available."
-                    log("改用当前截图", "识别期间局部动画更新，已丢弃文字元素；动作仍需通过最新画面核验")
+                    log("改用当前截图", "识别期间画面更新，已丢弃文字元素；动作仍需通过最新画面核验")
                 }
                 try stillCurrent(token)
                 if phoneHarness != nil { log("本地布局耗时", String(format: "%.2f 秒", Date().timeIntervalSince(localStarted))) }
+                if !settings.previewOnly { recordObservation(frame) }
                 let modelStarted = Date()
                 let action = try await client.nextAction(task: planningGoal(goal), jpeg: frame.jpeg, width: frame.width, height: frame.height,
                     history: logs, keyboardAvailable: executor.ble.keyboardReady,

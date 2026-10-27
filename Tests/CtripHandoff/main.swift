@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor final class LookupGate {
     var calls = [String]()
@@ -57,6 +58,9 @@ import Foundation
         } && !UIApplication.shared.events.contains("canOpenGeneral") && !UIApplication.shared.events.contains("general"))
     }
     @MainActor static func main() async throws {
+        #if DEBUG
+        runCtripDebugCaptureChecks { name, passed in check(name, passed) }
+        #endif
         reset()
         do {
             let (vm, offer, origin) = fixture(), gate = install(vm)
@@ -66,7 +70,7 @@ import Foundation
             check("complete card opens only its selected native entry", UIApplication.shared.openedURLs == [offer.preferredNativeFlightSelectionURL!] && r.outcome == .specificAccepted && r.generalEntry == .notAttempted)
             check("selected clipboard prepared once before open", UIPasteboard.general.writes == 1 && UIPasteboard.general.string == offer.bookingSummary && UIApplication.shared.clipboardPreparedAtOpen == [true])
             check("OS acceptance notice makes no arrival claim", vm.notice == "已向携程发送打开这班航班选价页的请求，请核对实际页面")
-            check("receipt contains no provider text or URL", Set(Mirror(reflecting: r).children.compactMap(\.label)).isSubset(of: ["origin", "isSchedule", "stage", "clipboard", "specificEntry", "generalEntry", "outcome"]))
+            check("receipt contains only bounded outcome fields", Set(Mirror(reflecting: r).children.compactMap(\.label)).isSubset(of: ["origin", "isSchedule", "stage", "clipboard", "specificEntry", "generalEntry", "outcome", "selectionDiagnostic"]) && r.selectionDiagnostic == "source_exact_entry_ready")
             exactOnly("complete card")
         }
         reset()
@@ -146,8 +150,46 @@ import Foundation
             check("one logical query supplements missing clock", gate.calls.count == 1 && gate.calls[0].contains("HU7779") && gate.calls[0].contains("2026-10-30") && gate.calls[0].contains("SZX") && gate.calls[0].contains("WUH"))
             check("supplement uses newly returned fare in clipboard", r.outcome == .specificAccepted && UIPasteboard.general.string?.contains("368元") == true && UIPasteboard.general.string?.contains("07:05") == true)
             check("original source remains immutable", vm.conversation.messages[0].flightOffers == [offer])
+            check("active lookup completion replaces its progress with the accepted-request notice", !vm.notice.contains("正在补查") && vm.notice.contains("已向携程发送"))
             check("only native target opened after supplementation", UIApplication.shared.openedURLs.count == 1 && UIApplication.shared.openedURLs[0].absoluteString.contains("flight_inland_singletransition"))
             exactOnly("supplemented clock")
+        }
+        for exit in ["external-open", "guard-lookup", "new-notice", "same-new-notice", "reentrant-same-notice", "new-notice-active", "same-new-notice-active"] {
+            reset()
+            let (vm, offer, origin) = fixture(missingTime: true), gate = install(vm)
+            gate.hold = true
+            UIApplication.shared.holdSpecific = exit == "external-open" || exit.hasSuffix("-active")
+            let progress = "正在补查这班航班的信息"
+            var reentered = false
+            var observer: AnyCancellable?
+            if exit == "reentrant-same-notice" {
+                observer = vm.$notice.dropFirst().sink { value in
+                    if value == progress && !reentered { reentered = true; vm.notice = progress }
+                }
+            }
+            vm.bookFlight(offer, origin: origin); await gate.wait()
+            check("held lookup publishes its progress: " + exit, vm.notice == progress)
+            if exit == "external-open" {
+                gate.resume(); await UIApplication.shared.waitForSpecific()
+                UIApplication.shared.applicationState = .background
+                UIApplication.shared.resumeSpecific(true); await settled(origin)
+                let receipt = record("lookup external open")
+                check("accepted external open keeps its origin guard and clears only its own lookup progress", receipt.outcome == .originChanged && receipt.specificEntry == .accepted && vm.notice.isEmpty && !CtripFlightHandoffCoordinator.shared.isRunning && UIApplication.shared.openedURLs.count == 1)
+            } else if exit.hasSuffix("-active") {
+                gate.resume(); await UIApplication.shared.waitForSpecific()
+                let newer = exit == "same-new-notice-active" ? progress : "new operation on the same page"
+                vm.notice = newer
+                UIApplication.shared.resumeSpecific(true); await settled(origin)
+                check("completion cannot overwrite a newer notice while the original page stays current: " + exit, record(exit).outcome == .specificAccepted && vm.notice == newer && UIApplication.shared.openedURLs.count == 1 && !CtripFlightHandoffCoordinator.shared.isRunning)
+            } else {
+                vm.conversation.flightOpeningPresentationRevision = UUID()
+                if exit == "new-notice" { vm.notice = "new page operation notice" }
+                if exit == "same-new-notice" { vm.notice = progress }
+                gate.resume(); await settled(origin)
+                let expected = exit == "guard-lookup" ? "" : exit == "new-notice" ? "new page operation notice" : progress
+                check("guard completion respects progress ownership: " + exit, record(exit).outcome == .originChanged && vm.notice == expected && UIApplication.shared.openedURLs.isEmpty && UIPasteboard.general.writes == 0 && !CtripFlightHandoffCoordinator.shared.isRunning)
+            }
+            observer?.cancel()
         }
         for missing in ["舱位：经济舱", "航程类型：直飞"] {
             reset()
@@ -181,6 +223,7 @@ import Foundation
             let (vm, offer, origin) = fixture(missingTime: true), gate = install(vm, response: text)
             vm.bookFlight(offer, origin: origin); await settled(origin)
             check("bounded lookup rejects " + name, gate.calls.count == 1 && record(name).outcome == .missingInformation && UIPasteboard.general.writes == 0 && UIApplication.shared.events.isEmpty)
+            check("rejected lookup has a bounded diagnostic: " + name, record(name).selectionDiagnostic != nil && record(name).selectionDiagnostic!.count < 80)
         }
         reset()
         do {
@@ -195,6 +238,7 @@ import Foundation
             let (vm, offer, origin) = fixture(missingTime: true), gate = install(vm); gate.fails = true
             vm.bookFlight(offer, origin: origin); await settled(origin)
             check("query error cannot loop or degrade to copying", gate.calls.count == 1 && record("lookup error").outcome == .lookupFailed && UIPasteboard.general.writes == 0 && UIApplication.shared.events.isEmpty)
+            check("lookup failure replaces its own progress with the terminal failure", vm.notice == "补查这班航班失败，请稍后重试")
         }
         reset()
         do {

@@ -28,9 +28,13 @@ final class TaskActivityController: ObservableObject {
     private var terminalAssertion: UIBackgroundTaskIdentifier = .invalid
     private let terminalDisplayNanoseconds: UInt64
     private let defaults: UserDefaults
+    private let endActivity: (Activity<AgentActivityAttributes>, ActivityContent<AgentActivityAttributes.ContentState>?, ActivityUIDismissalPolicy) async -> Void
     var onFirstUseGuide: (() -> Void)?
-    init(defaults: UserDefaults = .standard, terminalDisplayNanoseconds: UInt64 = 10_000_000_000) {
-        self.defaults = defaults; self.terminalDisplayNanoseconds = terminalDisplayNanoseconds
+    init(defaults: UserDefaults = .standard, terminalDisplayNanoseconds: UInt64 = 10_000_000_000,
+         endActivity: @escaping (Activity<AgentActivityAttributes>, ActivityContent<AgentActivityAttributes.ContentState>?, ActivityUIDismissalPolicy) async -> Void = { activity, content, policy in
+             await activity.end(content, dismissalPolicy: policy)
+         }) {
+        self.defaults = defaults; self.terminalDisplayNanoseconds = terminalDisplayNanoseconds; self.endActivity = endActivity
         // A previous process cannot still own our engine. Do not leave a stale
         // activity implying that an interrupted task continues after relaunch.
         let oldActivities = Activity<AgentActivityAttributes>.activities
@@ -140,6 +144,7 @@ final class TaskActivityController: ObservableObject {
            lastLiveTaskID != record.id || lastLiveSessionID != sessionID { return }
         if enabled, record == nil, terminalToken != nil || pendingTerminalKey != nil { return }
         let revision = UUID(); presentationRevision = revision
+        if !enabled { error = "" }
         if !enabled || !final || releasing { cancelTerminalPresentation() }
         if enabled, keepTerminal, let record { pendingTerminalKey = .init(taskID: record.id, sessionID: sessionID, phase: phase) }
         hasTaskPresentation = enabled && record != nil && (!final || releasing || keepTerminal)
@@ -156,11 +161,23 @@ final class TaskActivityController: ObservableObject {
     }
     private func apply(record: PhoneTaskRecord?, phase: AgentPhase, step: Int, action: String?, enabled: Bool, sessionID: UUID, releasing: Bool, canPause: Bool, canStop: Bool, revision: UUID) async {
         guard enabled, let record else {
+            // A later foreground task may already have taken presentation
+            // ownership while an earlier ActivityKit update was suspended.
+            // Never end its only reusable activity after the app backgrounds.
+            guard presentationRevision == revision else { return }
             cancelTerminalPresentation()
-            if presentationRevision == revision { hasTaskPresentation = false }
-            if let activity { await activity.end(nil, dismissalPolicy: .immediate); self.activity = nil }
+            hasTaskPresentation = false
+            error = ""
+            if let activity {
+                await endActivity(activity, nil, .immediate)
+                if self.activity === activity { self.activity = nil }
+            }
             return
         }
+        // Do not create a stale queued presentation after a newer close. A
+        // queued initial state is still needed when a current terminal state
+        // owns the presentation, so that completion can be shown accurately.
+        if presentationRevision != revision && !hasTaskPresentation { return }
         let final = [.completed, .failed, .stopped, .idle, .preview].contains(phase)
         let isTerminal = [.completed, .failed, .stopped].contains(phase) && !releasing
         if isTerminal, lastLiveTaskID != record.id || lastLiveSessionID != sessionID { return }
@@ -181,7 +198,8 @@ final class TaskActivityController: ObservableObject {
         state.displayTaskID = record.id
         if let activity, activity.attributes.taskID != record.id {
             if UIApplication.shared.applicationState == .active {
-                await activity.end(nil, dismissalPolicy: .immediate); self.activity = nil
+                await endActivity(activity, nil, .immediate)
+                if self.activity === activity { self.activity = nil }
             } else {
                 // ActivityKit cannot create a replacement while backgrounded.
                 // Reuse the existing display, with an explicit current link and
@@ -205,23 +223,47 @@ final class TaskActivityController: ObservableObject {
                     retainTerminal(activity, key: key)
                 } else {
                     cancelTerminalPresentation()
-                    await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(300))); self.activity = nil
+                    await endActivity(activity, content, .after(Date().addingTimeInterval(300)))
+                    if self.activity === activity { self.activity = nil }
                 }
             } else {
-                pendingTerminalKey = nil; hasTaskPresentation = false
+                if presentationRevision == revision {
+                    pendingTerminalKey = nil; hasTaskPresentation = false; error = ""
+                }
             }
             return
         }
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { error = "系统未允许实时活动，请在系统设置中检查 Sela 权限"; return }
-        if let activity { await activity.update(content); error = "" }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            if presentationRevision == revision {
+                hasTaskPresentation = false
+                error = "系统未允许实时活动，请在系统设置中检查 Sela 权限"
+            }
+            return
+        }
+        if let activity {
+            await activity.update(content)
+            if presentationRevision == revision { hasTaskPresentation = true; error = "" }
+        }
         else if !final && UIApplication.shared.applicationState == .active {
             do {
-                activity = try Activity.request(attributes: AgentActivityAttributes(taskID: record.id), content: content, pushType: nil); error = ""
+                activity = try Activity.request(attributes: AgentActivityAttributes(taskID: record.id), content: content, pushType: nil)
+                if presentationRevision == revision { hasTaskPresentation = true; error = "" }
                 if !defaults.bool(forKey: "sela.activity.firstUseGuideShown.v1") {
                     defaults.set(true, forKey: "sela.activity.firstUseGuideShown.v1"); onFirstUseGuide?()
                 }
             }
-            catch { self.error = "实时活动暂时无法开启（" + String((error as NSError).code) + "）；任务仍可在 App 内查看" }
+            catch {
+                if presentationRevision == revision {
+                    hasTaskPresentation = false
+                    self.error = "实时活动暂时无法开启（" + String((error as NSError).code) + "）；任务仍可在 App 内查看"
+                }
+            }
+        } else if !final && presentationRevision == revision {
+            // An end already handed to ActivityKit cannot be recalled. The
+            // platform disallows a replacement until the app is foregrounded.
+            // The host will send its current task snapshot on foreground return.
+            hasTaskPresentation = false
+            error = "实时活动暂不可显示，返回 Sela 后恢复"
         }
     }
     private func retainTerminal(_ activity: Activity<AgentActivityAttributes>, key: TerminalKey) {
@@ -247,7 +289,7 @@ final class TaskActivityController: ObservableObject {
         queue = Task { [weak self] in
             await previous?.value
             guard let self, self.terminalToken == token, let activity = self.activity else { return }
-            await activity.end(activity.content, dismissalPolicy: .after(Date().addingTimeInterval(300)))
+            await self.endActivity(activity, activity.content, .after(Date().addingTimeInterval(300)))
             if self.activity === activity { self.activity = nil }
             if self.terminalToken == token {
                 self.cancelTerminalPresentation(); self.hasTaskPresentation = false

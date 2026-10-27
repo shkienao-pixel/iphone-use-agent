@@ -12,7 +12,7 @@ xcrun swiftc -D DEBUG -parse-as-library -module-cache-path "$check_dir/module-ca
   "$project_dir/Shared/ComposerAttachment.swift" "$project_dir/Shared/NativeTaskResult.swift" \
   "${snapshot_sources[@]}" \
   "$project_dir/PhoneAgent/Stores/AssistantConversationStore.swift" "$project_dir/PhoneAgent/Stores/TaskHistoryStore.swift" \
-  "$project_dir/PhoneAgent/Services/AssistantConversation.swift" "$check_dir/Environment.swift" \
+  "$project_dir/PhoneAgent/Services/DidiChatSimulationRegistry.swift" "$project_dir/PhoneAgent/Services/AssistantConversation.swift" "$check_dir/Environment.swift" \
   "$project_dir/Tests/NativeTaskSnapshots/main.swift" -o "$check_dir/checks"
 "$check_dir/checks"
 python3 "$project_dir/Tests/NativeTaskSnapshots/wiring.py"

@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 enum AgentError: Error { case message(String) }
 struct HandoffTestLog { var title:String; var detail:String }
 struct HandoffTestRecord { var id:UUID; var goal:String; var updatedAt:Date; var logs:[HandoffTestLog] }
@@ -19,5 +20,5 @@ struct HandoffTestQueueItem { var id:UUID; var record:HandoffTestRecord }
     var history=HandoffTestHistory()
     var taskQueue=HandoffTestQueue()
     var unifiedFocusedTaskID:UUID?
-    var notice=""
+    @Published var notice=""
 }

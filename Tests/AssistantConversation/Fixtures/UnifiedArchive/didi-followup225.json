@@ -1,0 +1,120 @@
+{
+  "recipient": "https://api.openai.com/v1/responses|ChatGPT 计划",
+  "updatedAt": 814772804.767791,
+  "title": "帮我打车，从人民广场到虹桥机场",
+  "id": "AD9ABB2D-C075-47D8-879A-7297E1C24C76",
+  "contextReferences": [],
+  "messages": [
+    {
+      "createdAt": 814772750.943657,
+      "id": "ED4D8317-87AC-4CDF-952D-8FBB89896385",
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "text": "帮我打车，从人民广场到虹桥机场",
+      "role": "user"
+    },
+    {
+      "didiSimulationID": "64948A25-F7C5-4882-A926-6E656731CD1D",
+      "createdAt": 814772756.743863,
+      "id": "1D3D3CF0-C9FE-4DFD-BC6C-608DB40CCCB6",
+      "text": "打车模拟 · 先确定行程",
+      "role": "assistant",
+      "intent": {
+        "memorySourceIDs": [],
+        "relatedMessageIDs": [],
+        "mode": "didiRide",
+        "diagnostics": {
+          "routingMilliseconds": 5696,
+          "recalledSourceCount": 0,
+          "recentMessageCount": 0,
+          "decisionSource": "model",
+          "memoryMilliseconds": 28
+        },
+        "module": "didi-ride",
+        "missingInformation": [],
+        "relation": "independent"
+      }
+    },
+    {
+      "createdAt": 814772771.762904,
+      "id": "EEA2E8A2-5CF9-40B0-B6B2-BBF604C21135",
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "text": "目的地改成上海南站",
+      "role": "user"
+    },
+    {
+      "createdAt": 814772779.374901,
+      "id": "992A6702-1182-4BA8-9C9A-D866C741A6F9",
+      "text": "已记录补充，请在上方打车模拟卡片中核对并选择地点。",
+      "role": "assistant",
+      "intent": {
+        "memorySourceIDs": [],
+        "relatedMessageIDs": [
+          "1D3D3CF0-C9FE-4DFD-BC6C-608DB40CCCB6",
+          "ED4D8317-87AC-4CDF-952D-8FBB89896385"
+        ],
+        "mode": "didiRide",
+        "diagnostics": {
+          "routingMilliseconds": 7537,
+          "recalledSourceCount": 0,
+          "recentMessageCount": 2,
+          "decisionSource": "model",
+          "memoryMilliseconds": 32
+        },
+        "module": "didi-ride",
+        "missingInformation": [],
+        "relation": "reference"
+      }
+    },
+    {
+      "createdAt": 814772797.717641,
+      "id": "F0FA5663-AEE5-4964-BCD7-FF5E5FDBF3A9",
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "text": "改成第二个",
+      "role": "user"
+    },
+    {
+      "createdAt": 814772804.767474,
+      "id": "6D56DE2A-1C65-4F82-9508-A92DB0337EF0",
+      "text": "“第二个”是指打车卡片中的哪个地点选项？请告诉我地点名称。",
+      "role": "assistant",
+      "intent": {
+        "memorySourceIDs": [],
+        "pending": {
+          "needsRestatement": false,
+          "sourceMessageIDs": [
+            "F0FA5663-AEE5-4964-BCD7-FF5E5FDBF3A9"
+          ],
+          "clarificationMessageIDs": [
+            "6D56DE2A-1C65-4F82-9508-A92DB0337EF0"
+          ],
+          "originalMessageID": "F0FA5663-AEE5-4964-BCD7-FF5E5FDBF3A9",
+          "updatedAt": 814772804.767481,
+          "missingInformation": [
+            "第二个选项的具体地点"
+          ],
+          "id": "6D56DE2A-1C65-4F82-9508-A92DB0337EF0",
+          "createdAt": 814772797.717641,
+          "timeZoneIdentifier": "Asia/Shanghai"
+        },
+        "relatedMessageIDs": [
+          "992A6702-1182-4BA8-9C9A-D866C741A6F9"
+        ],
+        "mode": "clarify",
+        "diagnostics": {
+          "recalledSourceCount": 0,
+          "routingMilliseconds": 6947,
+          "recentMessageCount": 4,
+          "memoryMilliseconds": 55,
+          "decisionSource": "model"
+        },
+        "module": "clarification",
+        "missingInformation": [
+          "第二个选项的具体地点"
+        ],
+        "relation": "reference"
+      }
+    }
+  ],
+  "createdAt": 814772750.931526,
+  "draft": ""
+}

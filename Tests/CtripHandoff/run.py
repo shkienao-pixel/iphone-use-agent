@@ -6,6 +6,7 @@ p.add_argument('--source-root',type=Path)
 p.add_argument('--shared-source-root',type=Path)
 p.add_argument('--output-dir',type=Path)
 p.add_argument('--require-chat-visibility',action='store_true',help='Fail rather than skip if the chat-origin visibility overload has not been integrated')
+p.add_argument('--debug-capture',action='store_true',help='Compile opt-in debug capture and its bounded local tests; no network calls')
 a=p.parse_args();source_root=(a.source_root or ux.parents[1]).resolve()
 shared_root=(a.shared_source_root or (source_root if a.source_root else ux.parents[1])).resolve()
 out=(a.output_dir or (ux/'tests'/('replay-'+source_root.parent.name) if a.source_root else ux/'tests')).resolve();out.mkdir(parents=True,exist_ok=True)
@@ -19,6 +20,7 @@ subprocess.run(['python3',str(ux/'extract.py'),'--source-root',str(source_root),
 binary=out/'checks-final'
 args=['xcrun','swiftc','-parse-as-library','-module-cache-path',str(out/'module-cache')]
 if chat_guard: args+=['-D','CTRIP_CHAT_VISIBILITY_GUARD']
+if a.debug_capture: args+=['-D','DEBUG',str(source_root/'PhoneAgent/Services/CtripClient.swift'),str(source_root/'PhoneAgent/Debug/CtripHandoffDebugCapture.swift'),str(ux/'DebugCaptureChecks.swift')]
 args += [str(inputs[1]),str(inputs[2]),str(inputs[3]),str(inputs[4]),str(ux/'VMStubs.swift'),str(ux/'FakeUIKit.swift'),str(out/'ProductionHandoff.swift'),str(ux/'main.swift'),'-o',str(binary)]
 r=subprocess.run(args,capture_output=True,text=True);(out/'host-compile.log').write_text(r.stdout+r.stderr)
 status={'source_root':str(source_root),'shared_source_root':str(shared_root),'source_sha256':before[str(source)],'input_hashes_before':before,'compile_exit_code':r.returncode,'command':args,'chat_visibility_test_included':chat_guard,'real_clipboard_or_app_api_called':False}

@@ -1,5 +1,35 @@
 import Foundation
 
+// Presentation-only: a queue acknowledgement is an event, not a durable
+// description of the linked task's present state. Never change stored messages.
+enum ConversationQueuePresentation {
+    static let legacyAcknowledgement = "已加入任务队列，尚未开始执行。"
+    static let acknowledgement = "已加入任务队列。"
+
+    static func messageText(_ text: String, taskLinked: Bool) -> String {
+        taskLinked && text == legacyAcknowledgement ? acknowledgement : text
+    }
+
+    static func contextMessage(_ message: AssistantMessage) -> AssistantMessage {
+        guard message.role == "assistant", message.taskID != nil else { return message }
+        var copy = message
+        copy.text = messageText(message.text, taskLinked: true)
+        return copy
+    }
+
+    static func statusLabel(outcome: String?, queueState: String?, queueStarted: Bool, isCurrent: Bool) -> String? {
+        let outcomes = ["running": "进行中", "paused": "已暂停", "needsUser": "需要你处理",
+                        "completed": "已完成", "failed": "执行中断", "stopped": "已停止",
+                        "interrupted": "上次未结束", "preview": "已生成计划"]
+        let queue = ["waiting": "等待执行", "running": "正在执行", "paused": "已暂停",
+                     "suspended": "等待你确认", "completed": "已完成", "stopped": "已停止", "preview": "计划待核对"]
+        if isCurrent { return outcome.flatMap { outcomes[$0] } }
+        if let outcome, ["completed", "failed", "stopped", "preview"].contains(outcome) { return outcomes[outcome] }
+        if !queueStarted, let queueState { return queue[queueState] }
+        return outcome.flatMap { outcomes[$0] } ?? queueState.flatMap { queue[$0] }
+    }
+}
+
 struct AssistantMessage: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     var role: String
@@ -18,8 +48,13 @@ struct AssistantMessage: Identifiable, Codable, Equatable, Sendable {
     var nativeTaskResult: NativeTaskSnapshot? = nil
     /// Complete provider query, including for a successful search with no offers.
     var flightQuery: String? = nil
+    /// Read-only source query and transport category for ground travel; not execution authority.
+    var groundQuery: String? = nil
+    var groundTravelMode: String? = nil
     var paotuiCard: PaotuiChatCard? = nil
     var xhsCard: XHSConversationCard? = nil
+    /// A display anchor only. Ride state and location stay in process memory.
+    var didiSimulationID: UUID? = nil
     /// Saved interpretation only; never restored as permission to execute.
     var intent: ConversationIntentRecord? = nil
     var timeZoneIdentifier: String? = nil
@@ -552,22 +587,28 @@ enum CtripFlightParser {
         var value: String
     }
     private static let aliases: [(String, [String])] = [
-        ("乘客", ["乘客", "乘机人", "出行人数", "人数"]),
+        ("乘客", ["乘客", "乘机人", "出行人数", "人数口径", "人数"]),
+        ("成人人数", ["适用成人人数"]),
+        ("成人/舱位", ["成人/舱位"]),
         ("计价单位", ["适用人数及计价单位", "计价单位"]),
+        ("币种", ["币种"]),
         ("出发城市", ["出发城市"]), ("到达城市", ["到达城市"]),
         ("行李/退改/预订链接", ["行李/退改/预订链接"]),
+        ("出发/到达时刻对", ["出发/到达", "出发/到达时间"]),
+        ("出发/到达机场对", ["出发/到达机场"]),
         ("起降时间", ["日期时间", "起降时间", "起飞/到达时间", "起飞/到达"]),
         ("机场", ["机场/航站楼", "起降机场", "机场"]),
-        ("出发时间", ["出发日期时间", "计划起飞时间", "出发时间", "起飞时间", "起飞"]), ("到达时间", ["到达日期时间", "计划到达时间", "到达时间", "抵达时间", "到达", "抵达"]),
-        ("出发机场", ["出发机场", "起飞机场", "始发机场"]), ("到达机场", ["到达机场", "抵达机场", "降落机场"]),
-        ("出发日期", ["出发日期", "起飞日期", "日期"]), ("航班号", ["航班号", "航班号码"]),
+        ("出发信息", ["出发信息"]), ("到达信息", ["到达信息"]),
+        ("出发时间", ["出发日期时间", "计划起飞时间", "出发时间", "起飞时间", "起飞", "出发"]), ("到达时间", ["到达日期时间", "计划到达时间", "到达时间", "抵达时间", "到达", "抵达"]),
+        ("出发机场", ["出发机场及航站楼", "出发机场", "起飞机场", "始发机场"]), ("到达机场", ["到达机场及航站楼", "到达机场", "抵达机场", "降落机场"]),
+        ("出发日期", ["出发日期", "起飞日期", "航班日期", "日期"]), ("到达日期", ["到达日期", "抵达日期"]), ("航班号", ["航班号", "航班号码"]),
         ("航空公司", ["承运航司", "航空公司", "航司"]), ("舱位", ["舱位", "舱等"]),
         ("飞行时长", ["飞行时长", "飞行时间", "航程时长"]), ("总耗时", ["含等待总耗时", "总耗时", "总时长"]), ("机型", ["机型"]),
         ("中转机场", ["中转机场", "经停机场"]), ("中转行程", ["中转行程"]), ("行李", ["行李", "行李额度", "行李额"]),
-        ("标签", ["标签"]), ("说明", ["说明"]), ("中转地", ["中转等待", "中转地"]), ("航程类型", ["航程类型", "行程类型"]),
+        ("标签", ["标签"]), ("说明", ["说明"]), ("中转地", ["中转等待", "中转地"]), ("航程类型", ["航程类型", "行程类型", "是否直飞"]),
         ("中转次数", ["中转次数", "换乘次数", "转机次数"]),
         ("退改", ["退改", "退改签", "退改签政策", "退改政策"]), ("是否含税", ["是否含税", "含税口径", "税费口径"]),
-        ("价格", ["币种及报价", "经济舱参考票价", "经济舱参考价", "经济舱票价", "经济舱价格", "当前票价", "单程票价", "参考票价", "参考价格", "含税总价", "票面价格", "票面价", "参考价", "票价", "价格"]),
+        ("价格", ["币种及报价", "经济舱参考票价", "经济舱参考价", "经济舱票价", "经济舱价格", "当前票价", "单程票价", "参考票价", "参考价格", "含税总价", "票面价格", "票面价", "参考价", "票价", "报价", "价格", "金额"]),
         ("预订链接", ["携程预订链接", "携程订票链接", "原生选价链接", "原生预订链接", "选价链接", "预订链接", "订票链接"])
     ]
     private static func normalizedFieldLabel(_ value: String) -> String {
@@ -581,8 +622,13 @@ enum CtripFlightParser {
         return result
     }()
     private static func canonicalFieldLabel(_ value: String) -> String? {
-        canonicalFieldLabels[normalizedFieldLabel(value)]
+        let core = value.replacingOccurrences(of: priceTaxLabelSuffix, with: "", options: .regularExpression)
+        let name = canonicalFieldLabels[normalizedFieldLabel(core)]
+        return core == value || name == "价格" ? name : nil
     }
+    // A qualifier modifies an already known price field; it is not a new alias
+    // and is never accepted for an unknown label or arbitrary parenthetical.
+    private static let priceTaxLabelSuffix = #"\s*(?:（\s*(?:不含税|含税)\s*）|\(\s*(?:不含税|含税)\s*\))$"#
     private static let fieldLabelExpression: NSRegularExpression? = {
         let separator = #"[\s/／|｜、·及与和]*"#
         let keys = Set(aliases.flatMap(\.1).map(normalizedFieldLabel)).sorted { $0.count > $1.count }
@@ -590,6 +636,9 @@ enum CtripFlightParser {
             var pattern = key.map { NSRegularExpression.escapedPattern(for: String($0)) }.joined(separator: separator)
             if key == "币种报价" {
                 pattern += "(?:" + separator + "含" + separator + "税" + separator + "口" + separator + "径)?"
+            }
+            if canonicalFieldLabels[key] == "价格" {
+                pattern += "(?:" + String(priceTaxLabelSuffix.dropLast()) + ")?"
             }
             return pattern
         }
@@ -691,15 +740,111 @@ enum CtripFlightParser {
         guard let expression = fieldLabelExpression else { return [] }
         let matches = expression.matches(in: value, range: NSRange(value.startIndex..., in: value))
         guard matches.first?.range.location == 0 else { return [] }
-        let parsed: [Field] = matches.enumerated().compactMap { index, match in
+        let parsed: [Field] = matches.enumerated().compactMap { index, match -> Field? in
             guard let labelRange = Range(match.range(at: 1), in: value), let range = Range(match.range, in: value),
                   let name = canonicalFieldLabel(String(value[labelRange])) else { return nil }
             let end = index + 1 < matches.count ? Range(matches[index + 1].range, in: value)!.lowerBound : value.endIndex
-            let text = String(value[range.upperBound..<end]).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "；;,，")))
+            var text = String(value[range.upperBound..<end]).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "；;,，")))
             guard !text.isEmpty else { return nil }
+            let label = String(value[labelRange])
+            if name == "价格", normalizedFieldLabel(label.replacingOccurrences(of: priceTaxLabelSuffix, with: "", options: .regularExpression)) == "含税总价" {
+                text += "，含税"
+            }
+            if name == "价格", let qualifier = Self.match(priceTaxLabelSuffix, in: label) {
+                // Preserve both sources if the value contradicts its label.
+                // priceLabel rejects mixed included/excluded tax semantics.
+                text += "，" + (qualifier.contains("不含税") ? "不含税" : "含税")
+            }
             return Field(name: name, value: text)
         }
         return parsed.flatMap { field -> [Field] in
+            // The provider's paired fields are usable only when their entire
+            // contents describe exactly two endpoints. Never select one side
+            // from an ambiguous or partially unknown pair.
+            if field.name == "出发/到达时刻对" {
+                let pattern = #"^\s*((?:[01]\d|2[0-3]):[0-5]\d)\s*[-—–→]\s*((?:次日|翌日|当日|当天|同日)?\s*(?:[01]\d|2[0-3]):[0-5]\d)\s*(?:[（(]飞行约(\d{1,3}分钟)[）)])?\s*$"#
+                guard let departure = match(pattern, in: field.value, group: 1),
+                      let arrival = match(pattern, in: field.value, group: 2) else { return [field] }
+                var result = [Field(name: "出发时间", value: departure), Field(name: "到达时间", value: arrival)]
+                if let duration = match(pattern, in: field.value, group: 3) { result.append(Field(name: "飞行时长", value: "约" + duration)) }
+                return result
+            }
+            if field.name == "出发/到达机场对" {
+                let pattern = #"^\s*([\p{Han}]{2,28}机场\s*(?:T\d{1,2})?)\s+[-—–→]\s+([\p{Han}]{2,28}机场\s*(?:T\d{1,2})?)\s*$"#
+                guard let origin = match(pattern, in: field.value, group: 1),
+                      let destination = match(pattern, in: field.value, group: 2),
+                      [origin, destination].allSatisfy({ endpoint in
+                          endpoint.components(separatedBy: "机场").count == 2 &&
+                          nativeListCityCode(endpoint) != nil
+                      }),
+                      let checkedOrigin = inlineEndpointAirport(origin),
+                      let checkedDestination = inlineEndpointAirport(destination) else { return [field] }
+                return [Field(name: "出发机场", value: checkedOrigin), Field(name: "到达机场", value: checkedDestination)]
+            }
+            if field.name == "乘客", let count = match(#"^成人\s*(\d{1,2})\s*(?:位|名|人)$"#, in: field.value, group: 1) {
+                return [Field(name: "乘客", value: count + "位成人")]
+            }
+            if field.name == "成人/舱位" {
+                let parts = field.value.components(separatedBy: CharacterSet(charactersIn: "，,")).map { $0.trimmingCharacters(in: .whitespaces) }
+                guard parts.count == 2 else { return [field] }
+                // Keep both returned values, including unknown/conflicting
+                // values. The label is not permission to invent a count.
+                return [Field(name: "乘客", value: parts[0]), Field(name: "舱位", value: parts[1])]
+            }
+            if field.name == "成人人数" {
+                // The explicit field label supplies the passenger type. A
+                // generic headcount or an ambiguous value does not do so.
+                if let count = match(#"^(\d{1,2})\s*(?:位|名|人)?\s*(?:成人)?$"#, in: field.value, group: 1) {
+                    return [Field(name: "乘客", value: count + "位成人")]
+                }
+                return [Field(name: "乘客", value: "成人人数待核实"),
+                        Field(name: "说明", value: "适用成人人数：" + field.value)]
+            }
+            // A provider endpoint may put its dated clock and airport on one
+            // line. Split only that endpoint's returned facts; a terminal
+            // uncertainty note cannot replace the preceding known airport.
+            if ["出发时间", "到达时间", "出发信息", "到达信息"].contains(field.name),
+               let separator = field.value.firstIndex(where: { $0 == "，" || $0 == "," }) {
+                let endpoint = String(field.value[..<separator]).trimmingCharacters(in: .whitespaces)
+                let returnedAirport = String(field.value[field.value.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+                if endpoint.range(of: #"^(?:20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?\s+)?(?:次日|翌日|隔天|后天|当日|当天|同日)?(?:[01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil,
+                   let airport = inlineEndpointAirport(returnedAirport) {
+                    let prefix = field.name.hasPrefix("出发") ? "出发" : "到达"
+                    var result = [Field(name: prefix + "时间", value: endpoint), Field(name: prefix + "机场", value: airport)]
+                    if let note = match(terminalUncertaintyPattern, in: returnedAirport, group: 1) {
+                        result.append(Field(name: "说明", value: note))
+                    }
+                    return result
+                }
+            }
+            if ["出发信息", "到达信息"].contains(field.name),
+               let airport = match(#"^[^，,]+[，,]\s*<([^<>]{2,48})>(?:\s*(T\d{1,2})(?:航站楼)?)?\s*$"#, in: field.value, group: 1),
+               let date = sourceDate(field.value), let time = clock(field.value),
+               field.value.range(of: #"^20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?\s+(?:[01]\d|2[0-3]):[0-5]\d[，,]"#, options: .regularExpression) != nil {
+                let terminal = match(#"^[^，,]+[，,]\s*<([^<>]{2,48})>(?:\s*(T\d{1,2})(?:航站楼)?)?\s*$"#, in: field.value, group: 2)
+                let prefix = field.name == "出发信息" ? "出发" : "到达"
+                return [Field(name: prefix + "时间", value: date + " " + time),
+                        Field(name: prefix + "机场", value: airport + (terminal.map { " " + $0 } ?? ""))]
+            }
+            // The provider sometimes labels this as a yes/no question. Only
+            // unambiguous positive answers establish a direct itinerary.
+            if field.name == "航程类型", value.range(of: #"^是否直飞\s*[:：]"#, options: .regularExpression) != nil {
+                if field.value.range(of: #"^是(?:(?:[，,]\s*(?:全程)?(?:无经停|无中转)(?:[、，,]\s*(?:无经停|无中转))*)|(?:[（(]无经停[/／]中转[）)]))?$"#, options: .regularExpression) != nil {
+                    return [Field(name: field.name, value: "直飞")]
+                }
+                if field.value == "否" { return [Field(name: field.name, value: "非直飞")] }
+                return [field]
+            }
+            if ["出发机场", "到达机场"].contains(field.name),
+               let note = match(terminalUncertaintyPattern, in: field.value, group: 1),
+               let airport = inlineEndpointAirport(field.value) {
+                return [Field(name: field.name, value: airport), Field(name: "说明", value: note)]
+            }
+            if ["出发机场", "到达机场"].contains(field.name),
+               let airport = match(#"^([\p{Han}]{2,28}(?:机场)?)\s+(T\d{1,2})航站楼$"#, in: field.value, group: 1),
+               let terminal = match(#"^([\p{Han}]{2,28}(?:机场)?)\s+(T\d{1,2})航站楼$"#, in: field.value, group: 2) {
+                return [Field(name: field.name, value: airport + " " + terminal)]
+            }
             if ["出发机场", "到达机场"].contains(field.name),
                let airport = match(#"^([\p{Han}]{2,28}(?:机场)?)[，,]\s*(T\d{1,2})航站楼$"#, in: field.value, group: 1),
                let terminal = match(#"^([\p{Han}]{2,28}(?:机场)?)[，,]\s*(T\d{1,2})航站楼$"#, in: field.value, group: 2) {
@@ -776,7 +921,7 @@ enum CtripFlightParser {
         guard departureDate != nil || scope.official == false else { return nil }
         let afterDeparture = departure.replacingOccurrences(of: departureTime, with: "").replacingOccurrences(of: "出发", with: "").trimmingCharacters(in: .whitespaces)
         let nextDay = arrival.hasPrefix("次日") || arrival.hasPrefix("翌日")
-        let arrivalDate = nextDay ? departureDate.flatMap(nextDate) : (arrivalTime >= departureTime ? departureDate : nil)
+        let arrivalDate = nextDay ? departureDate.flatMap(nextDate) : nil
         var entries = [Field(name: "出发时间", value: (departureDate.map { $0 + " " } ?? "") + departureTime),
                        Field(name: "到达时间", value: (arrivalDate.map { $0 + " " } ?? "") + (nextDay && arrivalDate == nil ? "次日" : "") + arrivalTime),
                        Field(name: "到达机场", value: airport)]
@@ -836,9 +981,9 @@ enum CtripFlightParser {
               let arrival = match(pattern, in: columns[1], group: 4),
               let destination = match(pattern, in: columns[1], group: 5) else { return nil }
         let nextDay = !(match(pattern, in: columns[1], group: 3) ?? "").isEmpty
-        let arrivalDate = nextDay ? nextDate(date) : (arrival >= departure ? date : nil)
+        let arrivalDate = nextDay ? nextDate(date) : nil
         var entries = [Field(name: "出发日期", value: date), Field(name: "出发时间", value: departure),
-                       Field(name: "到达时间", value: (arrivalDate.map { $0 + " " } ?? "次日待核对 ") + arrival),
+                       Field(name: "到达时间", value: (arrivalDate.map { $0 + " " } ?? (nextDay ? "次日" : "到达日期待核对 ")) + arrival),
                        Field(name: "出发机场", value: origin), Field(name: "到达机场", value: destination)]
         if let cabin = match(#"^(经济舱|商务舱|公务舱|头等舱)"#, in: columns[2]) { entries.append(Field(name: "舱位", value: cabin)) }
         let amount = columns[2].replacingOccurrences(of: #"^(经济舱|商务舱|公务舱|头等舱)\s*"#, with: "", options: .regularExpression)
@@ -897,6 +1042,7 @@ enum CtripFlightParser {
     private static func sections(_ lines: [String]) -> [Section] {
         var result: [Section] = [], active: Section?
         let contexts = scopes(lines)
+        let overallDate = overallQueryDate(lines)
         let transfers = segmentedTransfers(lines, contexts: contexts)
         let transferStarts = Dictionary(uniqueKeysWithValues: transfers.map { ($0.heading, $0) })
         let transferLines = Set(transfers.flatMap(\.lines))
@@ -908,7 +1054,26 @@ enum CtripFlightParser {
             if transferLines.contains(index) { continue }
             let info = sourceHeading(line)
             let markdown = info.markdown, title = info.title, heading = info.isHeading
-            if let compact = compactSection(line, index: index, scope: contexts[index]) {
+            // Some live replies make each flight a top-level bullet and put
+            // its facts in indented child bullets, rather than a heading.
+            // Require a child field so a grouped one-flight reply's ordinary
+            // "航班号" field cannot accidentally split its other headings.
+            let bullet = plain(line).replacingOccurrences(of: #"^[-*•]\s+"#, with: "", options: .regularExpression)
+            let candidate = fields(line).first
+            let nestedField = index + 1 < lines.count &&
+                lines[index + 1].range(of: #"^\s{2,}[-*•]\s+"#, options: .regularExpression) != nil &&
+                !fields(lines[index + 1]).isEmpty
+            let bulletFlight = line.range(of: #"^[-*•]\s+"#, options: .regularExpression) != nil &&
+                bullet.hasPrefix("航班号") && candidate?.name == "航班号" &&
+                flightNumbers(in: candidate?.value ?? "").count == 1 && nestedField
+            if bulletFlight, let candidate {
+                if let active { result.append(active) }
+                var inherited = contexts[index].inherited
+                if !inherited.contains(where: { $0.name == "出发日期" }), let overallDate {
+                    inherited.append(Field(name: "出发日期", value: overallDate))
+                }
+                active = Section(title: candidate.value, heading: index, inherited: inherited, official: contexts[index].official)
+            } else if let compact = compactSection(line, index: index, scope: contexts[index]) {
                 if let active { result.append(active) }; active = nil
                 result.append(compact)
             } else if markdown, contexts[index].official == false, let times = scheduleHeading(title) {
@@ -941,7 +1106,7 @@ enum CtripFlightParser {
               let date = entries.first(where: { $0.name == "出发日期" }).flatMap({ sourceDate($0.value) }) ??
                 entries.first(where: { $0.name == "出发时间" }).flatMap({ sourceDate($0.value) }),
               let departure = entries.first(where: { $0.name == "出发时间" }).flatMap({ clock($0.value) }),
-              let arrival = entries.first(where: { $0.name == "到达时间" }).flatMap({ clock($0.value) }),
+              entries.first(where: { $0.name == "到达时间" }).flatMap({ clock($0.value) }) != nil,
               let price = entries.firstIndex(where: { $0.name == "价格" }), priceLabel(entries[price].value) != nil else { return nil }
         for name in required {
             guard Set(entries.filter { $0.name == name }.map(\.value)).count == 1 else { return nil }
@@ -956,10 +1121,6 @@ enum CtripFlightParser {
             entries[price].value += "，不含税"
         }
         if let index = entries.firstIndex(where: { $0.name == "出发时间" }) { entries[index].value = date + " " + departure }
-        if let index = entries.firstIndex(where: { $0.name == "到达时间" }),
-           sourceDate(entries[index].value) == nil, relativeDay(entries[index].value) == nil, arrival >= departure {
-            entries[index].value = date + " " + arrival
-        }
         let flightLabel = entries.first { $0.name == "航班号" }?.value ?? ""
         let airline = entries.first { $0.name == "航空公司" }?.value ??
             match(#"[（(]([^）)]+航空[^）)]*)[）)]"#, in: flightLabel, group: 1) ?? ""
@@ -991,6 +1152,14 @@ enum CtripFlightParser {
         var arrival: String
         var origin: String
         var destination: String
+    }
+    private static let terminalUncertaintyPattern = #"[（(]((?:出发|到达|抵达)?航站楼(?:待核实|待核对|未知|未提供|未返回))[）)]"#
+    static func inlineEndpointAirport(_ value: String) -> String? {
+        let airport = value.replacingOccurrences(of: terminalUncertaintyPattern, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<", with: "").replacingOccurrences(of: ">", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        guard !["待核实", "待核对", "未知", "未提供", "未返回"].contains(where: { airport.contains($0) }) else { return nil }
+        return airportLabel(airport)
     }
     private static func airportLabel(_ value: String) -> String? {
         let text = value.trimmingCharacters(in: .whitespaces)
@@ -1154,7 +1323,7 @@ enum CtripFlightParser {
         case "出发机场", "到达机场": return offer.field(field.name) == field.value && field.value.count <= 48
         case "航班号": return flightNumbers(in: field.value) == flightNumbers(in: offer.title)
         case "航空公司": return offer.cardTitle.contains(field.value) && field.value.count <= 24
-        case "出发日期": return offer.leg(departure: true).date == (sourceDate(field.value) ?? field.value)
+        case "出发日期", "到达日期": return offer.leg(departure: field.name == "出发日期").date == (sourceDate(field.value) ?? field.value)
         case "预订链接": return offer.bookingURL.map { field.value.contains($0.absoluteString) } ?? false
         case "舱位", "飞行时长", "总耗时", "航程类型", "计价单位": return offer.cardMetadata.contains(field.value)
         case "中转机场", "中转地": return offer.field("中转机场") == field.value
@@ -1195,6 +1364,7 @@ enum CtripFlightParser {
         if value.range(of: #"后天|第[三3]天"#, options: .regularExpression) != nil { return 2 }
         if value.range(of: #"第[四4]天"#, options: .regularExpression) != nil { return 3 }
         if value.range(of: #"次日|翌日|隔天|第[二2]天"#, options: .regularExpression) != nil { return 1 }
+        if value.range(of: #"当日|当天|同日"#, options: .regularExpression) != nil { return 0 }
         return nil
     }
     private static func clock(_ value: String) -> String? {
@@ -1208,17 +1378,15 @@ enum CtripFlightParser {
                 if let date = sourceDate(value) { return date }
                 if let day = relativeDay(value) {
                     return baseDate.flatMap { shiftedDate($0, days: day) } ??
-                        (day == 1 ? "次日" : day == 2 ? "后天" : "第四天")
+                        (day == 0 ? nil : day == 1 ? "次日" : day == 2 ? "后天" : "第四天")
                 }
                 return nil
             }
             var departureDate = explicitDate(segment.departure) ?? ""
             if departureDate.isEmpty {
                 if index == 0 { departureDate = baseDate ?? "" }
-                else if let previous, !previous.date.isEmpty, departureTime >= previous.time { departureDate = previous.date }
             }
             var arrivalDate = explicitDate(segment.arrival) ?? ""
-            if arrivalDate.isEmpty, !departureDate.isEmpty, arrivalTime >= departureTime { arrivalDate = departureDate }
             // A clock wrapping backwards is not evidence of another calendar
             // day. Even an explicit relative label must not reverse chronology.
             if let previous, !previous.date.isEmpty, !departureDate.isEmpty,
@@ -1287,13 +1455,35 @@ enum CtripFlightParser {
         guard text.count <= 300 else { return nil }
         let amount = #"(?:[¥￥]\s*\d{1,7}(?:,\d{3})*(?:\.\d{1,2})?\s*(?:元)?|(?:CNY|RMB)\s*\d{1,7}(?:,\d{3})*(?:\.\d{1,2})?\s*(?:元)?|(?:USD|HKD)\s*\d{1,7}(?:,\d{3})*(?:\.\d{1,2})?|\d{1,7}(?:,\d{3})*(?:\.\d{1,2})?\s*(?:元|人民币|美元|港元|CNY|RMB|USD|HKD))"#
         guard let range = text.range(of: #"^(?:约\s*)?"# + amount + #"(?:\s*起)?(?![\d.]|,\d)"#, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        guard let amountExpression = try? NSRegularExpression(pattern: amount, options: .caseInsensitive),
+              amountExpression.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text)) == 1 else { return nil }
         let money = String(text[range]).trimmingCharacters(in: .whitespaces)
         // Do not discard an explicit unsupported or contradictory currency
         // annotation when shortening the amount for a card. No FX inference.
         guard priceCurrencyIsConsistent(money, in: text) else { return nil }
         let tail = String(text[range.upperBound...])
-        let tax = tail.range(of: taxPattern, options: .regularExpression).map { String(tail[$0]) }
-        return money + (tax.map { " · " + $0 } ?? "")
+        let taxes = sourceTaxQualifiers(in: tail)
+        let taxKinds = Set(taxes.map { $0.hasPrefix("不") || $0.hasPrefix("未") || $0 == "税费另计" ? "excluded" : "included" })
+        guard taxKinds.count <= 1 else { return nil }
+        return money + (taxes.first.map { " · " + $0 } ?? "")
+    }
+
+    private static func sourceTaxQualifiers(in text: String, yesNoAnswer: Bool = false) -> [String] {
+        let expression = try? NSRegularExpression(pattern: taxPattern)
+        var values = expression?.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { Range($0.range, in: text).map { String(text[$0]) } } ?? []
+        if yesNoAnswer, let answer = match(#"^(?:是|否)(?=[，,（(]|$)"#, in: text) {
+            values.append(answer == "否" ? "不含税" : "含税")
+        }
+        return values
+    }
+
+    private static func unambiguousPrice(_ values: [String]) -> String? {
+        let labels = values.compactMap(priceLabel)
+        guard !labels.isEmpty, labels.count == values.count, Set(labels).count == 1 else { return nil }
+        return labels.first
+    }
+    static func sourcePriceLabel(in details: String) -> String? {
+        unambiguousPrice(details.components(separatedBy: .newlines).flatMap(fields).filter { $0.name == "价格" }.map(\.value))
     }
 
     private static func priceCurrencyIsConsistent(_ amount: String, in text: String) -> Bool {
@@ -1331,6 +1521,30 @@ enum CtripFlightParser {
             if let field = fields(line).first(where: { $0.name == name }), field.value.count <= 160 { return field.value }
         }
         return ""
+    }
+
+    /// Separate endpoint date labels and dated clocks are equally source facts.
+    /// Conflicting dates stay unknown; an arrival clock alone supplies no day.
+    static func endpointDate(departure: Bool, in details: String) -> String {
+        let prefix = departure ? "出发" : "到达"
+        let rows = details.components(separatedBy: .newlines).flatMap(fields)
+        let ownDays = rows.filter { $0.name == prefix + "日期" }
+        let clocks = rows.filter { $0.name == prefix + "时间" }
+        guard !clocks.contains(where: { $0.value.contains("到达日期待核对") }) else { return "" }
+        guard ownDays.allSatisfy({ sourceDate($0.value) != nil }) else { return "" }
+        let dates = Set((ownDays + clocks).compactMap { sourceDate($0.value) })
+        guard dates.count <= 1 else { return "" }
+        let relative = Set(clocks.compactMap { relativeDay($0.value) })
+        guard relative.count <= 1 else { return "" }
+        if let days = relative.first {
+            let base = departure ? ownDays.first.flatMap { sourceDate($0.value) } : sourceDate(endpointDate(departure: true, in: details))
+            if let base, let absolute = shiftedDate(base, days: days) {
+                guard dates.isEmpty || dates == [absolute] else { return "" }
+                return absolute
+            }
+            if dates.isEmpty, days > 0 { return days == 1 ? "次日" : days == 2 ? "后天" : "第四天" }
+        }
+        return dates.first ?? ""
     }
 
     static func officialURL(_ value: String) -> URL? {
@@ -3375,18 +3589,23 @@ enum CtripFlightParser {
         let query = offer.query
         guard query.range(of: #"往返|多程|返程|再到|再飞|round\s*trip|return\s+flight"#, options: [.regularExpression, .caseInsensitive]) == nil,
               offer.title.range(of: #"往返|多程|中转|联程"#, options: .regularExpression) == nil else { return nil }
+        // “查询到的航班号” describes a requested result, not a city pair.
+        // Remove only this verb's 到 before scanning; leave other city pairs
+        // intact so unsupported or conflicting routes are still rejected.
+        let routeQuery = query.replacingOccurrences(of: #"(?:查询|查找|检索|搜索|获取|查)到(?=的|了)"#,
+                                                     with: "查询", options: .regularExpression)
         var queryRoutes = Set<String>()
         for pattern in [#"(?<![A-Z])([A-Z]{3})\s*[-→]\s*([A-Z]{3})(?![A-Z])"#, #"([\p{Han}]{2,12})(?:到|至|→|飞往)([\p{Han}]{2,12})"#] {
             guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
-            var searchStart = query.startIndex
-            while searchStart < query.endIndex,
-                  let result = expression.firstMatch(in: query, range: NSRange(searchStart..., in: query)) {
-                guard let range = Range(result.range, in: query), let destinationRange = Range(result.range(at: 2), in: query) else { return nil }
+            var searchStart = routeQuery.startIndex
+            while searchStart < routeQuery.endIndex,
+                  let result = expression.firstMatch(in: routeQuery, range: NSRange(searchStart..., in: routeQuery)) {
+                guard let range = Range(result.range, in: routeQuery), let destinationRange = Range(result.range(at: 2), in: routeQuery) else { return nil }
                 // Revisit the destination to recognize a real A→B→C chain.
                 searchStart = destinationRange.lowerBound
-                var candidate = String(query[range])
-                if candidate.hasPrefix("日"), range.lowerBound > query.startIndex,
-                   query[query.index(before: range.lowerBound)].isNumber { candidate.removeFirst() }
+                var candidate = String(routeQuery[range])
+                if candidate.hasPrefix("日"), range.lowerBound > routeQuery.startIndex,
+                   routeQuery[routeQuery.index(before: range.lowerBound)].isNumber { candidate.removeFirst() }
                 let endpoints = route(candidate)
                 let destination = endpoints.1.replacingOccurrences(of: #"(?:只查|仅查).*$"#, with: "", options: .regularExpression)
                 let from = nativeListCityCode(endpoints.0), to = nativeListCityCode(destination)
@@ -3464,12 +3683,18 @@ enum CtripFlightParser {
         let codes = flightNumbers(in: offer.title)
         guard codes.count == 1, let flightNo = codes.first else { return nil }
         let rows = offer.details.components(separatedBy: .newlines).flatMap(fields)
+        let quotedValues = rows.filter { $0.name == "价格" }.map(\.value)
+        guard quotedValues.isEmpty || unambiguousPrice(quotedValues) != nil else { return nil }
         guard Set(rows.filter { $0.name == "航程类型" }.map(\.value)) == ["直飞"],
               rows.filter({ $0.name == "航班号" }).allSatisfy({ flightNumbers(in: $0.value) == codes }) else { return nil }
         let cabins = Set(rows.filter { $0.name == "舱位" }.map { $0.value.replacingOccurrences(of: #"\s"#, with: "", options: .regularExpression).uppercased() })
         guard cabins.count == 1, let cabin = cabins.first,
               cabin.range(of: #"^(?:经济舱|ECONOMY)(?:[（(](?:约)?\d+(?:\.\d+)?(?:折|%折扣)[）)])?$"#, options: .regularExpression) != nil else { return nil }
         let departure = offer.leg(departure: true)
+        for endpoint in [true, false] {
+            let name = endpoint ? "出发日期" : "到达日期"
+            if rows.contains(where: { $0.name == name }), endpointDate(departure: endpoint, in: offer.details).isEmpty { return nil }
+        }
         guard let date = sourceDate(departure.date), date.replacingOccurrences(of: "-", with: "") == compactDate,
               departure.time != "待核对",
               let clocks = try? NSRegularExpression(pattern: #"(?<!\d)(?:[01]\d|2[0-3]):[0-5]\d(?!\d)"#) else { return nil }
@@ -3559,42 +3784,104 @@ enum CtripFlightParser {
               let origin = route["c2"], let destination = route["c3"], let compact = route["c4"],
               compact.count == 8 else { return nil }
         let date = String(compact.prefix(4)) + "-" + String(compact.dropFirst(4).prefix(2)) + "-" + String(compact.suffix(2))
-        return "仅补查已选择的同一班航班，不查询其他日期或替代航班。航班号：" + code + "；出发城市码：" + origin + "；到达城市码：" + destination + "；出发日期：" + date + "。\n原查询条件（其中相对日期以本次明确日期为准）：" + offer.query + "\n请逐项明确返回这班航班的航班号、绝对出发日期与时间、到达日期与时间、出发机场及航站楼、到达机场及航站楼、是否直飞、舱位、真实票价及税费口径；缺少的字段明确写未提供，不推断、不估算。只查询核对，不预订、不创建订单、不付款。"
+        let departure = offer.leg(departure: true), arrival = offer.leg(departure: false)
+        let known = [("出发机场", departure.airport), ("出发时间", departure.time),
+                     ("到达机场", arrival.airport), ("到达时间", arrival.time)]
+            .filter { !missingSourceValue($0.1) && !$0.1.contains("待核") }
+            .map { $0.0 + "：" + $0.1 }.joined(separator: "；")
+        let question = "仅补查已选择的同一班航班，不查询其他日期或替代航班。航班号：" + code + "；出发城市码：" + origin + "；到达城市码：" + destination + "；出发日期：" + date + "。\n原查询条件（其中相对日期以本次明确日期为准）：" + offer.query +
+            "\n原卡已确认的匹配条件（不是本次回执，不可用来补造新结果）：" + known +
+            "\n请实际查询后仅返回一个“### " + code + "”段落，逐行使用这些字段名：航班号、出发日期、出发时间、到达日期、到达时间、出发机场、到达机场、航程类型、舱位、乘客、价格、是否含税。机场保留实际航站楼，航程类型仅在来源确认时写直飞；缺少的字段明确写未提供，不推断、不估算。不返回整条航线列表或网络参考时刻。只查询核对，不预订、不创建订单、不付款。"
+        return question.count <= 4096 ? question : nil
+    }
+    struct NativeSelectionRefreshAssessment {
+        let offer: CtripFlightOffer?
+        /// Bounded business categories only; no response text or credentials.
+        let reason: String
     }
     static func refreshedNativeFlightSelection(_ text: String, for source: CtripFlightOffer, at date: Date = Date()) -> CtripFlightOffer? {
-        guard let route = nativeSelectionLookupRoute(for: source), let query = nativeFlightSelectionLookupQuery(for: source) else { return nil }
+        assessNativeFlightSelectionRefresh(text, for: source, at: date).offer
+    }
+    static func assessNativeFlightSelectionRefresh(_ text: String, for source: CtripFlightOffer, at date: Date = Date()) -> NativeSelectionRefreshAssessment {
+        func reject(_ reason: String) -> NativeSelectionRefreshAssessment { .init(offer: nil, reason: reason) }
+        guard let route = nativeSelectionLookupRoute(for: source), let query = nativeFlightSelectionLookupQuery(for: source) else { return reject("source_identity_unavailable") }
         let codes = flightNumbers(in: source.title)
         let matches = offers(text, query: query, at: date).filter { flightNumbers(in: $0.title) == codes }
-        guard matches.count == 1, let result = matches.first, !result.isSchedule,
-              result.preferredNativeFlightSelectionURL != nil,
-              let url = result.nativeFlightListURL,
-              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
+        guard matches.count == 1, let result = matches.first else { return reject(matches.isEmpty ? "selected_flight_not_returned" : "selected_flight_ambiguous") }
+        guard !result.isSchedule else { return reject("real_quote_unavailable") }
+        guard result.preferredNativeFlightSelectionURL != nil else { return reject("exact_entry_facts_incomplete") }
+        guard let url = result.nativeFlightListURL,
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return reject("returned_route_unavailable") }
         let returnedRoute = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
-        guard ["c2", "c3", "c4"].allSatisfy({ returnedRoute[$0] == route[$0] }) else { return nil }
+        guard ["c2", "c3", "c4"].allSatisfy({ returnedRoute[$0] == route[$0] }) else { return reject("returned_route_or_date_changed") }
         let departure = result.leg(departure: true), arrival = result.leg(departure: false)
-        // A complete request is not evidence that the response actually supplied
-        // its endpoints. Both returned airport/city facts must be explicit.
-        guard nativeListCityCode(departure.airport) == route["c2"], nativeListCityCode(arrival.airport) == route["c3"] else { return nil }
+        // Returned source facts must confirm both endpoints independently of
+        // the request. The supplemental question cannot supply missing facts.
+        guard nativeListCityCode(departure.airport) == route["c2"], nativeListCityCode(arrival.airport) == route["c3"] else { return reject("returned_airports_unconfirmed") }
         let clock = DateFormatter(); clock.calendar = Calendar(identifier: .gregorian)
         clock.locale = Locale(identifier: "en_US_POSIX"); clock.timeZone = TimeZone(identifier: "Asia/Shanghai")
         clock.dateFormat = "yyyy-MM-dd HH:mm"; clock.isLenient = false
-        guard let departureInstant = clock.date(from: departure.date + " " + departure.time), departureInstant > date else { return nil }
+        guard let departureInstant = clock.date(from: departure.date + " " + departure.time), departureInstant > date else { return reject("departure_time_invalid_or_elapsed") }
         let originalDeparture = source.leg(departure: true), originalArrival = source.leg(departure: false)
         for (original, refreshed) in [(originalDeparture, departure), (originalArrival, arrival)] {
             if !missingSourceValue(original.airport), !original.airport.contains("待核"),
                airportMatches(original.airport, refreshed.airport) != true,
-               airportMatches(refreshed.airport, original.airport) != true { return nil }
-            if original.time != "待核对", original.time != refreshed.time { return nil }
-            if let known = sourceDate(original.date), known != sourceDate(refreshed.date) { return nil }
+               airportMatches(refreshed.airport, original.airport) != true { return reject("selected_airport_changed") }
+            if original.time != "待核对", original.time != refreshed.time { return reject("selected_clock_changed") }
+            if let known = sourceDate(original.date) {
+                guard let returned = sourceDate(refreshed.date) else { return reject("selected_date_missing") }
+                if known != returned { return reject("selected_date_changed") }
+            }
         }
-        return result
+        return .init(offer: result, reason: "verified_same_flight")
+    }
+
+    /// Inherit a common fact only from the provider's declarative result text.
+    /// A requested direct-flight filter (including echoed query conditions) is
+    /// never proof that the returned flights are direct.
+    private static func commonDatedResultDeclaration(_ line: String, resultCount: Int) -> Bool {
+        let text = plain(line)
+        guard text.range(of: #"(?:可能|预计|希望|要求|筛选|部分|有的|某些|待核实|待确认|不确定|中转|经停|转机|并非|不是|不全|不均|不都是|非直飞)"#, options: .regularExpression) == nil else { return false }
+        let countPattern = #"(?<!\d)\d{1,2}\s*(?:位|名|个|人)?\s*成人"#
+        let cabinPattern = #"经济舱|商务舱|公务舱|头等舱"#
+        guard let count = try? NSRegularExpression(pattern: countPattern),
+              let cabin = try? NSRegularExpression(pattern: cabinPattern),
+              count.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text)) == 1,
+              cabin.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text)) == 1 else { return false }
+        let pattern = #"^20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?[^。！？\n]{0,80}单程直飞航班已为[您你]查到[，,]\s*以下(\d{1,3})个航班均为(?:经济舱|商务舱|公务舱|头等舱)[、，,]\s*\d{1,2}\s*(?:位|名|个|人)?成人票价(?=[，,。；;：:\s]|$)"#
+        guard let declared = match(pattern, in: text, group: 1).flatMap(Int.init) else { return false }
+        return declared > 0 && declared == resultCount
+    }
+    private static func commonDirectFlightSource(_ introduction: String, resultCount: Int) -> Bool {
+        let lines = introduction.components(separatedBy: .newlines).map(plain)
+        let contradiction = #"(?:部分|有的|某些|其中|包含|包括|另有)[^。！？\n]{0,16}(?:中转|经停|转机)|(?:并非|并不|不全|不均|不都是)[^。！？\n]{0,10}直飞"#
+        guard !lines.contains(where: { $0.range(of: contradiction, options: .regularExpression) != nil }) else { return false }
+        return lines.contains { line in
+            guard line.range(of: #"^(?:查询条件|原查询|用户要求|用户需求|请求条件|筛选条件|请|只要|仅要|需要|要求)"#, options: .regularExpression) == nil else { return false }
+            guard line.range(of: #"(?:可能|预计|计划|希望|要求|筛选|部分|有的|某些)[^。！？\n]{0,32}直飞"#, options: .regularExpression) == nil else { return false }
+            if commonDatedResultDeclaration(line, resultCount: resultCount) { return true }
+            // Observed official result forms. These state the scope of every
+            // listed result, unlike a bare city/date/directness query echo.
+            if line.range(of: #"(?:^|[，,。；;])\s*(?:以下|所有|全部|本次返回的?)航班\s*(?:均为|均系|全部为)直飞(?=[，,。；;：:\s]|$)"#, options: .regularExpression) != nil { return true }
+            if line.range(of: #"^以下(?:为|是)[^。！？\n]{0,100}单程直飞(?:经济舱)?航班查询结果(?=[，,。；;：:\s]|$)"#, options: .regularExpression) != nil { return true }
+            if line.range(of: #"^以下(?:为|是)携程本次(?:实际)?(?:查询到|查到|返回)的?[^。！？\n]{0,100}单程直飞(?:经济舱)?航班(?:信息|查询结果|结果)(?=[，,。；;：:\s]|$)"#, options: .regularExpression) != nil { return true }
+            if line.range(of: #"^20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?[^。！？\n]{0,80}单程直飞航班[，,]\s*携程共返回\d{1,3}班经济舱可选(?=[，,。；;：:\s]|$)"#, options: .regularExpression) != nil { return true }
+            return line.range(of: #"^20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?[^。！？\n]{0,80}单程直飞航班[，,]\s*携程本次实际返回\d{1,3}个[^。！？\n]{0,32}报价方案(?=[，,。；;：:\s]|$)"#, options: .regularExpression) != nil
+        }
     }
 
     static func offers(_ text: String, query: String, at date: Date = Date()) -> [CtripFlightOffer] {
         let lines = text.components(separatedBy: .newlines)
+        let resultSections = sections(lines)
+        // A numeric all-results declaration can scope facts only when the
+        // returned sections establish exactly that many distinct flights.
+        // Duplicates or multi-flight headings leave the scope unresolved.
+        let sectionCodes = resultSections.map { flightNumbers(in: $0.title) }
+        let singleCodes = sectionCodes.compactMap { $0.count == 1 ? $0.first : nil }
+        let declaredScopeCount = sectionCodes.count == singleCodes.count && Set(singleCodes).count == singleCodes.count ? singleCodes.count : -1
         let introduction = lines.prefix { !plain($0).hasPrefix("#") }.joined(separator: "\n")
         let conditions = introduction.components(separatedBy: .newlines).filter {
-            plain($0).range(of: #"^(?:已为[您你]?(?:查询到|查到)|以下(?:为|是|方案基于)|查询条件\s*[:：]?|出行人数\s*[:：]|人数\s*[:：]|乘客\s*[:：]|20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?[^。！？\n]{0,100}航班已查到)"#, options: .regularExpression) != nil
+            commonDatedResultDeclaration($0, resultCount: declaredScopeCount) || plain($0).range(of: #"^(?:已为[您你]?(?:查询到|查到)|以下(?:为|是|方案基于)|查询条件\s*[:：]?|出行人数\s*[:：]|人数\s*[:：]|乘客\s*[:：]|20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?[^。！？\n]{0,100}航班已查到)"#, options: .regularExpression) != nil
         }.joined(separator: "\n")
         let sourcePassengers = passengerCounts(conditions)
         let passengerText = ["成人", "儿童", "婴儿"].compactMap { type in sourcePassengers[type].map { "\($0)位" + type } }.joined(separator: "、")
@@ -3606,9 +3893,9 @@ enum CtripFlightParser {
         let explicitRoute = conditions.components(separatedBy: .newlines).map(route).first { !$0.0.isEmpty && !$0.1.isEmpty }
         let sourceOrigin = match(routePattern, in: routeLine, group: 1) ?? explicitRoute?.0 ?? ""
         let sourceDestination = match(routePattern, in: routeLine, group: 2) ?? explicitRoute?.1 ?? ""
-        let sourceDirect = conditions.range(of: #"(?:均为|均系|全部为|单程)直飞(?=经济舱|商务舱|航班|机票|[，,。；;：:\s]|$)"#, options: .regularExpression) != nil
+        let sourceDirect = commonDirectFlightSource(introduction, resultCount: declaredScopeCount)
         let forceReference = text.contains("已自动重试一次，仍未取得报价")
-        let parsed: [CtripFlightOffer] = sections(lines).enumerated().compactMap { index, section in
+        let parsed: [CtripFlightOffer] = resultSections.enumerated().compactMap { index, section in
             var entries = entries(section, lines: lines)
             if !entries.contains(where: { $0.name == "乘客" }) {
                 let localCounts = passengerCounts(entries.first { $0.name == "计价单位" }?.value ?? "")
@@ -3624,7 +3911,22 @@ enum CtripFlightParser {
             if entries.contains(where: { ["第一段", "第二段", "第三段"].contains($0.name) }),
                !["出发时间", "到达时间"].allSatisfy({ name in entries.contains { $0.name == name } }) { return nil }
             guard entries.contains(where: { ["出发时间", "到达时间"].contains($0.name) || ($0.name == "价格" && priceLabel($0.value) != nil) }) else { return nil }
-            let price = entries.first(where: { $0.name == "价格" }).flatMap { priceLabel($0.value) } ?? "价格待核实"
+            // A separately returned currency qualifies this section's amount.
+            // Keep it inside the price validation boundary so an explicit USD
+            // declaration cannot silently become a quoted CNY amount.
+            let currencies = entries.filter { $0.name == "币种" }.map { $0.value.uppercased() }
+            let taxFields = Set(entries.filter { $0.name == "是否含税" }.map(\.value))
+            let explicitTaxes = taxFields.flatMap { sourceTaxQualifiers(in: $0, yesNoAnswer: true) }.sorted()
+            if !currencies.isEmpty || !explicitTaxes.isEmpty {
+                entries = entries.map { field in
+                    guard field.name == "价格" else { return field }
+                    var value = field.value
+                    if !explicitTaxes.isEmpty { value += "，" + explicitTaxes.joined(separator: "，") }
+                    if !currencies.isEmpty { value += "（币种 " + currencies.joined(separator: "、") + "）" }
+                    return Field(name: field.name, value: value)
+                }
+            }
+            let price = unambiguousPrice(entries.filter { $0.name == "价格" }.map(\.value)) ?? "价格待核实"
             let reference = forceReference || section.official == false || price == "价格待核实" ||
                 section.title.contains("时刻参考") || section.title.contains("尚未核价")
             let body = entries.filter { !reference || !["价格", "预订链接"].contains($0.name) }
@@ -4337,7 +4639,7 @@ enum ConversationTaskScope {
 
 struct ConversationRoute: Codable, Equatable, Sendable {
     // xiaohongshuQuery is decode-only compatibility for archived intent records; its connector is withdrawn.
-    enum Mode: String, Codable { case chat, task, supplement, resume, pause, stop, flightQuery, flightOpen, paotuiQuery, xiaohongshuQuery, clarify }
+    enum Mode: String, Codable { case chat, task, supplement, resume, pause, stop, flightQuery, flightOpen, groundQuery, paotuiQuery, didiRide, xiaohongshuQuery, clarify }
     var mode: Mode
     var request: String
     var message: String
@@ -4367,8 +4669,9 @@ struct ConversationRoute: Codable, Equatable, Sendable {
     var module: String {
         switch mode {
         case .chat: "conversation"
-        case .flightQuery, .flightOpen: "ctrip"
+        case .flightQuery, .flightOpen, .groundQuery: "ctrip"
         case .paotuiQuery: "meituan-paotui"
+        case .didiRide: "didi-ride"
         case .xiaohongshuQuery: "xiaohongshu"
         case .clarify: "clarification"
         default: "task-executor"
@@ -4645,7 +4948,7 @@ extension CtripFlightOffer {
     var cardPrice: String {
         if isSchedule { return "票价待查" }
         let explicit = CtripFlightParser.value("价格", in: details)
-        if !explicit.isEmpty { return CtripFlightParser.priceLabel(explicit) ?? "价格待核实" }
+        if !explicit.isEmpty { return CtripFlightParser.sourcePriceLabel(in: details) ?? "价格待核实" }
         let savedField = CtripFlightParser.value("价格", in: price)
         return CtripFlightParser.priceLabel(savedField.isEmpty ? price : savedField) ?? "价格待核实"
     }
@@ -4685,27 +4988,15 @@ extension CtripFlightOffer {
     func leg(departure: Bool) -> Leg {
         let value = field(departure ? "出发时间" : "到达时间")
         let time = value.range(of: #"(?<!\d)(?:[01]\d|2[0-3]):[0-5]\d(?!\d)"#, options: .regularExpression).map { String(value[$0]) } ?? "待核对"
-        let departureDate = CtripFlightParser.sourceDate(CtripFlightParser.value("出发日期", in: details))
-        var date = CtripFlightParser.sourceDate(value) ?? ""
-        if date.isEmpty, !value.contains("到达日期待核对"), let departureDate {
-            if let days = CtripFlightParser.relativeDay(value) { date = CtripFlightParser.shiftedDate(departureDate, days: days) ?? "" }
-            else if departure { date = departureDate }
-            else {
-                let departureTime = field("出发时间")
-                    .range(of: #"(?<!\d)(?:[01]\d|2[0-3]):[0-5]\d(?!\d)"#, options: .regularExpression)
-                    .map { String(field("出发时间")[$0]) }
-                if let departureTime, time != "待核对", time >= departureTime { date = departureDate }
-            }
-        }
-        if date.isEmpty, let days = CtripFlightParser.relativeDay(value) { date = days == 1 ? "次日" : days == 2 ? "后天" : "第四天" }
+        let date = CtripFlightParser.endpointDate(departure: departure, in: details)
         var airport = field(departure ? "出发机场" : "到达机场")
-        if airport.isEmpty, let range = value.range(of: #"[（(][^）)]+[）)]"#, options: .regularExpression) {
-            let label = String(value[range].dropFirst().dropLast())
-            if label.count <= 48, !["飞行", "小时", "分钟", "次日", "中转"].contains(where: { label.contains($0) }) { airport = label }
-        }
         if airport.isEmpty, let separator = value.firstIndex(where: { $0 == "，" || $0 == "," }) {
             let candidate = String(value[value.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
-            if candidate.count <= 48, candidate.contains("机场"), !candidate.contains("。") { airport = candidate }
+            if let label = CtripFlightParser.inlineEndpointAirport(candidate) { airport = label }
+        }
+        if airport.isEmpty, let range = value.range(of: #"[（(][^）)]+[）)]"#, options: .regularExpression),
+           let label = CtripFlightParser.inlineEndpointAirport(String(value[range].dropFirst().dropLast())) {
+            airport = label
         }
         airport = CtripFlightParser.airportWithSourceCity(airport, city: field(departure ? "出发城市" : "到达城市"))
         return Leg(time: time, airport: airport.isEmpty ? (departure ? "出发机场待核对" : "到达机场待核对") : airport, date: date)

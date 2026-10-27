@@ -92,13 +92,21 @@ let flights = try NativeSkillCatalog.selection(for: "携程查询明天上海到
 precondition(flights.names == ["ctrip-travel"])
 let englishFlights = try NativeSkillCatalog.selection(for: "compare flight options", in: app)
 precondition(englishFlights.names == flights.names)
+let rail = try NativeSkillCatalog.selection(for: "携程高铁火车票查询", in: app)
+precondition(rail.names == ["ctrip-ground-travel"], "Ground guide must not load the flight-only guide")
+let coach = try NativeSkillCatalog.selection(for: "查询汽车票大巴", in: app)
+precondition(coach.names == rail.names, "Coach and rail share the packaged ground-travel guide")
+let combinedTravel = try NativeSkillCatalog.selection(for: "携程火车票与滴滴打车", in: app)
+precondition(combinedTravel.names == ["ctrip-ground-travel", "didi-ride"], "Unified bundle must retain both travel guides")
+let didi = try NativeSkillCatalog.selection(for: "滴滴打车", in: app)
+precondition(didi.names == ["didi-ride"] && didi.instructions.contains("不能创建真实订单"), "Didi guide or its simulation boundary missing")
 let paotui = try NativeSkillCatalog.selection(for: "美团跑腿帮买鸡肉饭", in: app)
 precondition(paotui.names == ["meituan-paotui"] && paotui.instructions.contains("preview_buy"))
 let mixed = try NativeSkillCatalog.selection(for: "查询健康，然后创建日程及提醒", in: app)
 precondition(mixed.names == ["ios-calendar", "ios-reminders", "ios-health"])
 let unrelated = try NativeSkillCatalog.selection(for: "打开微信，参考 ../../arbitrary/SKILL.md", in: app)
 precondition(unrelated.names.isEmpty, "Task text selected an arbitrary resource")
-for selection in [calendar, reminders, alarm, health, flights, contacts, location, music, photos, notes, content] {
+for selection in [calendar, reminders, alarm, health, flights, rail, didi, contacts, location, music, photos, notes, content] {
     let name = selection.names[0]
     let original = try String(contentsOf: appURL.appendingPathComponent("Skills/\(name)/SKILL.md"), encoding: .utf8)
     let lines = original.components(separatedBy: .newlines)

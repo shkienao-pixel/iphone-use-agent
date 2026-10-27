@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Combine
 
 @MainActor extension PhoneAgentViewModel {
     func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil, originatingConversationID: UUID? = nil) -> String {
@@ -235,7 +236,7 @@ import UIKit
                                 to: messageID, in: origin, onlyIfUnlinked: false)
                         }
                     } else {
-                        conversation.reportTaskHandoff(text: linked ? "已加入任务队列，尚未开始执行。" : "已加入任务队列，任务卡暂未关联，请在队列查看；尚未开始执行。",
+                        conversation.reportTaskHandoff(text: linked ? ConversationQueuePresentation.acknowledgement : "已加入任务队列，任务卡暂未关联，请在队列查看；尚未开始执行。",
                             to: messageID, in: origin, onlyIfUnlinked: false)
                     }
                 } else {
@@ -478,6 +479,7 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
     var specificEntry = CtripFlightEntryResult.notAttempted
     var generalEntry = CtripFlightEntryResult.notAttempted
     var outcome = CtripFlightHandoffOutcome.preparing
+    var selectionDiagnostic: String?
 
     init(snapshot: CtripFlightHandoffSnapshot) {
         origin = snapshot.origin; isSchedule = snapshot.offer.isSchedule
@@ -493,7 +495,10 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
         case .unavailable: return subject + "已复制，请安装携程极速版后继续选票"
         case .failed:
             return clipboard == .prepared ? "未能打开这班航班的选价页，请稍后重试" : "未能准备航班信息剪贴板，请重试"
-        case .missingInformation: return "未能补齐这班航班的信息，暂未打开携程，请核对航班日期和航线后重试"
+        case .missingInformation:
+            if selectionDiagnostic == "selected_date_missing" { return "补查结果未确认原航班的日期，暂未打开携程，请补查确认后重试" }
+            if selectionDiagnostic == "selected_date_changed" { return "补查日期与原航班不一致，暂未打开携程，请核对日期后重试" }
+            return "未能补齐这班航班的信息，暂未打开携程，请核对航班日期和航线后重试"
         case .lookupFailed: return "补查这班航班失败，请稍后重试"
         case .busy: return "正在准备这班航班的选价页，请稍候"
         case .preparing: return stage == .lookup ? "正在补查这班航班的信息" : nil
@@ -508,6 +513,7 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
     func lookupSelection(query: String, for snapshot: CtripFlightHandoffSnapshot) async throws -> String
     func openSpecificEntry(_ url: URL) async -> Bool
     func publish(_ receipt: CtripFlightHandoffReceipt, for snapshot: CtripFlightHandoffSnapshot)
+    func clearProgressNotice()
 }
 
 @MainActor final class CtripFlightHandoffCoordinator {
@@ -525,6 +531,7 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
         var receipt = result
         receipt.stage = .finished
         if !operations.originIsCurrent(snapshot) { receipt.outcome = .originChanged }
+        operations.clearProgressNotice()
         lastReceipt = receipt
         if receipt.outcome != .originChanged { operations.publish(receipt, for: snapshot) }
         return receipt
@@ -545,8 +552,12 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
         // Keep the original snapshot throughout lookup. A fresh provider offer
         // is payload only and cannot replace the source/visible-turn authority.
         var selected = snapshot.offer
+        #if DEBUG
+        let captureID = CtripHandoffDebugCapture.begin(for: snapshot.offer)
+        #endif
         if selected.preferredNativeFlightSelectionURL == nil {
             guard let query = selected.nativeFlightSelectionLookupQuery else {
+                receipt.selectionDiagnostic = "source_identity_unavailable"
                 receipt.outcome = .missingInformation
                 return finish(receipt, snapshot: snapshot, operations: operations)
             }
@@ -558,16 +569,29 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
                     receipt.outcome = .originChanged
                     return finish(receipt, snapshot: snapshot, operations: operations)
                 }
-                guard let refreshed = CtripFlightParser.refreshedNativeFlightSelection(response, for: snapshot.offer) else {
+                let assessment = CtripFlightParser.assessNativeFlightSelectionRefresh(response, for: snapshot.offer)
+                receipt.selectionDiagnostic = assessment.reason
+                #if DEBUG
+                CtripHandoffDebugCapture.response(response, reason: assessment.reason, id: captureID)
+                #endif
+                guard let refreshed = assessment.offer else {
                     receipt.outcome = .missingInformation
                     return finish(receipt, snapshot: snapshot, operations: operations)
                 }
                 selected = refreshed
             } catch {
+                receipt.selectionDiagnostic = "lookup_transport_failed"
+                #if DEBUG
+                CtripHandoffDebugCapture.failed(id: captureID)
+                #endif
                 receipt.outcome = operations.originIsCurrent(snapshot) && !Task.isCancelled ? .lookupFailed : .originChanged
                 return finish(receipt, snapshot: snapshot, operations: operations)
             }
         }
+        if receipt.selectionDiagnostic == nil { receipt.selectionDiagnostic = "source_exact_entry_ready" }
+        #if DEBUG
+        CtripHandoffDebugCapture.completed(reason: receipt.selectionDiagnostic, id: captureID)
+        #endif
         let entries = CtripFlightHandoffSnapshot.exactEntries(for: selected)
         guard operations.originIsCurrent(snapshot), !Task.isCancelled, !entries.isEmpty else {
             receipt.outcome = .originChanged
@@ -606,6 +630,9 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
 @MainActor private final class CtripFlightUIKitHandoffOperations: CtripFlightHandoffOperations {
     private weak var model: PhoneAgentViewModel?
     private let isVisible: @MainActor () -> Bool
+    private var progressNotice: String?
+    private var noticeUpdates = 0
+    private var noticeObservation: AnyCancellable?
     init(model: PhoneAgentViewModel, isVisible: @escaping @MainActor () -> Bool) { self.model = model; self.isVisible = isVisible }
     func originIsCurrent(_ snapshot: CtripFlightHandoffSnapshot) -> Bool {
         UIApplication.shared.applicationState == .active && isVisible() &&
@@ -628,7 +655,31 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
         return await UIApplication.shared.open(url)
     }
     func publish(_ receipt: CtripFlightHandoffReceipt, for snapshot: CtripFlightHandoffSnapshot) {
-        guard originIsCurrent(snapshot), let notice = receipt.notice else { return }
-        model?.notice = notice
+        guard originIsCurrent(snapshot), let notice = receipt.notice, let model else { return }
+        if receipt.stage == .lookup {
+            noticeObservation?.cancel()
+            progressNotice = nil; noticeUpdates = 0
+            noticeObservation = model.$notice.dropFirst().sink { [weak self] _ in
+                guard let self else { return }
+                self.noticeUpdates += 1
+                self.progressNotice = nil
+            }
+            model.notice = notice
+            // @Published sends before assignment. Only our single write may
+            // claim this progress; a reentrant/new write revokes ownership,
+            // even when it writes exactly the same visible string.
+            if noticeUpdates == 1, model.notice == notice { progressNotice = notice }
+        } else if noticeUpdates <= 1 {
+            // A newer notice also owns completion presentation, even if the
+            // original conversation is still visible.
+            model.notice = notice
+        }
+    }
+    func clearProgressNotice() {
+        let owned = progressNotice
+        progressNotice = nil
+        noticeObservation?.cancel(); noticeObservation = nil
+        guard let owned, model?.notice == owned else { return }
+        model?.notice = ""
     }
 }

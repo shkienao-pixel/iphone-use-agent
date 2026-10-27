@@ -17,7 +17,8 @@ assert 'let capturedAt: Date, fullDisplay = true' in source
 assert 'let width = 2, height = 2, sourceWidth = 2, sourceHeight = 2' in source
 source = source.replace('let capturedAt: Date, fullDisplay = true', 'let capturedAt: Date\n    var fullDisplay = true')
 source = source.replace('let width = 2, height = 2, sourceWidth = 2, sourceHeight = 2', 'var width = 2, height = 2, sourceWidth = 2, sourceHeight = 2')
-source = source.replace('let image: UIImage, jpeg = Data()', 'let image: UIImage\n    var jpeg = Data()')
+assert source.count('let image: UIImage, jpeg: Data') == 1
+source = source.replace('let image: UIImage, jpeg: Data', 'let image: UIImage\n    var jpeg: Data')
 # An actual executor boundary error must not inherit capture predicates from
 # an earlier attempt. Keep this hook local to the generated integration fake.
 assert source.count('var actionDelay: UInt64 = 0') == 1
@@ -31,14 +32,14 @@ source = source.replace('var selectedID: String? = \"offline-device\"', 'var sel
 assert source.count('struct UIImage {') == 1
 source = source.replace('import CoreGraphics', 'import CoreGraphics\nimport ImageIO\nimport UniformTypeIdentifiers')
 source = source.replace('struct UIImage {', 'final class UIImage {')
-needle = '        self.capturedAt = capturedAt; self.captureID = captureID; image = UIImage(shade: shade)'
+needle = '        self.capturedAt = capturedAt; self.captureID = captureID; self.jpeg = jpeg; image = UIImage(shade: shade)'
 assert source.count(needle) == 1
 source = source.replace(needle, needle + '''
         let bytes = NSMutableData()
         let destination = CGImageDestinationCreateWithData(bytes, UTType.jpeg.identifier as CFString, 1, nil)!
         CGImageDestinationAddImage(destination, image.cgImage!, nil)
         precondition(CGImageDestinationFinalize(destination))
-        jpeg = bytes as Data
+        self.jpeg = bytes as Data
 ''')
 (tmp / 'Environment.swift').write_text(source)
 PY

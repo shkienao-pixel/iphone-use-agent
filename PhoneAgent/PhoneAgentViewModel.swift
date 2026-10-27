@@ -413,6 +413,7 @@ final class PhoneAgentViewModel: ObservableObject {
     lazy var pip = AgentPiPController(engine: engine, stopTask: { [weak self] in self?.stop() })
     private var observers = Set<AnyCancellable>()
     private var manual: Task<Void, Never>?
+    private var manualActionID: UUID?
     private var manualContinuationRequired = false
     private var voicePreparation: Task<Void, Never>?
     private var voiceGeneration = UUID()
@@ -625,6 +626,18 @@ final class PhoneAgentViewModel: ObservableObject {
             SelaDeviceDiagnostics.flightRealtimeUnavailable = result.realtimeUnavailable
             #endif
             return "来源：携程官方查询 · " + Date().formatted(date: .abbreviated, time: .shortened) + "\n\n" + result.displayText
+        }
+        conversation.groundQuery = { [weak self] query in
+            guard let self, self.consentReady else { throw AgentError.message("AI 数据授权已失效") }
+            guard CtripStore.enabled, CtripStore.hasCredential else { throw AgentError.message("请先连接携程") }
+            let credential = CtripStore.apiKey(), mode = CtripStore.connectionMode
+            // Ground journeys use the generic read-only endpoint, not flight-specific retries or interpretation.
+            let answer = try await CtripClient(apiKey: credential, apiEndpoint: mode.endpoint).query(query: query)
+            try Task.checkCancellation()
+            guard self.consentReady, credential == CtripStore.apiKey(), CtripStore.enabled, mode == CtripStore.connectionMode else {
+                throw AgentError.message("携程连接已改变，请重新查询")
+            }
+            return "来源：携程官方查询 · " + Date().formatted(date: .abbreviated, time: .shortened) + "\n\n" + answer
         }
         engine.systemTool = { [weak self] taskID, request in
             guard let self, self.consentReady else { throw AgentError.message("AI 数据授权已失效") }
@@ -1327,18 +1340,26 @@ final class PhoneAgentViewModel: ObservableObject {
             return "已把问题放入对话，请确认后发送。"
         }
     }
-    func manualAction(allowsBackgroundScreen: Bool = false, _ block: @escaping () async throws -> Void) {
+    func manualAction(allowsBackgroundScreen: Bool = false, id: UUID = UUID(), _ block: @escaping () async throws -> Void) {
         guard !preparingAutomatically, recordingAudioOwner == nil, !queueRunning, !queueSwitching, !engine.running, !engine.releasing,
               !preparingAutomatically, !manualBusy, !voicePending, !calibrating, !executor.calibrationInProgress else { return }
         guard !workflowServices.blocksGUI else { notice = "文件操作尚在进行或结果待核验，请先到记录与文件处理"; return }
         notice = ""; manualContinuationRequired = false; manualScreenWorkflow = allowsBackgroundScreen; manualBusy = true
+        manualActionID = id
         let inputConnection = ble.pointerConnectionGeneration
         manual = Task {
             do { try await block() }
             catch is CancellationError { }
-            catch { notice = error.localizedDescription }
+            catch { if !Task.isCancelled { notice = error.localizedDescription } }
+            manualActionID = nil
             await ble.release(expectedConnection: inputConnection); manualBusy = false; manualScreenWorkflow = false; manual = nil
         }
+    }
+    /// Cancels only the matching manual operation, preserving queued and paused tasks.
+    func expireManualAction(id: UUID, message: String) {
+        guard manualActionID == id, manualBusy else { return }
+        notice = message
+        manual?.cancel()
     }
     @discardableResult
     func saveKey(_ key: String) -> Bool {

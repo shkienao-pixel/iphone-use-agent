@@ -169,12 +169,155 @@ import ActivityKit
         resumeTerminalUpdate?.resume(); supersededTerminal.beforeUpdate = nil
         await controller.flush()
         let resumedActivity = Activity<AgentActivityAttributes>.activities.last!
-        expect(controller.hasTaskPresentation && controller.represents(initial.id) && supersededTerminal.endings == 1,
-               "An older disabled update cannot clear a newer run's presentation ownership while the queue drains")
-        expect(resumedActivity.content.state.controlSessionID == resumedSession && UIApplication.shared.assertions.isEmpty,
-               "Only the new run's live controls survive the delayed terminal and disable operations")
+        expect(controller.hasTaskPresentation && controller.represents(initial.id) && supersededTerminal.endings == 0,
+               "A superseded disable preserves the existing activity for a newer foreground run")
+        expect(resumedActivity === supersededTerminal && resumedActivity.content.state.controlSessionID == resumedSession && UIApplication.shared.assertions.isEmpty,
+               "The reused activity grants controls only to the new run after the delayed terminal and disable operations")
         await update(initial, phase: .completed, session: resumedSession)
         try? await Task.sleep(nanoseconds: 70_000_000); await controller.flush()
+
+        // An older disabled refresh may be queued while ActivityKit is still
+        // applying an update. A newer task can take ownership before the app
+        // leaves the foreground, but the serial queue might not drain until the
+        // app has backgrounded, where an ended activity cannot be recreated.
+        UIApplication.shared.applicationState = .active
+        let backgroundRace = TaskActivityController(defaults: defaults, terminalDisplayNanoseconds: 50_000_000)
+        await backgroundRace.flush()
+        let earlierTask = PhoneTaskRecord(id: UUID(), title: "旧任务")
+        let newerTask = PhoneTaskRecord(id: UUID(), title: "新任务")
+        let earlierSession = UUID(), newerSession = UUID()
+        backgroundRace.update(record: earlierTask, phase: .observing, step: 1, action: nil,
+                              enabled: true, sessionID: earlierSession, releasing: false, canPause: true, canStop: true)
+        await backgroundRace.flush()
+        let inheritedActivity = Activity<AgentActivityAttributes>.activities.last!
+        var oldUpdateEntered = false
+        var resumeOldUpdate: CheckedContinuation<Void, Never>?
+        inheritedActivity.beforeUpdate = {
+            oldUpdateEntered = true
+            await withCheckedContinuation { resumeOldUpdate = $0 }
+        }
+        backgroundRace.update(record: earlierTask, phase: .acting, step: 2, action: "测试",
+                              enabled: true, sessionID: earlierSession, releasing: false, canPause: true, canStop: true)
+        while !oldUpdateEntered { await Task.yield() }
+        backgroundRace.update(record: nil, phase: .idle, step: 0, action: nil,
+                              enabled: false, sessionID: earlierSession, releasing: false, canPause: false, canStop: false)
+        backgroundRace.update(record: newerTask, phase: .observing, step: 1, action: nil,
+                              enabled: true, sessionID: newerSession, releasing: false, canPause: true, canStop: true)
+        expect(backgroundRace.hasTaskPresentation, "Newer task takes presentation ownership before the queued operations drain")
+        UIApplication.shared.applicationState = .background
+        resumeOldUpdate?.resume(); inheritedActivity.beforeUpdate = nil
+        await backgroundRace.flush()
+        expect(inheritedActivity.endings == 0, "An obsolete queued disable must not end the only activity once a newer task takes over")
+        expect(backgroundRace.hasTaskPresentation && inheritedActivity.content.state.displayTaskID == newerTask.id,
+               "The newer background task is represented by the surviving activity")
+        expect(inheritedActivity.content.state.controlSessionID == nil && inheritedActivity.content.state.canPause == false && inheritedActivity.content.state.canStop == false,
+               "A reused background activity never exposes controls for the earlier task identity")
+        backgroundRace.update(record: nil, phase: .idle, step: 0, action: nil,
+                              enabled: false, sessionID: newerSession, releasing: false, canPause: false, canStop: false)
+        expect(!backgroundRace.hasTaskPresentation, "A current disable immediately revokes presentation ownership")
+        await backgroundRace.flush()
+        expect(inheritedActivity.endings == 1, "A current disable still ends the activity")
+        UIApplication.shared.applicationState = .active
+        backgroundRace.update(record: newerTask, phase: .observing, step: 1, action: nil,
+                              enabled: true, sessionID: newerSession, releasing: false, canPause: true, canStop: true)
+        await backgroundRace.flush()
+        let foregroundActivity = Activity<AgentActivityAttributes>.activities.last!
+        expect(backgroundRace.represents(newerTask.id) && foregroundActivity.content.state.controlSessionID == newerSession,
+               "A foreground restart creates a matching activity with only the new task's controls")
+        backgroundRace.update(record: nil, phase: .idle, step: 0, action: nil,
+                              enabled: false, sessionID: newerSession, releasing: false, canPause: false, canStop: false)
+        await backgroundRace.flush()
+
+        // A newer task can also arrive after the system has already accepted
+        // an end call. That operation cannot be recalled, so it is essential
+        // not to advertise a missing activity while the app is in background.
+        var pauseEnd = false, endStarted = false
+        var resumeEnd: CheckedContinuation<Void, Never>?
+        let endingRace = TaskActivityController(defaults: defaults, terminalDisplayNanoseconds: 50_000_000) { activity, content, policy in
+            if pauseEnd {
+                pauseEnd = false; endStarted = true
+                await withCheckedContinuation { resumeEnd = $0 }
+            }
+            await activity.end(content, dismissalPolicy: policy)
+        }
+        await endingRace.flush()
+        let finishingTask = PhoneTaskRecord(id: UUID(), title: "正在关闭的任务")
+        let arrivingTask = PhoneTaskRecord(id: UUID(), title: "随后到来的任务")
+        let finishingSession = UUID(), arrivingSession = UUID()
+        endingRace.update(record: finishingTask, phase: .observing, step: 1, action: nil,
+                          enabled: true, sessionID: finishingSession, releasing: false, canPause: true, canStop: true)
+        await endingRace.flush()
+        let endingActivity = Activity<AgentActivityAttributes>.activities.last!
+        pauseEnd = true
+        endingRace.update(record: nil, phase: .idle, step: 0, action: nil,
+                          enabled: false, sessionID: finishingSession, releasing: false, canPause: false, canStop: false)
+        while !endStarted { await Task.yield() }
+        endingRace.update(record: arrivingTask, phase: .observing, step: 1, action: nil,
+                          enabled: true, sessionID: arrivingSession, releasing: false, canPause: true, canStop: true)
+        UIApplication.shared.applicationState = .background
+        resumeEnd?.resume()
+        await endingRace.flush()
+        expect(endingActivity.endings == 1 && !endingRace.represents(arrivingTask.id),
+               "An already-issued end really finishes and cannot create a new background activity")
+        expect(!endingRace.hasTaskPresentation && !endingRace.error.isEmpty,
+               "A missing background activity is reported as unavailable rather than claimed as showing")
+        // The host can settle to an enabled but empty idle snapshot while the
+        // activity is unavailable; no task remains that needs foreground repair.
+        endingRace.update(record: nil, phase: .idle, step: 0, action: nil,
+                          enabled: true, sessionID: arrivingSession, releasing: false, canPause: false, canStop: false)
+        await endingRace.flush()
+        expect(!endingRace.hasTaskPresentation && endingRace.error.isEmpty,
+               "An enabled idle snapshot clears the obsolete missing-activity message")
+        // A new active snapshot in the background still cannot create an
+        // activity; it must recreate the unavailable state until foreground.
+        endingRace.update(record: arrivingTask, phase: .observing, step: 1, action: nil,
+                          enabled: true, sessionID: arrivingSession, releasing: false, canPause: true, canStop: true)
+        await endingRace.flush()
+        expect(!endingRace.hasTaskPresentation && !endingRace.error.isEmpty,
+               "A later background task correctly reports that its activity still needs foreground recovery")
+        UIApplication.shared.applicationState = .active
+        // Match PhoneAgentViewModel.refreshBackgroundExecution(): the host
+        // refreshes the current task immediately after the foreground callback.
+        endingRace.applicationBecameActive()
+        endingRace.update(record: arrivingTask, phase: .observing, step: 1, action: nil,
+                          enabled: true, sessionID: arrivingSession, releasing: false, canPause: true, canStop: true)
+        await endingRace.flush()
+        let recoveredActivity = Activity<AgentActivityAttributes>.activities.last!
+        expect(endingRace.hasTaskPresentation && endingRace.represents(arrivingTask.id) && endingRace.error.isEmpty,
+               "Returning to foreground recreates the latest pending task activity")
+        expect(recoveredActivity !== endingActivity && recoveredActivity.content.state.controlSessionID == arrivingSession && recoveredActivity.content.state.canPause == true && recoveredActivity.content.state.canStop == true,
+               "The recreated activity owns only the arriving task and its current controls")
+        endingRace.update(record: nil, phase: .idle, step: 0, action: nil,
+                          enabled: false, sessionID: arrivingSession, releasing: false, canPause: false, canStop: false)
+        expect(!endingRace.hasTaskPresentation, "Latest explicit disable immediately revokes the recovered presentation")
+        await endingRace.flush()
+        expect(recoveredActivity.endings == 1, "Latest explicit disable ends the recovered activity")
+
+        // A newer disabled snapshot must supersede a queued foreground refresh.
+        endingRace.update(record: finishingTask, phase: .observing, step: 1, action: nil,
+                          enabled: true, sessionID: finishingSession, releasing: false, canPause: true, canStop: true)
+        await endingRace.flush()
+        let secondEndingActivity = Activity<AgentActivityAttributes>.activities.last!
+        pauseEnd = true; endStarted = false; resumeEnd = nil
+        endingRace.update(record: nil, phase: .idle, step: 0, action: nil,
+                          enabled: false, sessionID: finishingSession, releasing: false, canPause: false, canStop: false)
+        while !endStarted { await Task.yield() }
+        endingRace.update(record: arrivingTask, phase: .observing, step: 1, action: nil,
+                          enabled: true, sessionID: arrivingSession, releasing: false, canPause: true, canStop: true)
+        UIApplication.shared.applicationState = .background
+        resumeEnd?.resume(); await endingRace.flush()
+        expect(secondEndingActivity.endings == 1 && !endingRace.hasTaskPresentation && !endingRace.error.isEmpty,
+               "A second in-flight end also retains an explicitly unavailable deferred state")
+        UIApplication.shared.applicationState = .active
+        let countBeforeCancellation = Activity<AgentActivityAttributes>.activities.count
+        endingRace.applicationBecameActive()
+        endingRace.update(record: arrivingTask, phase: .observing, step: 1, action: nil,
+                          enabled: true, sessionID: arrivingSession, releasing: false, canPause: true, canStop: true)
+        endingRace.update(record: nil, phase: .idle, step: 0, action: nil,
+                          enabled: false, sessionID: arrivingSession, releasing: false, canPause: false, canStop: false)
+        await endingRace.flush()
+        expect(!endingRace.hasTaskPresentation && endingRace.error.isEmpty && Activity<AgentActivityAttributes>.activities.count == countBeforeCancellation,
+               "A newer disable cancels the queued foreground refresh and clears the unavailable message")
         print("PASS: \(checks) actual activity controller foreground/background handoff and control identity checks")
     }
 }

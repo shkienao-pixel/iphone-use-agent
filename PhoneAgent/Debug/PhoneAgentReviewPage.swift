@@ -32,6 +32,9 @@ struct PhoneAgentReviewPage: View {
         case "device": ContentView(reviewDestination: .device)
         case "share": ContentView(reviewDestination: .screenShare)
         case "assistant": ContentView(reviewDestination: .assistant)
+        case "didi-chat":
+            ContentView(reviewDestination: .assistant)
+                .onAppear { _ = model.conversation.startDidiSimulation(prompt: "帮我打车，从人民广场到虹桥机场") }
         case "screen-queue": ScreenQueueReview()
         case "screen-queue-empty": TaskQueueView(allowsExecution: false)
         case "paotui-chat": PaotuiConversationReview()

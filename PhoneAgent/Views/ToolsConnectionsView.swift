@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ToolsConnectionsView: View {
     let onNavigate: (WorkspaceDestination) -> Void
+    @EnvironmentObject private var model: PhoneAgentViewModel
 
     var body: some View {
         ScrollView {
@@ -17,6 +18,15 @@ struct ToolsConnectionsView: View {
                         identifier: "tools.modelMemory") { onNavigate(.modelMemory) }
                 }
                 .background(SelaHomePalette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("功能体验").font(.footnote).foregroundStyle(SelaHomePalette.secondary)
+                        .padding(.horizontal, 4)
+                    row("打车模拟", detail: "在 Sela 内体验选点、接单与到达提醒", icon: "car.side",
+                        identifier: "tools.didiSimulation") {
+                            if model.conversation.startDidiSimulation() != nil { onNavigate(.assistant) }
+                        }
+                        .background(SelaHomePalette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 24)

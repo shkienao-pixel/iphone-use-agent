@@ -174,6 +174,50 @@ actor CtripRecoverySequence {
         check(try CtripClient(apiKey: String(repeating: "k", count: 4096)).request(query: "a").httpBody != nil, "Maximum key rejected")
 
         let business = "  上海 → 北京\n¥680；余票和价格以携程实时页面为准。\n"
+        let quotaJSON = #"{"error":"Per-token daily limit exceeded (30)."}"#
+        for payload: [String: Any] in [
+            ["result": quotaJSON], ["result": ["content": quotaJSON]],
+            ["result": "```json\n" + quotaJSON + "\n```"],
+            ["error": "Per-token daily limit exceeded (30). " + token, "success": false],
+            ["result": ["error": ["message": "Per-token daily limit exceeded (30). " + token], "content": business]]
+        ] {
+            do {
+                _ = try CtripClient.decode(fixture(payload), token: token)
+                preconditionFailure("Provider quota error was treated as business data")
+            } catch {
+                check(error.localizedDescription == "携程今日查询额度已用完，请稍后再试", "Quota error did not use a fixed safe message")
+                check(!error.localizedDescription.contains(token), "Quota error exposed a credential")
+            }
+        }
+        for payload: [String: Any] in [
+            ["result": #"{"error":"envelope-secret"}"#],
+            ["result": ["content": #"{"error":{"message":"envelope-secret"}}"#]]
+        ] {
+            do {
+                _ = try CtripClient.decode(fixture(payload), token: token)
+                preconditionFailure("Nested provider error was treated as business data")
+            } catch {
+                check(error.localizedDescription == "携程服务未能完成查询，请稍后重试", "Provider error was not safely classified")
+            }
+        }
+        for ordinary in ["航班提示：error 字段未返回，票价600元。", #"{"error":false,"result":"可查询"}"#,
+                         "查询说明中提到 {\"error\":\"example\"}，航班正常。"] {
+            check(try CtripClient.decode(fixture(["result": ordinary]), token: token) == ordinary,
+                  "Ordinary business text was mistaken for an error envelope")
+        }
+        let quotaSequence = CtripFlightSequence([quotaJSON, business])
+        do {
+            _ = try await CtripClient(apiKey: token, transport: { try await quotaSequence.load($0) }).queryFlights(query: sameQuery)
+            preconditionFailure("Quota error was treated as a flight quote")
+        } catch { check(error.localizedDescription == "携程今日查询额度已用完，请稍后再试", "Quota error lost during flight query") }
+        let quotaCount = await quotaSequence.queries.count
+        check(quotaCount == 1, "Quota error was automatically retried")
+        do {
+            _ = try await CtripClient(apiKey: token, apiEndpoint: CtripClient.wendaoEndpoint, transport: { outgoing in
+                (try fixture(["data": ["answer": quotaJSON]]), response(url: outgoing.url!))
+            }).query(query: "火车")
+            preconditionFailure("Wendao nested quota error was treated as business data")
+        } catch { check(error.localizedDescription == "携程今日查询额度已用完，请稍后再试", "Wendao quota classification failed") }
         check(try CtripClient.decode(fixture(["result": business, "state": "ignored", "token": token]), token: token) == business,
               "Business result changed or envelope returned")
         check(try CtripClient.decode(fixture(["result": ["content": business, "debug": token]]), token: token) == business,

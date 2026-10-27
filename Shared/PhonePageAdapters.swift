@@ -68,8 +68,12 @@ enum PhonePageAdapters {
         selfConversation(name) ? "wechat.builtin.file-transfer" : nil
     }
     static func conversationMatches(_ expected: String, _ actual: String?) -> Bool {
-        guard let actual else { return false }
-        return normalized(expected) == normalized(actual) && selfConversation(expected)
+        // This helper supports only the built-in file-transfer workflow. A
+        // shared label is not sufficient proof of the current chat's identity;
+        // callers must still independently verify its built-in system evidence.
+        guard let actual, let expectedID = canonicalConversation(expected),
+              let actualID = canonicalConversation(actual) else { return false }
+        return expectedID == actualID
     }
     /// A title can be imitated by a contact nickname. Require the separate,
     /// centered built-in transfer explanation, never just the title/row name.
@@ -89,8 +93,11 @@ enum PhonePageAdapters {
     }
     static func conversationRow(_ name: String, in snapshot: PhoneUISnapshot) -> PhoneUIElement? {
         guard selfConversation(name), ["wechat.list", "wechat.search"].contains(snapshot.scene) else { return nil }
+        // All supported aliases are candidates for the one built-in workflow.
+        // A second alias (including a same-name contact) makes the row ambiguous.
+        // A matching row only permits opening it, never sending without proof.
         let rows = snapshot.elements.filter { $0.source == "ocr" && $0.rect.valid &&
-            normalized($0.label) == normalized(name) && (0.18...0.83).contains($0.rect.centerY) }
+            conversationMatches(name, $0.label) && (0.18...0.83).contains($0.rect.centerY) }
         return rows.count == 1 ? rows[0] : nil
     }
     static func keyboardVisible(_ snapshot: PhoneUISnapshot) -> Bool {

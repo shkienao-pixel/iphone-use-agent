@@ -55,6 +55,23 @@ import Foundation
         check(PhonePageAdapters.identity(in: snapshot([element("search", "搜索", 0.4, 0.08)])) == nil, "Generic search cannot establish app identity")
         check(PhonePageAdapters.identity(in: snapshot(header)) == nil, "Chat title without composer evidence is unknown")
         check(!PhonePageAdapters.selfConversation("王伟"), "Display-name-only people are unsupported rather than guessed")
+        let aliases = ["文件传输助手", "File Transfer", "File Transfer Assistant"]
+        for expected in aliases {
+            for actual in aliases {
+                check(PhonePageAdapters.conversationMatches(expected, actual), "Built-in target aliases match independent of display language")
+            }
+        }
+        for (expected, actual) in [("王伟", "王伟"), ("文件传输助手", "王伟"), ("王伟", "File Transfer"),
+                                   ("文件传输助手", "File Transfer Assistant 2"), ("filehelper", "File Transfer")] {
+            check(!PhonePageAdapters.conversationMatches(expected, actual), "Ordinary people and partial/broader names never become a built-in target")
+        }
+        check(!PhonePageAdapters.conversationMatches("文件传输助手", nil), "Unknown conversation is never matched")
+        let englishRow = list.map { value -> PhoneUIElement in var item = value; if item.id == "assistant" { item.label = "File Transfer" }; return item }
+        var englishListSnapshot = snapshot(englishRow); englishListSnapshot.scene = "wechat.list"
+        check(PhonePageAdapters.conversationRow("文件传输助手", in: englishListSnapshot)?.id == "assistant", "Chinese target finds a unique English built-in candidate row")
+        let twoAliases = englishRow + [element("other-alias", "文件传输助手", 0.35, 0.55)]
+        var ambiguousListSnapshot = snapshot(twoAliases); ambiguousListSnapshot.scene = "wechat.list"
+        check(PhonePageAdapters.conversationRow("文件传输助手", in: ambiguousListSnapshot) == nil, "Two language aliases remain ambiguous, never selecting one row")
         for json in [#"{"operation":"wechat_send","target":"王伟","text":"hello","operation_id":"task-001"}"#,
                      #"{"operation":"wechat_send","target":"文件传输助手","text":"hello\nworld","operation_id":"task-001"}"#,
                      #"{"operation":"wechat_send","target":"文件传输助手","text":"hello"}"#,
@@ -82,6 +99,30 @@ import Foundation
         var alternateID = request; alternateID.operationID = "observed-new-id-bypass"; alternateID.target = "file transfer assistant"
         let sameTask = try await restored.execute(alternateID, frame: tape.frame(submitted), mappedHome: false, nextFrame: tape.next)
         check(try decode(sameTask.summary)["status"] as? String == "previously_observed_submission" && restoredExecutor.actions.isEmpty, "A different operation ID and target alias cannot repeat observed content in the same host task")
+
+        // Cross-language matching never relaxes the independent built-in proof,
+        // exact draft, current controls, or post-send observation requirements.
+        let englishTransferProof = PhoneUIElement(id: "system-transfer", label: "You can transfer files between your phone and computer.", rect: PhoneUIRect(x: 0.18, y: 0.22, width: 0.64, height: 0.04), source: "ocr")
+        let englishHeader = [element("back", "微信", 0.1, 0.08), element("title", "File Transfer", 0.5, 0.08), englishTransferProof]
+        let englishEmpty = englishHeader + [element("composer", "发送消息", 0.4, 0.88)]
+        let englishFocused = englishHeader + [element("composer", "发送消息", 0.4, 0.61)] + keyboard
+        let englishDrafted = englishHeader + [element("draft", "hello", 0.4, 0.61), element("send", "发送", 0.9, 0.61)] + keyboard
+        let englishSubmitted = englishFocused + [element("bubble", "hello", 0.77, 0.46)]
+        let aliasTape = WorkflowTape(), aliasExecutor = MouseExecutor()
+        let aliasRuntime = PhoneHarnessRuntime(executor: aliasExecutor, memoryURL: root.appendingPathComponent("alias.json"), recognize: aliasTape.recognize)
+        aliasTape.queued = [englishEmpty, englishFocused, englishDrafted, englishSubmitted]
+        let aliasReceipt = try await aliasRuntime.execute(request, frame: aliasTape.frame(englishRow), mappedHome: false, nextFrame: aliasTape.next)
+        check(try decode(aliasReceipt.summary)["status"] as? String == "observed_submission", "Chinese request and English page complete only with built-in proof and visible result")
+        check(aliasExecutor.actions == [.tap, .tap, .type, .tap], "Cross-language workflow dispatches one exact bounded input sequence")
+        let spoofTape = WorkflowTape(), spoofExecutor = MouseExecutor()
+        let spoof = PhoneHarnessRuntime(executor: spoofExecutor, memoryURL: root.appendingPathComponent("alias-spoof.json"), recognize: spoofTape.recognize)
+        spoofTape.queued = [englishEmpty.filter { $0.id != "system-transfer" }]
+        let spoofResult = try await spoof.execute(request, frame: spoofTape.frame(englishRow), mappedHome: false, nextFrame: spoofTape.next)
+        check(spoofResult.requiresUserReview && spoofExecutor.actions == [.tap], "English-lookalike contact without built-in proof stops before focus, input, or send")
+        let duplicateAliasTape = WorkflowTape(), duplicateAliasExecutor = MouseExecutor()
+        let duplicateAlias = PhoneHarnessRuntime(executor: duplicateAliasExecutor, memoryURL: root.appendingPathComponent("alias-ambiguous.json"), recognize: duplicateAliasTape.recognize)
+        let duplicateAliasResult = try await duplicateAlias.execute(request, frame: duplicateAliasTape.frame(twoAliases), mappedHome: false, nextFrame: duplicateAliasTape.next)
+        check(duplicateAliasResult.requiresUserReview && duplicateAliasExecutor.actions.isEmpty, "Ambiguous cross-language rows cause no click or input")
 
         // A moved target is resolved from current content and bounds, never its old row.
         for (name, rows, y) in [("scroll", list.filter { $0.id != "assistant" } + [element("assistant", "文件传输助手", 0.32, 0.71)], 0.71),

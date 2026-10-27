@@ -9,6 +9,12 @@ struct ConversationTaskCard: View {
         if let background = model.backgroundTasks.record(taskID) { return background }
         return model.history.records.first { $0.id == taskID } ?? model.taskQueue.items.first { $0.id == taskID }?.record
     }
+    private var queueItem: QueuedPhoneTask? { model.taskQueue.items.first { $0.id == taskID } }
+    private func status(for record: PhoneTaskRecord) -> String {
+        ConversationQueuePresentation.statusLabel(outcome: record.outcome.rawValue,
+            queueState: queueItem?.state.rawValue, queueStarted: queueItem?.started ?? false,
+            isCurrent: model.engine.currentRecord?.id == taskID) ?? record.outcome.label
+    }
     var body: some View {
         if let record {
             let handoffConversationID = model.conversation.currentConversationID
@@ -18,7 +24,14 @@ struct ConversationTaskCard: View {
                         .foregroundStyle(record.outcome == .completed ? .green : AgentPalette.secondaryText)
                     Text(record.title).font(.headline)
                     Spacer(minLength: 8)
-                    Text(record.outcome.label).font(.caption).foregroundStyle(.secondary)
+                    Text(status(for: record)).font(.caption).foregroundStyle(.secondary)
+                }
+                if let item = queueItem, !item.started, item.state == .waiting, status(for: record) == "等待执行" {
+                    Text(model.queueRunning ? "队列运行中，将按顺序执行。" : "请在任务队列中点“开始队列”，按顺序执行。")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if let item = queueItem, !item.started, item.state == .suspended, status(for: record) == "等待你确认" {
+                    Text("请先在任务队列中核对状态，再继续。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 let offers = record.logs.filter { $0.title == "工具回执" && $0.detail.hasPrefix("来源：携程") }
                     .flatMap { CtripFlightParser.offers($0.detail, query: record.goal, at: record.updatedAt) }

@@ -16,6 +16,8 @@ enum NativeSkillCatalog {
 
     private static let entries: [(name: String, triggers: [String])] = [
         ("ctrip-travel", ["携程", "机票", "航班", "直飞", "ctrip", "flight"]),
+        ("ctrip-ground-travel", ["火车", "高铁", "动车", "铁路", "车次", "汽车票", "大巴", "长途客车", "长途汽车", "客运", "train", "bus"]),
+        ("didi-ride", ["滴滴", "打车", "叫车", "didi", "taxi"]),
         ("meituan-paotui", ["跑腿", "帮买", "取送", "叫骑手", "meituan_paotui", "paotui"]),
         ("ios-calendar", ["日历", "日程", "安排", "会议", "开会", "calendar", "eventkit", "appointment"]),
         ("ios-reminders", ["提醒", "待办", "reminder", "todo", "to-do"]),
@@ -31,7 +33,14 @@ enum NativeSkillCatalog {
 
     static func selection(for task: String, in bundle: Bundle = .main) throws -> Selection {
         let normalized = task.lowercased()
-        let selected = entries.filter { $0.triggers.contains(where: normalized.contains) }
+        let groundTerms = ["火车", "高铁", "动车", "铁路", "车次", "汽车票", "大巴", "长途客车", "长途汽车", "客运", "train", "bus"]
+        let flightTerms = ["机票", "航班", "飞机", "航程", "flight"]
+        let hasGround = groundTerms.contains(where: normalized.contains)
+        let hasFlight = flightTerms.contains(where: normalized.contains)
+        let selected = entries.filter { entry in
+            if entry.name == "ctrip-travel" && hasGround && !hasFlight { return false }
+            return entry.triggers.contains(where: normalized.contains)
+        }
         var bodies: [String] = []
         for entry in selected {
             guard let url = bundle.url(forResource: "SKILL", withExtension: "md", subdirectory: "Skills/" + entry.name),

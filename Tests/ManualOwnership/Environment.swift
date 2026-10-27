@@ -126,6 +126,7 @@ struct SyntheticRunningRecord { let id: UUID }
     var preparingAutomatically = false, queueRunning = false, queueSwitching = false
     var voicePending = false, calibrating = false
     var manualBusy = false, manualContinuationRequired = false, manualScreenWorkflow = false
+    var manualActionID: UUID?
     var manual: Task<Void, Never>?, voicePreparation: Task<Void, Never>?
     var recordingAudioOwner: UUID?, voiceMode: String?
     var pendingConsentStart = false

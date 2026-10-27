@@ -1,0 +1,95 @@
+{
+  "source": "D01-full230-final-conversation.json",
+  "sourceConversationID": "0491D6F0-B496-46DC-9703-ED4DF1954E31",
+  "messages": [
+    {
+      "id": "1516C060-C988-4129-AB55-46EBFBBFF980",
+      "createdAt": 814778384.791955,
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "text": "帮我打车",
+      "role": "user"
+    },
+    {
+      "intent": {
+        "memorySourceIDs": [],
+        "relatedMessageIDs": [],
+        "mode": "didiRide",
+        "diagnostics": {
+          "recentMessageCount": 0,
+          "recalledSourceCount": 0,
+          "routingMilliseconds": 6482,
+          "memoryMilliseconds": 28,
+          "decisionSource": "model"
+        },
+        "missingInformation": [],
+        "relation": "independent",
+        "module": "didi-ride"
+      },
+      "id": "9FBECA33-7F7A-4EEE-B447-5A44A5E830CF",
+      "createdAt": 814778391.370284,
+      "didiSimulationID": "0C941F13-AA31-408E-970B-53A505D64AAC",
+      "text": "打车模拟 · 先确定行程",
+      "role": "assistant"
+    },
+    {
+      "id": "C7F308CF-BA89-4025-9347-011689B1AACD",
+      "createdAt": 814778406.110817,
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "text": "从这里去机场",
+      "role": "user"
+    },
+    {
+      "intent": {
+        "memorySourceIDs": [],
+        "relatedMessageIDs": [
+          "9FBECA33-7F7A-4EEE-B447-5A44A5E830CF"
+        ],
+        "mode": "didiRide",
+        "diagnostics": {
+          "decisionSource": "model",
+          "recalledSourceCount": 0,
+          "memoryMilliseconds": 51,
+          "recentMessageCount": 2,
+          "routingMilliseconds": 13739
+        },
+        "missingInformation": [],
+        "relation": "reference",
+        "module": "didi-ride"
+      },
+      "id": "C0DE701F-E139-44AF-AED7-9FAE186F9549",
+      "createdAt": 814778419.953995,
+      "text": "已记录补充，请在上方打车模拟卡片中核对并选择地点。",
+      "role": "assistant"
+    },
+    {
+      "id": "921BA8FB-1728-4E18-B282-509E9C8994B8",
+      "createdAt": 814778434.233428,
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "text": "行程是上海人民广场到上海虹桥机场。只用本地模拟，不创建真实订单，不付款。",
+      "role": "user"
+    },
+    {
+      "intent": {
+        "memorySourceIDs": [],
+        "relatedMessageIDs": [
+          "C0DE701F-E139-44AF-AED7-9FAE186F9549"
+        ],
+        "mode": "didiRide",
+        "diagnostics": {
+          "recentMessageCount": 4,
+          "routingMilliseconds": 16853,
+          "recalledSourceCount": 0,
+          "decisionSource": "model",
+          "memoryMilliseconds": 49
+        },
+        "missingInformation": [],
+        "relation": "reference",
+        "module": "didi-ride"
+      },
+      "id": "FE554352-C6F6-42CE-BF30-543415A3125C",
+      "createdAt": 814778451.227584,
+      "text": "没有找到可关联的打车模拟，请重新完整说明上车点和目的地。原对话内容已保留。",
+      "role": "assistant"
+    }
+  ]
+}

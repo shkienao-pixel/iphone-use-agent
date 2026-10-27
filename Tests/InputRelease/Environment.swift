@@ -94,6 +94,7 @@ final class SyntheticCharacteristic { let uuid = MouseProtocol.command }
     var preparingAutomatically = false, queueRunning = false, queueSwitching = false
     var manualBusy = false, voicePending = false, calibrating = false
     var manualContinuationRequired = false, manualScreenWorkflow = false
+    var manualActionID: UUID?
     var recordingAudioOwner: UUID?, manual: Task<Void, Never>?
     var engine = Engine(), workflowServices = Workflows(), notice = ""
     init(_ ble: BLETransport) { self.ble = ble; executor = MouseExecutor(ble:ble) }

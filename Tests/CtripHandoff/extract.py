@@ -11,7 +11,7 @@ end=re.search(r'\n}\s*\n(?=struct CtripFlightHandoffOrigin)',s[start:])
 if end is None: raise SystemExit('Could not locate the handoff extension boundary in actual production source')
 end_start=start+end.start();type_start=start+end.end()
 body='\n@MainActor extension PhoneAgentViewModel {\n'+s[start:end_start]+'\n}\n\n'+s[type_start:]
-(out/'ProductionHandoff.swift').write_text('import Foundation\n'+body)
-(out/'ProductionHandoffUIKit.swift').write_text('import Foundation\nimport UIKit\n'+body)
+(out/'ProductionHandoff.swift').write_text('import Foundation\nimport Combine\n'+body)
+(out/'ProductionHandoffUIKit.swift').write_text('import Foundation\nimport UIKit\nimport Combine\n'+body)
 result={'source_root':str(source_root),'source_file':str(p),'source_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'production_extract_sha256':hashlib.sha256(body.encode()).hexdigest()}
 (out/'extraction-hashes.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))

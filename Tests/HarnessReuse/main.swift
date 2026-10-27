@@ -12,7 +12,9 @@ import Foundation
         self.capture = capture; self.stream = stream; self.result = result
     }
     var contextFailure: WorkflowLeaseFailure.Predicate?
+    var onContext: (() -> Void)?
     func context(for frame: ScreenFrame) async throws -> String {
+        onContext?()
         if let contextFailure { throw WorkflowLeaseFailure(predicates: [contextFailure]) }
         return "offline harness"
     }
@@ -78,11 +80,13 @@ import Foundation
         }
         for predicate in [WorkflowLeaseFailure.Predicate.currentPixelsMatch, .connectionGenerationMatches] {
             let capture = CaptureService(), executor = MouseExecutor(), stream = UUID()
-            capture.frameProvider = { ScreenFrame(captureID: stream) }
+            var changed = false
+            capture.frameProvider = { ScreenFrame(captureID: stream, shade: changed ? 1 : 0, jpeg: Data([changed ? 2 : 1])) }
             let harness = ReceiptHarness(capture: capture, stream: stream, result: .verified)
             harness.contextFailure = predicate
+            harness.onContext = { changed = true }
             let engine = AgentEngine(capture: capture, executor: executor); engine.phoneHarness = harness
-            ModelProbe.calls = 0; ModelProbe.delay = 0
+            ModelProbe.calls = 0; ModelProbe.images = []; ModelProbe.delay = 0
             ModelProbe.action = AgentAction(kind: .finish, reason: "Inspect only")
             var config = AgentSettings(); config.startDelay = 0; config.maxSteps = 1
             PrivacyConsent.grant(config); engine.start(task: "Inspect current screenshot", settings: config)
@@ -91,8 +95,9 @@ import Foundation
             PrivacyConsent.revoke()
             expect(engine.executionSettled, "Context failure must settle within a bounded attempt")
             if predicate == .currentPixelsMatch {
-                expect(ModelProbe.calls == 1 && engine.phase == .completed, "Pixel-only OCR drift may fall back to the actual screenshot")
+                expect(ModelProbe.calls == 1 && engine.phase == .completed, "Pixel-only OCR drift uses the current screenshot and validates against it")
                 expect(engine.logs.contains { $0.title == "改用当前截图" }, "Discarded OCR fallback must be explicit")
+                expect(ModelProbe.images == [Data([2])], "Model must receive the fresh frame instead of the stale OCR frame")
             } else {
                 expect(ModelProbe.calls == 0 && engine.phase == .failed, "Connection identity changes must never use screenshot fallback")
             }

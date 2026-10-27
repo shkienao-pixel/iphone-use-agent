@@ -1,0 +1,96 @@
+{
+  "source": "D01-concrete-after-clarify232-conversation.json",
+  "sourceConversationID": "6C9DD67A-7242-4228-9B1A-5B1F45F3E628",
+  "messages": [
+    {
+      "text": "帮我从上海人民广场打车到上海虹桥机场。只体验本地模拟，不创建真实订单、不付款。",
+      "id": "6C66C15F-FAC1-4AA5-BA28-DD0082C89F8C",
+      "role": "user",
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "createdAt": 814781238.633307
+    },
+    {
+      "text": "打车模拟 · 先确定行程",
+      "didiSimulationID": "A46BE598-8626-4854-9270-D325DCD77C1B",
+      "id": "CA45B0FE-003B-4509-8B6A-6DA45839E43C",
+      "role": "assistant",
+      "intent": {
+        "missingInformation": [],
+        "relatedMessageIDs": [],
+        "relation": "independent",
+        "module": "didi-ride",
+        "memorySourceIDs": [],
+        "diagnostics": {
+          "routingMilliseconds": 15790,
+          "decisionSource": "model",
+          "recalledSourceCount": 0,
+          "recentMessageCount": 0,
+          "memoryMilliseconds": 79
+        },
+        "mode": "didiRide"
+      },
+      "createdAt": 814781254.578056
+    },
+    {
+      "text": "第二个",
+      "createdAt": 814782439.448797,
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "id": "96F98649-1C7E-4D4B-AEC9-4CDF7F02424F",
+      "role": "user"
+    },
+    {
+      "text": "请说明具体地点，或在上方打车卡片中选择；本次未修改行程。",
+      "createdAt": 814782445.294183,
+      "intent": {
+        "missingInformation": [],
+        "relatedMessageIDs": [
+          "CA45B0FE-003B-4509-8B6A-6DA45839E43C"
+        ],
+        "relation": "reference",
+        "module": "clarification",
+        "memorySourceIDs": [],
+        "diagnostics": {
+          "memoryMilliseconds": 28,
+          "recalledSourceCount": 0,
+          "recentMessageCount": 2,
+          "decisionSource": "didiUnboundReference",
+          "routingMilliseconds": 5742
+        },
+        "mode": "clarify"
+      },
+      "id": "B60A48A9-CA44-4A2D-983F-9F3EBA5D109B",
+      "role": "assistant"
+    },
+    {
+      "text": "目的地改成上海浦东机场。",
+      "createdAt": 814782719.432356,
+      "timeZoneIdentifier": "Asia/Shanghai",
+      "id": "9E7B31F3-7A21-47B2-A4E4-D684B5572069",
+      "role": "user"
+    },
+    {
+      "text": "没有找到可关联的打车模拟，请重新完整说明上车点和目的地。原对话内容已保留。",
+      "createdAt": 814782726.468829,
+      "intent": {
+        "missingInformation": [],
+        "relatedMessageIDs": [
+          "CA45B0FE-003B-4509-8B6A-6DA45839E43C",
+          "6C66C15F-FAC1-4AA5-BA28-DD0082C89F8C"
+        ],
+        "relation": "reference",
+        "module": "didi-ride",
+        "memorySourceIDs": [],
+        "diagnostics": {
+          "recalledSourceCount": 0,
+          "decisionSource": "model",
+          "routingMilliseconds": 6901,
+          "memoryMilliseconds": 52,
+          "recentMessageCount": 4
+        },
+        "mode": "didiRide"
+      },
+      "id": "C2662788-0550-45F2-9958-C7250504ED81",
+      "role": "assistant"
+    }
+  ]
+}

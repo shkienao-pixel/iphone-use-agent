@@ -13,7 +13,7 @@ struct UIImage {
     }
 }
 struct ScreenFrame {
-    let image: UIImage, jpeg = Data()
+    let image: UIImage, jpeg: Data
     let capturedAt: Date, fullDisplay = true
     private var systemConfirmedAt: Date?
     var confirmedAt: Date { systemConfirmedAt ?? capturedAt }
@@ -24,8 +24,8 @@ struct ScreenFrame {
     }
     let captureID: UUID?
     let width = 2, height = 2, sourceWidth = 2, sourceHeight = 2
-    init(capturedAt: Date = Date(), captureID: UUID? = nil, shade: CGFloat = 1) {
-        self.capturedAt = capturedAt; self.captureID = captureID; image = UIImage(shade: shade)
+    init(capturedAt: Date = Date(), captureID: UUID? = nil, shade: CGFloat = 1, jpeg: Data = Data()) {
+        self.capturedAt = capturedAt; self.captureID = captureID; self.jpeg = jpeg; image = UIImage(shade: shade)
     }
 }
 @MainActor final class CaptureService {
@@ -93,6 +93,7 @@ enum SettingsStore { static func apiKey(for endpoint: String? = nil) -> String {
 enum ModelEndpointPolicy { static func url(_ endpoint: String) throws -> URL { URL(string: endpoint)! } }
 @MainActor enum ModelProbe {
     static var calls = 0
+    static var images: [Data] = []
     static var goals: [String] = []
     static var taskContexts: [String] = []
     static var attachmentRequests: [[ComposerAttachment]] = []
@@ -111,6 +112,7 @@ enum ModelEndpointPolicy { static func url(_ endpoint: String) throws -> URL { U
         let timer = metrics?.begin(.model, label: "offline model fake")
         defer { if let timer { metrics?.end(timer, outcome: Task.isCancelled ? .cancelled : .completed) } }
         ModelProbe.calls += 1
+        ModelProbe.images.append(jpeg)
         ModelProbe.goals.append(task)
         ModelProbe.taskContexts.append(taskContext)
         ModelProbe.attachmentRequests.append(attachments)

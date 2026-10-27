@@ -179,6 +179,8 @@ import ActivityKit
                                 travelChecks["conversation_route"] = "ok:" + route.mode.rawValue
                             } catch { travelChecks["conversation_route"] = "failed:" + error.localizedDescription }
                         }
+                    case "capture_ctrip_handoff":
+                        try CtripHandoffDebugCapture.arm(command.value)
                     case "check_plan_inference":
                         Task {
                             do {
@@ -223,6 +225,9 @@ import ActivityKit
                 "tool_preview": model.tools.pending?.request.preview ?? "",
                 "chat_route": model.conversation.lastRoute?.mode.rawValue ?? "",
                 "chat_flight_cards": model.conversation.messages.last?.flightOffers?.count ?? 0,
+                "ctrip_handoff_outcome": CtripFlightHandoffCoordinator.shared.lastReceipt?.outcome.rawValue ?? "",
+                "ctrip_handoff_reason": CtripFlightHandoffCoordinator.shared.lastReceipt?.selectionDiagnostic ?? "",
+                "ctrip_handoff_debug": CtripHandoffDebugCapture.snapshot,
                 "chat_task_cards": model.conversation.messages.compactMap(\.taskID).count,
                 "chat_message_count": model.conversation.messages.count,
                 "chat_shared_context": model.conversation.sharedContextEnabled,

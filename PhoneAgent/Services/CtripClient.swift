@@ -214,6 +214,41 @@ struct CtripClient {
         return patterns.contains { lead.range(of: $0, options: .regularExpression) != nil }
     }
 
+    /// Treat provider error values as failures without exposing their raw payload.
+    /// Some successful HTTP responses wrap an error object inside result text.
+    private static func providerFailure(_ error: Any) -> String? {
+        if error is NSNull { return nil }
+        if let flag = error as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID(), !flag.boolValue { return nil }
+        if let value = error as? String, value.isEmpty { return nil }
+        if let value = error as? [String: Any], value.isEmpty { return nil }
+        let description: String
+        if let value = error as? String { description = value }
+        else if JSONSerialization.isValidJSONObject(error),
+                let data = try? JSONSerialization.data(withJSONObject: error),
+                let value = String(data: data, encoding: .utf8) { description = value }
+        else { description = "" }
+        if description.lowercased().contains("per-token daily limit exceeded") {
+            return "携程今日查询额度已用完，请稍后再试"
+        }
+        return "携程服务未能完成查询，请稍后重试"
+    }
+
+    private static func embeddedProviderFailure(_ text: String) -> String? {
+        var candidate = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Accept only a complete fenced JSON object, never snippets of prose.
+        if candidate.hasPrefix("```"), let newline = candidate.firstIndex(of: "\n"), candidate.hasSuffix("```") {
+            let opening = candidate[..<newline].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if opening == "```" || opening == "```json" {
+                candidate = String(candidate[candidate.index(after: newline)..<candidate.index(candidate.endIndex, offsetBy: -3)])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        guard let data = candidate.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = object["error"] else { return nil }
+        return providerFailure(error)
+    }
+
     static func decode(_ data: Data, token: String) throws -> String {
         guard data.count <= responseLimit else { throw AgentError.message(TransportFailure.size.message) }
         _ = try validatedToken(token)
@@ -221,6 +256,9 @@ struct CtripClient {
         guard let object = try? JSONSerialization.jsonObject(with: data),
               let envelope = object as? [String: Any] else {
             throw AgentError.message("携程未返回有效的查询结果格式")
+        }
+        if let error = envelope["error"], let failure = providerFailure(error) {
+            throw AgentError.message(failure)
         }
         if let success = envelope["success"] as? NSNumber,
            CFGetTypeID(success) == CFBooleanGetTypeID(), !success.boolValue {
@@ -235,17 +273,12 @@ struct CtripClient {
             } else { allowed = false }
             guard allowed else { throw AgentError.message("携程服务未能完成查询，请稍后重试") }
         }
-        if let error = envelope["error"], !(error is NSNull) {
-            let allowed: Bool
-            if let flag = error as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() { allowed = !flag.boolValue }
-            else if let text = error as? String { allowed = text.isEmpty }
-            else if let details = error as? [String: Any] { allowed = details.isEmpty }
-            else { allowed = false }
-            guard allowed else { throw AgentError.message("携程服务未能完成查询，请稍后重试") }
-        }
         let result: String?
         if let text = envelope["result"] as? String { result = text }
         else if let value = envelope["result"], !(value is NSNull) {
+            if let details = value as? [String: Any], let error = details["error"], let failure = providerFailure(error) {
+                throw AgentError.message(failure)
+            }
             guard let content = (value as? [String: Any])?["content"] as? String else {
                 throw AgentError.message("携程未返回有效的查询结果格式")
             }
@@ -254,6 +287,7 @@ struct CtripClient {
         guard let result, !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw TransportFailure.emptyResult
         }
+        if let failure = embeddedProviderFailure(result) { throw AgentError.message(failure) }
         // Fail closed if the provider echoes a code, including commonly escaped forms.
         // Preserve ordinary business text byte-for-byte; normalization is only for detection.
         if result.contains(token) || canonical(result).contains(canonical(token)) {

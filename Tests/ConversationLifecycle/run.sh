@@ -7,7 +7,7 @@ xcrun swiftc -parse-as-library -module-cache-path "$check_dir/module-cache" \
   "$project_dir/Shared/ComposerAttachment.swift" \
   "$project_dir/Shared/NativeTaskResult.swift" "$project_dir/Shared/AssistantConversationContext.swift" "$project_dir/Shared/ConversationUnderstanding.swift" \
   "$project_dir/PhoneAgent/Stores/AssistantConversationStore.swift" \
-  "$project_dir/PhoneAgent/Services/AssistantConversation.swift" \
+  "$project_dir/PhoneAgent/Services/DidiChatSimulationRegistry.swift" "$project_dir/PhoneAgent/Services/AssistantConversation.swift" \
   "$project_dir/Tests/AssistantConversation/Environment.swift" \
   "$project_dir/Tests/ConversationLifecycle/main.swift" \
   -o "$check_dir/conversation-lifecycle-checks"
@@ -21,7 +21,7 @@ xcrun swiftc -parse-as-library -module-cache-path "$check_dir/module-cache" \
   "$project_dir/Shared/ComposerAttachment.swift" "$project_dir/Shared/VoiceCommand.swift" \
   "$project_dir/Shared/NativeTaskResult.swift" "$project_dir/Shared/AssistantConversationContext.swift" "$project_dir/Shared/ConversationUnderstanding.swift" \
   "$project_dir/PhoneAgent/Stores/AssistantConversationStore.swift" \
-  "$project_dir/PhoneAgent/Services/AssistantConversation.swift" \
+  "$project_dir/PhoneAgent/Services/DidiChatSimulationRegistry.swift" "$project_dir/PhoneAgent/Services/AssistantConversation.swift" \
   "$project_dir/PhoneAgent/Stores/ComposerAttachmentStore.swift" \
   "$project_dir/PhoneAgent/Services/ComposerAttachmentImport.swift" \
   "$project_dir/PhoneAgent/Services/OfficeTextImport.swift" "$project_dir/PhoneAgent/Services/LocalFileRecognition.swift" \

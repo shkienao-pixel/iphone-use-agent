@@ -18,9 +18,9 @@ def block(signature):
 
 helper, _ = block("    private func synchronizeConversationDraft()")
 send, _ = block("    private func send()")
-handler, handler_body = block("        .onChange(of: model.conversation.currentConversationID) { _, _ in\n            synchronizeConversationDraft()")
-assert handler_body.startswith(" _, _ in\n")
-handler_body = handler_body[len(" _, _ in\n"):]
+handler, handler_body = block("        .onChange(of: model.conversation.currentConversationID) { previousID, _ in\n            DidiChatSimulationRegistry.shared.end(conversationID: previousID)")
+assert handler_body.startswith(" previousID, _ in\n")
+handler_body = handler_body[len(" previousID, _ in\n"): ]
 
 scaffold = '''import Foundation
 import SwiftUI
@@ -79,6 +79,7 @@ enum CameraObservationWindow {
     // PRODUCTION_HELPER
     // PRODUCTION_SEND
     func conversationDidChange() {
+        let previousID = attachmentConversationID ?? model.conversation.currentConversationID
         // PRODUCTION_HANDLER
     }
 }

@@ -1,0 +1,40 @@
+{
+  "updatedAt": 814772822.392764,
+  "draft": "",
+  "messages": [
+    {
+      "role": "user",
+      "createdAt": 814772817.065908,
+      "text": "帮我叫辆车",
+      "id": "2D3EC071-A49E-4F36-8EB0-2EF34D6F21C8",
+      "timeZoneIdentifier": "Asia/Shanghai"
+    },
+    {
+      "role": "assistant",
+      "didiSimulationID": "17B01B61-B827-4FA7-82F0-6149AAA8134A",
+      "intent": {
+        "mode": "didiRide",
+        "memorySourceIDs": [],
+        "relatedMessageIDs": [],
+        "missingInformation": [],
+        "diagnostics": {
+          "memoryMilliseconds": 32,
+          "routingMilliseconds": 5239,
+          "recalledSourceCount": 0,
+          "recentMessageCount": 0,
+          "decisionSource": "model"
+        },
+        "relation": "independent",
+        "module": "didi-ride"
+      },
+      "createdAt": 814772822.3926,
+      "text": "打车模拟 · 先确定行程",
+      "id": "95C5D6D6-F93D-4E0D-BD03-F130C0B45FBB"
+    }
+  ],
+  "id": "8987818E-C0AA-4B4D-8BED-BDB52E209403",
+  "createdAt": 814772817.053838,
+  "contextReferences": [],
+  "title": "帮我叫辆车",
+  "recipient": "https://api.openai.com/v1/responses|ChatGPT 计划"
+}

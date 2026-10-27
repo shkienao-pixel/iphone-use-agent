@@ -260,8 +260,8 @@ import Foundation
         queuedTask.handleConversationAction(.init(mode: .task, request: "创建闹钟", message: "已创建"), messageID: queuedMessage)
         expect(queuedTask.actions.map(\.0) == ["enqueue"] && queuedTask.conversation.linkedMessages[queuedMessage] == queuedTask.taskQueue.items.last?.id,
                "Queued handoff links its actual queue ID")
-        expect(queuedTask.conversation.handoffs[queuedMessage]?.contains("已加入任务队列，尚未开始执行") == true,
-               "Enqueue acknowledgement distinguishes queued from executing")
+        expect(queuedTask.conversation.handoffs[queuedMessage] == "已加入任务队列。" && queuedTask.taskQueue.items.last?.state == .waiting,
+               "Enqueue acknowledgement reports acceptance without freezing execution status")
         expect(queuedTask.goal == "用户正在编辑的另一项新任务", "A late screen route cannot overwrite or clear the user's new task draft")
         let idleDraft = PhoneAgentViewModel(), idleDraftMessage = UUID()
         idleDraft.goal = "新会话里尚未发送的草稿"

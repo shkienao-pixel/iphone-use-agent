@@ -15,6 +15,8 @@ final class NativePanelUITests: XCTestCase {
         var index: Int?
         var x: Double?
         var y: Double?
+        var x2: Double?
+        var y2: Double?
         var frameID: UUID?
         var expectedValue: String?
     }
@@ -32,7 +34,7 @@ final class NativePanelUITests: XCTestCase {
         [selaBundle, "com.apple.springboard", "com.apple.mobilecal", "com.apple.reminders",
          "com.apple.Health", "com.apple.MobileAddressBook", "com.apple.mobileslideshow",
          "com.apple.Music", "com.apple.mobilenotes", "com.apple.shortcuts", "com.apple.Preferences",
-         "com.apple.mobilesafari", "com.apple.DocumentsApp", "com.meituan.imeituan"]
+         "com.apple.mobilesafari", "com.apple.DocumentsApp", "com.meituan.imeituan", "ctrip.com", "pro.ctrip.com"]
     }
     @MainActor func app(_ bundle: String?) throws -> XCUIApplication {
         let name = bundle ?? selaBundle!
@@ -54,7 +56,12 @@ final class NativePanelUITests: XCTestCase {
         case "cell": query = app.cells
         default: throw TransportError.invalid("Unsupported UI element type")
         }
-        let matches = query.matching(NSPredicate(format: "identifier == %@ OR label == %@", name, name))
+        let matches: XCUIElementQuery
+        if command.elementType == "textField" || command.elementType == "searchField" {
+            matches = query.matching(NSPredicate(format: "identifier == %@ OR label == %@ OR placeholderValue == %@", name, name, name))
+        } else {
+            matches = query.matching(NSPredicate(format: "identifier == %@ OR label == %@", name, name))
+        }
         let index = command.index ?? 0
         guard (0..<50).contains(index), matches.count > index else { throw TransportError.invalid("UI element is not present: " + name) }
         let result = matches.element(boundBy: index)
@@ -200,6 +207,17 @@ final class NativePanelUITests: XCTestCase {
             guard (field.value as? String) == text else { throw TransportError.invalid("Observed field replacement differs") }
             lastFrame = nil
             return ["inputMatched": true, "inputCharacters": text.count]
+        case "drag_screen":
+            guard let frame = lastFrame, command.frameID == frame.0, Date().timeIntervalSince(frame.1) <= 60,
+                  frame.2 == (command.bundle ?? selaBundle!),
+                  let x = command.x, let y = command.y, let x2 = command.x2, let y2 = command.y2,
+                  (0...1).contains(x), (0...1).contains(y), (0...1).contains(x2), (0...1).contains(y2) else {
+                throw TransportError.invalid("A fresh inspected frame and valid drag endpoints are required")
+            }
+            let from = target.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y))
+            let to = target.coordinate(withNormalizedOffset: CGVector(dx: x2, dy: y2))
+            from.press(forDuration: 0.3, thenDragTo: to)
+            lastFrame = nil
         case "tap_screen", "long_press_screen":
             guard let frame = lastFrame, command.frameID == frame.0, Date().timeIntervalSince(frame.1) <= 60,
                   frame.2 == (command.bundle ?? selaBundle!),
