@@ -194,7 +194,7 @@ import ActivityKit
             NativeConnectionsStore.shared.refresh()
             let permissions = Dictionary(uniqueKeysWithValues: NativeAppConnection.allCases.map { ($0.rawValue, NativeConnectionsStore.shared.state($0).title) })
             let chatGPTProfile = model.settings.usesChatGPTPlan ? ChatGPTPlanStore.selected() : nil
-            let state: [String: Any] = ["session": session, "command": lastID, "operation": lastOperation, "error": lastError,
+            var state: [String: Any] = ["session": session, "command": lastID, "operation": lastOperation, "error": lastError,
                 "active": UIApplication.shared.applicationState == .active,
                 "permissions": permissions, "eventKit": NativeEventAccess.shared.diagnostics,
                 "calendar_raw": EKEventStore.authorizationStatus(for: .event).rawValue,
@@ -237,29 +237,39 @@ import ActivityKit
                 "chat_answer_length": model.conversation.messages.last(where: { $0.role == "assistant" })?.text.count ?? 0,
                 "tool_pending": model.tools.pending?.request.operation.rawValue ?? "",
                 "live_activity_enabled": model.settings.liveTaskStatus != false,
+                "live_activity_creation_allowed": ActivityAuthorizationInfo().areActivitiesEnabled,
+                "live_activity_display_permission": "not_observable_via_public_api",
+                // Legacy diagnostics alias: creation availability only, never
+                // proof of first-use consent or actual Dynamic Island visibility.
                 "live_activity_authorized": ActivityAuthorizationInfo().areActivitiesEnabled,
+                "live_activity_authorized_semantics": "creation_availability_only",
+                "live_activity_preview_active": model.taskActivity.previewing,
+                "live_activity_preview_message": model.taskActivity.previewMessage,
                 "live_activity_count": Activity<AgentActivityAttributes>.activities.count,
                 "live_activity_states": Activity<AgentActivityAttributes>.activities.map { item in
                     ["taskID": item.attributes.taskID.uuidString, "phase": item.content.state.phase ?? "",
                      "status": item.content.state.status, "activityState": String(describing: item.activityState),
                      "taskTitle": item.content.state.taskTitle ?? "", "canPause": item.content.state.canPause == true,
-                     "canStop": item.content.state.canStop == true, "completed": item.content.state.completed == true] as [String: Any]
+                     "canStop": item.content.state.canStop == true, "completed": item.content.state.completed == true,
+                     "isPreview": item.content.state.isPreview == true] as [String: Any]
                 },
                 "live_activity_title": Activity<AgentActivityAttributes>.activities.first?.content.state.taskTitle ?? "",
                 "live_activity_error": model.taskActivity.error,
+                "background_execution_error": model.backgroundExecution.error,
+                "background_execution": model.backgroundExecution.diagnosticSnapshot.dictionary,
                 "notification_enabled": model.taskNotifications.enabled,
                 "notification_authorization": model.taskNotifications.authorization,
                 "notification_error": model.taskNotifications.error,
                 "notification_checks": notificationChecks,
                 "travel_checks": travelChecks, "meituan_connected": MeituanConnectionStore.verified,
-                "paotui_configured": MeituanPaotuiStore.shared.configured,
-                "paotui_ready": MeituanPaotuiStore.shared.ready,
-                "paotui_address_count": MeituanPaotuiStore.shared.addresses.count,
-                "paotui_quotes": MeituanPaotuiStore.shared.quotes.map { ["service": $0.serviceTitle, "fee": $0.fee, "distance": $0.distance, "estimate": $0.estimate] as [String: Any] },
-                "paotui_order_created": MeituanPaotuiStore.shared.lastOrderID != nil,
-                "paotui_unresolved_order": MeituanPaotuiStore.shared.hasUnresolvedSubmission,
+                "paotui_diagnostics": MeituanPaotuiStore.shared.diagnosticsSnapshot.jsonObject,
                 "ctrip_enabled": CtripStore.enabled, "ctrip_credential": CtripStore.hasCredential,
                 "date": Date().timeIntervalSince1970]
+            #if targetEnvironment(simulator)
+            if ProcessInfo.processInfo.arguments.contains("--sela-activity-fixtures") {
+                state["simulator_fixture_background"] = TaskActivitySimulatorFixtures.backgroundDiagnostic
+            }
+            #endif
             if let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]) {
                 try? data.write(to: root.appendingPathComponent("state.json"), options: [.atomic, .completeFileProtection])
             }

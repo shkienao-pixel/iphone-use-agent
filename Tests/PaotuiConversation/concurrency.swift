@@ -58,7 +58,7 @@ import Foundation
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let backend = InterleavedBackend(), path = root.appendingPathComponent("orders.json")
-        let store = MeituanPaotuiStore(receiptURL: path, clientFactory: backend.client)
+        let store = MeituanPaotuiStore(connection: PaotuiFixtureRuntime.connection(), receiptURL: path, clientFactory: backend.client)
         try store.installCredential("offline-concurrent-account")
         let controller = MeituanPaotuiConversation(store: store, planner: { question, _, _ in
             if question == "cancel" { return #"{"intent":"cancel"}"# }
@@ -68,7 +68,7 @@ import Foundation
             return String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
         })
         func request(_ id: UUID, _ goods: String) async throws -> PaotuiChatReply {
-            try await controller.respond(question: goods, history: [], conversationID: id, settings: AgentSettings(), apiKey: "fixture")
+            try await controller.respond(question: goods, history: [], conversationID: id)
         }
         func quote(_ reply: PaotuiChatReply, _ id: UUID) async throws -> PaotuiChatReply {
             try await controller.select(reply.card!, .init(action: .quote), conversationID: id)
@@ -83,14 +83,14 @@ import Foundation
 
         // Existing workbench state remains separate from conversation pricing in both directions.
         try await store.loadAddresses()
-        store.draft = PaotuiDraft(recipientID: "address:1", nearby: true, goods: "Workbench")
+        store.draft = PaotuiDraft(service: .buy, recipientID: "address:1", nearby: true, goods: "Workbench")
         let workbench = try await store.preview()[0]
         let a = UUID(), b = UUID()
         let aCard = try await confirmCard(quote(request(a, "A original"), a), a)
         let bCard = try await confirmCard(quote(request(b, "B original"), b), b)
         expect(controller.isCurrent(aCard) && controller.isCurrent(bCard), "Two conversations retain their actual valid quote cards")
         expect(aCard.canCreateOrder && bCard.canCreateOrder, "Both independent confirmation cards are enabled")
-        expect(store.draft.goods == "Workbench" && store.quotes.first?.id == workbench.id && store.canSubmit(workbench), "Conversation pricing does not overwrite workbench draft or quote authority")
+        expect(store.draft.goods == "Workbench" && store.quotes.first?.id == workbench.id && store.isCurrentWorkbenchQuote(workbench), "Conversation pricing does not overwrite workbench draft or quote authority")
         store.draft.goods = "Workbench changed"
         expect(controller.isCurrent(aCard) && controller.isCurrent(bCard), "Workbench edits cannot invalidate conversation quotes")
         let firstReceipt = try await controller.select(aCard, .init(action: .confirm), conversationID: a)
@@ -176,7 +176,7 @@ import Foundation
         let submission = Task { try await controller.select(hCard, .init(action: .confirm), conversationID: h) }
         await submitGate.wait()
         expect(store.busy && store.hasUnresolvedSubmission, "Global lock and durable pending precede the submit attempt")
-        expect(!controller.isCurrent(iCard), "Another confirmation card is unavailable while submission is pending")
+        expect(controller.isCurrent(iCard) && !controller.presentation(for: iCard, conversationID: i).canCreateOrder, "Another current card cannot confirm while submission is pending")
         await reject({ _ = try await controller.select(iCard, .init(action: .confirm), conversationID: i) }, "Parallel order bypassed submit lock")
         submitGate.resume(); _ = try await submission.value
         expect(controller.isCurrent(iCard), "Successful submission releases the lock without destroying another quote")
@@ -188,16 +188,66 @@ import Foundation
         expect(pendingQuote.card?.canCreateOrder == false && pendingQuote.card?.deliveryFee != nil, "Read-only pricing remains available with global unresolved submission")
         let pendingCard = try await confirmCard(pendingQuote, j)
         await reject({ _ = try await controller.select(pendingCard, .init(action: .confirm), conversationID: j) }, "Another conversation bypassed unknown-result protection")
-        let restored = MeituanPaotuiStore(receiptURL: path, clientFactory: backend.client)
+        let restored = MeituanPaotuiStore(connection: PaotuiFixtureRuntime.connection(), receiptURL: path, clientFactory: backend.client)
         expect(restored.hasUnresolvedSubmission && restored.lastOrderID != nil, "Existing receipt schema reopens with successful and pending orders intact")
         let restarted = MeituanPaotuiConversation(store: restored)
         expect(!restarted.isCurrent(pendingCard), "Persisted cards cannot reconstruct runtime quote authority")
-        store.resolveAfterHumanReview()
+
+        // A failed review write must not advance pricing authority or discard a valid read-only response.
+        let failedReviewStore = MeituanPaotuiStore(connection: PaotuiFixtureRuntime.connection(), receiptURL: path, clientFactory: backend.client,
+            commitJournal: { _, _ in throw CocoaError(.fileWriteNoPermission) })
+        try await failedReviewStore.loadAddresses()
+        let failedReviewContext = try failedReviewStore.beginConversationRequest(UUID(),
+            draft: PaotuiDraft(service: .buy, recipientID: "address:1", nearby: true, goods: "B failed review pricing"))
+        let failedReviewGate = backend.pause("delivery_preview", goods: "B failed review pricing")
+        let pricingAcrossFailedReview = Task { try await failedReviewStore.preview(for: failedReviewContext) }
+        await failedReviewGate.wait()
+        do {
+            try failedReviewStore.recordReview(attemptID: failedReviewStore.pendingReviews[0].id, conclusion: .believesNotCreated)
+            preconditionFailure("Failed review write removed the unknown barrier")
+        } catch { checks += 1 }
+        failedReviewGate.resume()
+        let readOnlyAfterFailure = try await pricingAcrossFailedReview.value[0]
+        expect(failedReviewStore.hasUnresolvedSubmission && failedReviewStore.owns(readOnlyAfterFailure, for: failedReviewContext) &&
+               !failedReviewStore.canSubmit(readOnlyAfterFailure, for: failedReviewContext),
+               "Failed review persistence preserves in-flight read-only pricing and its global submission barrier")
+
+        // A successful human review revokes previews that began before it, including a global preview.
+        var reviewDraft = PaotuiDraft(service: .buy, recipientID: "address:1", goods: "B scoped review pricing")
+        var reviewContext = try store.beginConversationRequest(UUID(), draft: reviewDraft)
+        let reviewPlace = try await store.search(keyword: "A review shop", city: "深圳", for: reviewContext)[0]
+        reviewDraft.senderID = reviewPlace.id
+        reviewContext = try store.updateConversationDraft(reviewDraft, for: reviewContext)
+        let scopedReviewGate = backend.pause("delivery_preview", goods: "B scoped review pricing")
+        let pricingAcrossReview = Task { try await store.preview(for: reviewContext) }
+        await scopedReviewGate.wait()
+        store.draft = PaotuiDraft(service: .buy, recipientID: "address:1", nearby: true, goods: "B global review pricing")
+        let globalReviewGate = backend.pause("delivery_preview", goods: "B global review pricing")
+        let globalPricingAcrossReview = Task { try await store.preview() }
+        await globalReviewGate.wait()
+        try store.recordReview(attemptID: store.pendingReviews[0].id, conclusion: .believesNotCreated)
+        expect(store.isCurrent(reviewContext) && store.locations(for: reviewContext).contains { $0.id == reviewPlace.id } &&
+               store.draft.goods == "B global review pricing", "Review preserves preparation scopes, drafts and verified places")
+        scopedReviewGate.resume(); globalReviewGate.resume()
+        await reject({ _ = try await pricingAcrossReview.value }, "Scoped pre-review response restored order authority")
+        await reject({ _ = try await globalPricingAcrossReview.value }, "Global pre-review response restored order authority")
+        expect(store.quotes.isEmpty, "Rejected global preview cannot publish stale stored quotes after review")
+        let activeReviewQuote = try await store.preview(for: reviewContext)[0]
+        expect(store.owns(activeReviewQuote, for: reviewContext) && store.canSubmit(activeReviewQuote, for: reviewContext),
+               "A new explicit scoped query after review can price the preserved draft and place")
+        let activeGlobalQuote = try await store.preview()[0]
+        expect(store.isCurrentWorkbenchQuote(activeGlobalQuote), "A new explicit global query after review receives fresh pricing authority")
         expect(!store.hasUnresolvedSubmission && !controller.isCurrent(pendingCard), "Human review requires new scoped quotes, never reuses old pending cards")
         expect(backend.fixture.submissions.count == 4, "No cancellation, refresh, restart or human review replayed an order")
         backend.fixture.failSubmit = false
-        let canonicalContext = store.beginConversationRequest(UUID(), draft: PaotuiDraft(recipientID: "address:1", nearby: true, goods: "Canonical goods"))
+        let canonicalContext = try store.beginConversationRequest(UUID(), draft: PaotuiDraft(service: .buy, recipientID: "address:1", nearby: true, goods: "Canonical goods"))
         let canonical = try await store.preview(for: canonicalContext)[0]
+        let canonicalSession = store.session(for: canonicalContext.origin.conversationID!)
+        _ = try canonicalSession.chooseQuote(canonical.id, at: store.currentTime)
+        var canonicalCard = PaotuiChatCard(conversationID: canonicalContext.origin.conversationID!, kind: "confirm", title: "Fixture confirmation")
+        canonicalCard.quoteID = canonical.id; canonicalCard.canCreateOrder = true
+        let offeredCanonicalCard = try canonicalSession.offer(canonicalCard)
+        _ = try canonicalSession.consumeCard(offeredCanonicalCard)
         var forgedPayload = canonical.request; forgedPayload["purchaseGoodDetail"] = "Caller replacement"
         let forged = PaotuiQuote(id: canonical.id, draft: canonical.draft, senderTitle: canonical.senderTitle, recipientTitle: canonical.recipientTitle,
             serviceTitle: canonical.serviceTitle, distance: canonical.distance, estimate: canonical.estimate, fee: 0, originalFee: 0,
@@ -210,7 +260,8 @@ import Foundation
         expect(backend.fixture.submissions.last?["previewTotal"] as? String == String(canonical.fee), "Stored quote fees remain canonical through dispatch")
 
         func savedReceipt(_ card: PaotuiChatCard) throws -> [String: Any]? {
-            let rows = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as! [[String: Any]]
+            let journal = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as! [String: Any]
+            let rows = journal["receipts"] as! [[String: Any]]
             return rows.last { ($0["quoteID"] as? String)?.lowercased() == card.quoteID!.uuidString.lowercased() }
         }
         // Once dispatch may have happened, stale UI ownership must not erase the durable response.
@@ -262,7 +313,7 @@ import Foundation
                    "An unknown outcome after account change retains the original-account no-repeat instruction")
         }
         let unknownState = try savedReceipt(unknownAccountCard)?["state"] as? String
-        expect(store.hasUnresolvedSubmission && unknownState == "pending",
+        expect(store.hasUnresolvedSubmission && unknownState == "unknown",
                "Unknown submission remains durably pending and blocks every account")
         let afterUnknownID = UUID(), afterUnknown = try await quote(request(afterUnknownID, "B after unknown account"), afterUnknownID)
         expect(afterUnknown.card?.canCreateOrder == false && afterUnknown.card?.deliveryFee != nil,
@@ -270,7 +321,7 @@ import Foundation
         let afterUnknownCard = try await confirmCard(afterUnknown, afterUnknownID)
         await reject({ _ = try await controller.select(afterUnknownCard, .init(action: .confirm), conversationID: afterUnknownID) }, "Credential change bypassed a dispatched unknown order")
         expect(backend.fixture.submissions.count == 9, "Late results, edits, cancellations and credential changes do not cause automatic submission retries")
-        expect(MeituanPaotuiStore(receiptURL: path, clientFactory: backend.client).hasUnresolvedSubmission, "Restart retains the unresolved old-account submission")
+        expect(MeituanPaotuiStore(connection: PaotuiFixtureRuntime.connection(), receiptURL: path, clientFactory: backend.client).hasUnresolvedSubmission, "Restart retains the unresolved old-account submission")
         print("PASS: \(checks) production multi-conversation pricing, interleaved responses, workbench isolation, credential/cancel invalidation and global submission protections; synthetic transport only")
     }
 }

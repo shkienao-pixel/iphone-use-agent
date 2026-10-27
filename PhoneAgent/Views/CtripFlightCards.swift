@@ -135,9 +135,8 @@ struct CtripFlightCards: View {
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             }
             Text(offers.allSatisfy(\.isSchedule) ?
-                 "以上为时刻参考，票价、余票及实际起降安排待查。点击会复制参考航班并打开携程 App 查价。" : offers.allSatisfy { $0.flightSpecificBookingURL != nil } ?
-                 "价格与余票以携程实时页面为准。预订将在携程 App 内继续，请核对航班与舱位。" :
-                 "未提供航班付款直达入口。点击按钮会复制所选航班信息并打开携程 App，方便继续选票；价格与余票以携程为准。")
+                 "以上为时刻参考，票价、余票及实际起降安排待查。请在携程核对机场、人数和舱位。" :
+                 "价格与余票以携程实时页面为准。请在携程核对机场、人数和舱位后选票。")
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -219,6 +218,13 @@ struct CtripFlightCards: View {
                 }.font(.subheadline).accessibilityIdentifier("flight.details")
             }
             priceAndBooking(offer)
+            if offer.preferredNativeFlightSelectionURL != nil || offer.nativeFlightSelectionLookupQuery != nil {
+                Text(offer.preferredNativeFlightSelectionURL != nil ? "打开这班航班的选价页，票价与舱位以携程页面为准" : "先补查这班航班的信息，再尝试打开它的选价页")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("flight.handoffScope")
+            }
         }.padding(16).background(AgentPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
             .overlay(RoundedRectangle(cornerRadius: 20).stroke(AgentPalette.ink.opacity(offer.isSchedule ? 0.25 : 0.10),
                 style: StrokeStyle(lineWidth: 1, dash: offer.isSchedule ? [5, 4] : [])))

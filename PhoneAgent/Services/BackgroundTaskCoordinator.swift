@@ -9,7 +9,10 @@ import Combine
         var record: PhoneTaskRecord
         var publishedRecord: PhoneTaskRecord?
         var persistenceFailed = false
-        var token = UUID()
+        var token: UUID
+        // Execution maintenance outlives task-control authority while a
+        // cancelled SDK call or its checkpoint is still settling.
+        var executionSession: UUID
         var settings: AgentSettings
         var origin: Origin?
         var engine: AgentEngine?
@@ -17,6 +20,7 @@ import Combine
         var recovery: TaskRecoveryMode?
         var observations = Set<AnyCancellable>()
         init(record: PhoneTaskRecord, settings: AgentSettings, origin: Origin?, recovery: TaskRecoveryMode? = nil) {
+            let session = UUID(); token = session; executionSession = session
             self.record = record; self.settings = settings; self.origin = origin; self.recovery = recovery
         }
     }
@@ -24,10 +28,12 @@ import Combine
     @Published private(set) var records: [PhoneTaskRecord] = []
     var persistRecord: ((PhoneTaskRecord) -> Bool)?
     var onRecord: ((PhoneTaskRecord, Origin?) -> Void)?
+    var onExecutionChange: (() -> Void)?
     private let makeEngine: (AgentSettings) -> AgentEngine
     private var entries: [UUID: Entry] = [:]
     private var order: [UUID] = []
     private var pumping = false
+    private var batchingPause = false
     init(maximumConcurrent: Int = 3, makeEngine: @escaping (AgentSettings) -> AgentEngine) {
         self.maximumConcurrent = min(3, max(1, maximumConcurrent)); self.makeEngine = makeEngine
     }
@@ -40,6 +46,17 @@ import Combine
     /// settling. Maintenance must cover that window as well as queued workers.
     var hasUnsettledExecution: Bool {
         entries.values.contains { $0.wantsRun || $0.engine?.executionSettled == false }
+    }
+    /// Only process-local workers or queued user submissions keep execution time.
+    var executionRecords: [PhoneTaskRecord] {
+        order.compactMap { id in
+            guard let entry = entries[id], entry.wantsRun || entry.engine?.executionSettled == false else { return nil }
+            return entry.record
+        }
+    }
+    func executionSession(_ id: UUID) -> UUID? {
+        guard let entry = entries[id], entry.wantsRun || entry.engine?.executionSettled == false else { return nil }
+        return entry.executionSession
     }
     /// Includes volatile paused checkpoints after a failed write. These records
     /// are only for an explicit durable retry, never proof of a committed UI state.
@@ -74,7 +91,34 @@ import Combine
         return true
     }
     func pauseAll() {
-        for id in order where running(id) { try? pause(id) }
+        pauseForBackgroundExpiration(Dictionary(uniqueKeysWithValues: order.compactMap { id in
+            guard running(id), let token = token(id) else { return nil }; return (id, token)
+        }))
+    }
+    /// Revoke the entire expiring cohort before cancelling any worker. A freed
+    /// slot must not dispatch a queued sibling while expiration is saving it.
+    func pauseForBackgroundExpiration(_ expected: [UUID: UUID]) {
+        pauseEntries { id, _ in expected[id] == token(id) }
+    }
+    /// Maintenance identities never authorize controls. Expiration can still
+    /// checkpoint a stopped worker after its control token has been revoked.
+    func expireExecutions(_ expected: [UUID: UUID]) {
+        pauseEntries { id, entry in expected[id] == entry.executionSession && executionSession(id) != nil }
+    }
+    private func pauseEntries(matching matches: (UUID, Entry) -> Bool) {
+        batchingPause = true
+        let targets = order.compactMap { id -> Entry? in
+            guard let entry = entries[id], matches(id, entry) else { return nil }
+            entry.wantsRun = false; entry.token = UUID(); return entry
+        }
+        for entry in targets {
+            if entry.engine?.running == true { entry.engine?.pause() }
+            else if entry.record.outcome == .running {
+                entry.record.outcome = .paused; entry.record.summary = "后台运行已暂停，进度已保留"
+                _ = publish(entry)
+            }
+        }
+        batchingPause = false; onExecutionChange?(); pump()
     }
     func contains(_ id: UUID) -> Bool { entries[id] != nil }
     func record(_ id: UUID) -> PhoneTaskRecord? { entries[id]?.record }
@@ -146,7 +190,7 @@ import Combine
             guard settings.systemToolsEnabled == true else { throw AgentError.message("请先启用原生系统工具") }
             settings.toolsOnly = true; entry.settings = settings
         }
-        entry.token = UUID(); entry.wantsRun = true
+        entry.token = UUID(); entry.executionSession = entry.token; entry.wantsRun = true
         entry.record.outcome = .running; entry.record.summary = "等待后台恢复名额"
         guard publish(entry) else { throw checkpointSaveError }
         pump()
@@ -162,7 +206,7 @@ import Combine
         guard !entry.persistenceFailed else { throw checkpointSaveError }
         try engine.amendTask(text)
         guard !entry.persistenceFailed else { throw checkpointSaveError }
-        entry.token = UUID(); entry.wantsRun = true
+        entry.token = UUID(); entry.executionSession = entry.token; entry.wantsRun = true
         // Cancellation cleanup must settle before this same worker resumes.
         schedulePump()
     }
@@ -196,13 +240,14 @@ import Combine
         // checkpoint into this committed projection.
         records = order.compactMap { entries[$0]?.publishedRecord }
         onRecord?(entry.record, entry.origin)
+        if !batchingPause { onExecutionChange?() }
         return true
     }
     private func schedulePump() {
         Task { [weak self] in await Task.yield(); self?.pump() }
     }
     private func pump(recoveryRecord: PhoneTaskRecord? = nil) {
-        guard !pumping else { return }; pumping = true; defer { pumping = false }
+        guard !pumping, !batchingPause else { return }; pumping = true; defer { pumping = false; onExecutionChange?() }
         var slots = entries.values.filter { $0.engine.map { !$0.executionSettled } ?? false }.count
         for id in order {
             guard slots < maximumConcurrent, let entry = entries[id], entry.wantsRun,

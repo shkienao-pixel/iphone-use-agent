@@ -12,6 +12,10 @@ struct UnifiedConversationRouter {
     func route(input: ConversationRoutingInput) async throws -> ConversationRoute {
         try Task.checkCancellation()
         guard PrivacyConsent.allowed(settings) else { throw AgentError.message("请先确认 AI 数据使用") }
+        if input.attachments.isEmpty, input.visuals.isEmpty,
+           let local = ConversationFlightSelectionResolver.route(question: input.question, history: input.flightSelectionHistory,
+                now: input.referenceTime, timeZoneIdentifier: input.timeZoneIdentifier,
+                hasPendingClarification: input.pendingIntent != nil) { return local }
         let intentSkill = try ConversationIntentSkill.instructions()
         let question = input.question, history = input.history, taskContext = input.taskContext
         if input.pendingIntent != nil, ConversationTurnSignal.cancelsPending(question) {
@@ -103,6 +107,7 @@ struct UnifiedConversationRouter {
             throw ConversationRoutingRejection(reason: .malformedOutput)
         }
         // Decode old archived modes, but never dispatch the withdrawn connector.
+        guard result.mode != .flightOpen else { throw ConversationRoutingRejection(reason: .malformedOutput, proposedMode: result.mode) }
         guard result.mode != .xiaohongshuQuery else { throw ConversationRoutingRejection(reason: .unavailableModule, proposedMode: result.mode) }
         let related = result.relatedMessageIDs ?? [], recalled = result.memorySourceIDs ?? [], missing = result.missingInformation ?? []
         guard related.count <= ConversationWorkingMemory.recentLimit + 2 * ConversationWorkingMemory.maximumSources, Set(related).count == related.count,

@@ -26,7 +26,7 @@ final class PhoneAgentViewModel: ObservableObject {
         liveCamera.stop(clearResults: recipientChanged)
         if recipientChanged || oldValue.useMemories != settings.useMemories { backgroundTasks.pauseAll() }
         if recipientChanged {
-            conversation.cancel(); conversation.selectFrame(nil)
+            conversation.cancelAllRequests(); conversation.selectFrame(nil)
             if manualBusy { manualContinuationRequired = true; manual?.cancel() }
         }
         if queueRunning { pauseQueue(); notice = "配置已更改，队列已暂停，请核对后继续" }
@@ -111,6 +111,7 @@ final class PhoneAgentViewModel: ObservableObject {
             self.conversation.retainTaskResult(record.nativeConversationSnapshot)
             self.objectWillChange.send()
         }
+        pool.onExecutionChange = { [weak self] in self?.updateTaskActivity() }
         return pool
     }()
     var toolReceiptMaintenanceContext: ToolReceiptMaintenanceContext {
@@ -164,6 +165,10 @@ final class PhoneAgentViewModel: ObservableObject {
     let camera = CameraService()
     let liveCamera = LiveCameraObserver()
     let taskActivity = TaskActivityController()
+    let backgroundExecution = BackgroundExecutionController()
+    private var auxiliaryActivityRecord: PhoneTaskRecord?
+    private var auxiliaryActivitySession = UUID()
+    private var auxiliaryActivityIsConversation = false
     let taskNotifications = TaskNotificationsController.shared
     var interactionBusy: Bool {
         preparingAutomatically || calibrating || recordingAudioOwner != nil || queueSwitching || engine.running || engine.releasing || manualBusy || voicePending
@@ -474,7 +479,7 @@ final class PhoneAgentViewModel: ObservableObject {
         Task { await DebugCtripConfigImport.probeIfRequested() }
         #endif
         capture.maxSide = settings.imageMaxSide
-        for publisher in [ble.objectWillChange, capture.objectWillChange, engine.objectWillChange, history.objectWillChange, taskQueue.objectWillChange, memories.objectWillChange, tools.objectWillChange, contentStore.objectWillChange, camera.objectWillChange, liveCamera.objectWillChange, taskActivity.objectWillChange, taskNotifications.objectWillChange, workflowServices.objectWillChange] {
+        for publisher in [ble.objectWillChange, capture.objectWillChange, engine.objectWillChange, history.objectWillChange, taskQueue.objectWillChange, memories.objectWillChange, tools.objectWillChange, contentStore.objectWillChange, camera.objectWillChange, liveCamera.objectWillChange, taskActivity.objectWillChange, taskNotifications.objectWillChange, workflowServices.objectWillChange, PaotuiModule.shared.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         }
         engine.$taskIndicator.removeDuplicates().sink { [weak self] value in
@@ -484,6 +489,10 @@ final class PhoneAgentViewModel: ObservableObject {
         conversation.routingTaskContext = { [weak self] question, history in
             guard let self else { return "{}" }
             return self.unifiedTaskContext(history: history, question: question)
+        }
+        conversation.routingTaskContextInConversation = { [weak self] question, history, origin in
+            guard let self else { return "{}" }
+            return self.unifiedTaskContext(history: history, question: question, originatingConversationID: origin)
         }
         conversation.taskControlContext = { [weak self] in self?.conversationControlContext }
         conversation.pendingTaskSubmission = { [weak self] in
@@ -544,19 +553,49 @@ final class PhoneAgentViewModel: ObservableObject {
             return result
         }
         conversation.backgroundTaskSessions = { [weak self] in self?.backgroundTasks.sessions ?? [:] }
+        conversation.onProcessingChange = { [weak self] in self?.updateTaskActivity() }
+        taskActivity.onFirstUseGuide = { [weak self] in
+            guard let self, self.notice.isEmpty else { return }
+            self.notice = "首次使用时，如果灵动岛没有显示 Sela 头像，请锁屏或下拉通知中心，在 Sela 卡片中点“允许”。"
+        }
+        backgroundExecution.beforeContinuationSubmission = { [weak self] in await self?.taskActivity.flush() }
+        backgroundExecution.onExpiration = { [weak self] expired in
+            guard let self else { return }
+            let tokens = Dictionary(uniqueKeysWithValues: expired.map { ($0.id, $0.sessionID) })
+            self.conversation.expireBackgroundRequests(Set(tokens.keys), expectedTokens: tokens)
+            self.backgroundTasks.expireExecutions(tokens)
+            if let id = self.engine.currentRecord?.id,
+               tokens[id] == self.engine.activityControlSessionID, self.engine.running {
+                _ = self.pauseTask()
+            }
+            self.notice = "系统已结束本次后台运行，任务进度和已有结果已保留；回到 Sela 后可继续"
+            self.updateTaskActivity()
+        }
+        backgroundExecution.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         conversation.onActionInConversation = { [weak self] route, messageID, origin in
             var bound = route; bound.originConversationID = origin
             self?.handleConversationAction(bound, messageID: messageID)
         }
-        conversation.paotuiQuery = { [weak self] input, conversationID in
+        conversation.paotuiSummary = { PaotuiModule.shared.summary(for: $0) }
+        conversation.paotuiPresentation = { PaotuiModule.shared.presentation(for: $0, conversationID: $1) }
+        conversation.paotuiQuery = { [weak self] input, context in
             guard let self, self.consentReady else { throw AgentError.message("AI 数据授权已失效") }
             let settings = self.settings, key = SettingsStore.apiKey(for: settings.endpoint)
             let configuration = ConversationRoutingConfiguration(connection: settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines) + "|" + PrivacyConsent.recipient(settings),
                 model: settings.model, useMemories: settings.useMemories == true)
             guard (input.configuration == nil || input.configuration == configuration),
                   input.memoryRevision == nil || input.memoryRevision == self.memories.recallRevision else { throw AgentError.message("模型或记忆设置已改变，请重新发送") }
-            let reply = try await MeituanPaotuiConversation.shared.respond(question: input.question, history: input.history,
-                conversationID: conversationID, settings: settings, apiKey: key, routingInput: input)
+            let reply = try await PaotuiModule.shared.handle(.text(question: input.question, history: input.history),
+                context: context, routingInput: input, interpret: { approvedInput, instructions in
+                    try await PaotuiInterpretationGate.run(operation: {
+                        try await VisionClient(settings: settings, apiKey: key).routeConversation(input: approvedInput, instructions: instructions)
+                    }, isApproved: {
+                        self.consentReady && self.settings.endpoint == settings.endpoint && self.settings.model == settings.model &&
+                            self.settings.useMemories == settings.useMemories &&
+                            PrivacyConsent.recipient(self.settings) == PrivacyConsent.recipient(settings) &&
+                            (input.memoryRevision == nil || input.memoryRevision == self.memories.recallRevision)
+                    })
+                })
             try Task.checkCancellation()
             guard self.consentReady, self.settings.endpoint == settings.endpoint, self.settings.model == settings.model,
                   self.settings.useMemories == settings.useMemories,
@@ -564,9 +603,13 @@ final class PhoneAgentViewModel: ObservableObject {
                   input.memoryRevision == nil || input.memoryRevision == self.memories.recallRevision else { throw AgentError.message("模型或记忆设置已改变，请重新发送") }
             return reply
         }
-        conversation.paotuiSelection = { [weak self] card, selection, conversationID in
-            guard let self, self.consentReady, self.conversation.currentConversationID == conversationID else { throw AgentError.message("对话已改变，请重新核对") }
-            return try await MeituanPaotuiConversation.shared.select(card, selection, conversationID: conversationID)
+        conversation.paotuiSelection = { [weak self] card, selection, context in
+            guard let self, self.consentReady, self.conversation.currentConversationID == context.conversationID else { throw AgentError.message("对话已改变，请重新核对") }
+            try Task.checkCancellation()
+            return try await PaotuiModule.shared.handle(.card(card, selection), context: context)
+        }
+        conversation.onConversationCleared = { conversationID in
+            PaotuiModule.shared.lifecycle(.cleared(conversationID))
         }
         conversation.flightQuery = { [weak self] query in
             guard let self, self.consentReady else { throw AgentError.message("AI 数据授权已失效") }
@@ -593,6 +636,11 @@ final class PhoneAgentViewModel: ObservableObject {
             guard let self, self.consentReady else { return "" }
             return self.tools.taskContentEvidence(taskID: taskID)
         }
+        engine.$running.combineLatest(engine.$releasing).sink { [weak self] _, _ in
+            // Published values arrive before assignment; read the complete
+            // snapshot on the next main-actor turn, without the UI throttle.
+            Task { @MainActor [weak self] in self?.updateTaskActivity() }
+        }.store(in: &observers)
         engine.$phase.removeDuplicates().sink { [weak self] phase in
             // Start while foreground, before the throttled updates or an App switch.
             if phase == .preparing { self?.updateTaskActivity(phase: phase) }
@@ -665,12 +713,101 @@ final class PhoneAgentViewModel: ObservableObject {
             await self?.performActivityControl(taskID: taskID, sessionID: sessionID, control: control)
         }
     }
+    var taskActivityPreviewBlocked: Bool {
+        settings.liveTaskStatus == false || interactionBusy || backgroundTasks.hasUnsettledExecution ||
+        !conversation.processingConversationIDs.isEmpty || taskActivity.hasTaskPresentation
+    }
+    @discardableResult func startTaskActivityPreview(phase: String = "observing") async -> Bool {
+        guard !taskActivityPreviewBlocked else { notice = "请先完成或停止当前任务，再预览角色状态。"; return false }
+        return await taskActivity.startPreview(phase: phase)
+    }
+    func refreshBackgroundExecution() {
+        taskActivity.applicationBecameActive()
+        backgroundExecution.becameActive()
+        updateTaskActivity()
+    }
     private func updateTaskActivity(phase: AgentPhase? = nil) {
+        let requests = conversation.activityRequests
+        let native = backgroundTasks.executionRecords
+        var work = requests.map { BackgroundExecutionController.Work(id: $0.id, sessionID: $0.token) }
+        work += native.compactMap { record in
+            guard let token = backgroundTasks.executionSession(record.id) else { return nil }
+            return BackgroundExecutionController.Work(id: record.id, sessionID: token, completedUnits: Int64(record.checkpointStep ?? 0))
+        }
+        if !engine.executionSettled, let record = engine.currentRecord {
+            work.append(.init(id: record.id, sessionID: engine.activityControlSessionID, completedUnits: Int64(engine.currentStep)))
+        }
+        backgroundExecution.synchronize(work)
+
+        if engine.running || engine.releasing {
+            auxiliaryActivityRecord = nil
+            taskActivity.update(record: engine.currentRecord, phase: phase ?? engine.phase, step: engine.currentStep, action: engine.executingAction?.label,
+                enabled: settings.liveTaskStatus != false, sessionID: engine.activityControlSessionID,
+                releasing: engine.releasing, canPause: engine.running, canStop: engine.hasCurrentTask)
+            return
+        }
+        if let record = native.first, let maintenance = backgroundTasks.executionSession(record.id) {
+            let control = backgroundTasks.token(record.id)
+            let token = control ?? maintenance
+            let nativePhase: AgentPhase
+            switch record.outcome {
+            case .completed: nativePhase = .completed
+            case .stopped: nativePhase = .stopped
+            case .failed, .interrupted: nativePhase = .failed
+            case .needsUser: nativePhase = .needsUser
+            default: nativePhase = backgroundTasks.running(record.id) ? .observing : .paused
+            }
+            auxiliaryActivityRecord = record; auxiliaryActivitySession = token; auxiliaryActivityIsConversation = false
+            taskActivity.update(record: record, phase: nativePhase, step: record.checkpointStep ?? 0, action: nil,
+                enabled: settings.liveTaskStatus != false, sessionID: token, releasing: backgroundTasks.busy(record.id),
+                canPause: backgroundTasks.running(record.id), canStop: control != nil)
+            return
+        }
+        if let request = requests.first {
+            let record = PhoneTaskRecord(id: request.id, title: request.title.isEmpty ? "正在处理你的请求" : request.title,
+                                         goal: request.title, summary: "正在查询与整理结果")
+            auxiliaryActivityRecord = record; auxiliaryActivitySession = request.token; auxiliaryActivityIsConversation = true
+            taskActivity.update(record: record, phase: .observing, step: 0, action: nil,
+                enabled: settings.liveTaskStatus != false, sessionID: request.token, releasing: false, canPause: false, canStop: false)
+            return
+        }
+        if var record = auxiliaryActivityRecord {
+            let finalPhase: AgentPhase
+            if auxiliaryActivityIsConversation {
+                let result = conversation.activityRequestResults[record.id]
+                let succeeded = result?.token == auxiliaryActivitySession && result?.succeeded == true
+                finalPhase = succeeded ? .completed : .failed
+                record.outcome = succeeded ? .completed : .failed
+            } else {
+                record = backgroundTasks.record(record.id) ?? record
+                switch record.outcome {
+                case .completed: finalPhase = .completed
+                case .stopped: finalPhase = .stopped
+                case .failed, .interrupted: finalPhase = .failed
+                case .needsUser: finalPhase = .needsUser
+                default: finalPhase = .paused
+                }
+            }
+            auxiliaryActivityRecord = nil
+            taskActivity.update(record: record, phase: finalPhase, step: record.checkpointStep ?? 0, action: nil,
+                enabled: settings.liveTaskStatus != false, sessionID: auxiliaryActivitySession, releasing: false, canPause: false, canStop: false)
+            return
+        }
         taskActivity.update(record: engine.currentRecord, phase: phase ?? engine.phase, step: engine.currentStep, action: engine.executingAction?.label,
                             enabled: settings.liveTaskStatus != false, sessionID: engine.activityControlSessionID,
                             releasing: engine.releasing, canPause: engine.running, canStop: engine.hasCurrentTask)
     }
     private func performActivityControl(taskID: UUID, sessionID: UUID, control: ActivityTaskControl) async {
+        if settings.liveTaskStatus != false, taskActivity.represents(taskID),
+           backgroundTasks.token(taskID) == sessionID {
+            do {
+                switch control {
+                case .pause: try backgroundTasks.pause(taskID, expected: sessionID)
+                case .stop: try backgroundTasks.stop(taskID, expected: sessionID)
+                }
+            } catch { notice = error.localizedDescription }
+            updateTaskActivity(); await taskActivity.flush(); return
+        }
         // Validate before the first suspension. An archived card, old run of the
         // same queued task, completed task or disabled feature has no authority.
         guard settings.liveTaskStatus != false, engine.currentRecord?.id == taskID,

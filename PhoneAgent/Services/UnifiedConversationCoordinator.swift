@@ -2,12 +2,13 @@ import Foundation
 import UIKit
 
 @MainActor extension PhoneAgentViewModel {
-    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil) -> String {
+    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil, originatingConversationID: UUID? = nil) -> String {
+        let origin = originatingConversationID ?? conversation.currentConversationID
         // Recent verbatim turns stay separate from task records. Only task IDs
         // already linked to this session are eligible. Global active/selected
         // tasks from another session supply neither context nor control authority.
-        let pending = pendingTaskForConversation(conversation.currentConversationID)
-        let ids = ConversationTaskScope.linkedTaskIDs(in: messages, selectedTaskID: conversation.focusedTaskID, pendingTaskID: pending?.taskID)
+        let pending = pendingTaskForConversation(origin)
+        let ids = ConversationTaskScope.linkedTaskIDs(in: messages, selectedTaskID: origin == conversation.currentConversationID ? conversation.focusedTaskID : nil, pendingTaskID: pending?.taskID)
         let active = engine.hasCurrentTask ? engine.currentRecord.flatMap { ids.contains($0.id) ? $0 : nil } : nil
         let background = backgroundTasks.records.filter { ids.contains($0.id) && backgroundTasks.token($0.id) != nil }
         let activeIDs = Set(background.map(\.id) + [active?.id].compactMap { $0 })
@@ -39,8 +40,12 @@ import UIKit
         // fields total at most 56,640 JSON characters, leaving room for IDs,
         // flight numbers and structure below the independent 64,000 cap. The
         // complete search query stays shared above the shorter per-card excerpts.
+        // The explicit originating chat supplies the process-local module
+        // summary. Message archives cannot create preparation authority.
+        let paotui = conversation.paotuiRoutingSummary(for: origin)
         var payload: [String: Any] = ["tasks": data,
-            "paotuiConversationActive": messages.last(where: { $0.role == "assistant" })?.paotuiCard != nil,
+            "paotuiConversationActive": paotui?["active"] as? Bool ?? false,
+            "paotuiSession": paotui ?? NSNull(),
             "flightSearch": search.map { ["query": ConversationReferenceText.excerpt($0.query, characters: 4000, jsonCharacters: 4200),
                 "queriedAt": ISO8601DateFormatter().string(from: $0.queriedAt), "resultCount": $0.offers.count,
                 "referenceCount": offers.count, "referencesOmitted": offers.count < $0.offers.count,
@@ -123,6 +128,10 @@ import UIKit
         let originMessages = origin == conversation.currentConversationID ? conversation.messages :
             conversation.conversations.first(where: { $0.id == origin })?.messages ?? []
         let originTaskIDs = ConversationTaskScope.linkedTaskIDs(in: originMessages).union(route.authorizedTaskIDs)
+        if route.mode == .flightOpen {
+            openConversationFlight(route, replyID: messageID, conversationID: origin)
+            return
+        }
         if route.controlsTask {
             guard let target = ConversationTaskScope.controlTarget(route.taskID,
                 context: route.controlContext, taskIDs: originTaskIDs) else {
@@ -308,6 +317,56 @@ import UIKit
             notice = "已加入队列。点“运行队列”后依次执行。"; return record.id
         } catch { notice = error.localizedDescription; return nil }
     }
+    /// Local spoken/typed selection has no order or payment capability. It must
+    /// still own this visible human turn when the first app-open call is made.
+    func openConversationFlight(_ route: ConversationRoute, replyID: UUID, conversationID: UUID) {
+        if let token = route.flightOpenAuthorization?.requestToken, conversation.hasClaimedFlightOpen(token) { return }
+        if let authorization = route.flightOpenAuthorization,
+           !conversation.flightOpenRequestIsCurrent(authorization, question: route.request) { return }
+        guard route.mode == .flightOpen, let selection = route.flightSelection,
+              let authorization = route.flightOpenAuthorization,
+              authorization.conversationID == conversationID,
+              UIApplication.shared.applicationState == .active,
+              conversation.claimFlightOpen(selection, authorization: authorization, question: route.request),
+              let snapshot = flightHandoffSnapshot(selection.offer,
+                origin: .init(conversationID: conversationID, messageID: selection.source.id)) else {
+            conversation.reportTaskHandoff(text: "本次航班页面没有打开。请回到这次对话，核对最新结果后重新选择。",
+                to: replyID, in: conversationID)
+            return
+        }
+        conversation.reportTaskHandoff(text: "已选择 " + selection.offer.cardTitle + "。本次只打开携程选价页，票价需在携程核对。",
+            to: replyID, in: conversationID)
+        let isCurrent: @MainActor () -> Bool = { [weak self] in
+            self?.conversation.flightOpenIsCurrent(selection, authorization: authorization, question: route.request) == true
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard UIApplication.shared.applicationState == .active, isCurrent() else {
+                if self.conversation.flightOpenRequestIsCurrent(authorization, question: route.request) {
+                    self.conversation.reportTaskHandoff(text: "本次打开已取消，请回到这次对话后重新选择。", to: replyID, in: conversationID)
+                }
+                return
+            }
+            let operations = CtripFlightUIKitHandoffOperations(model: self, isVisible: isCurrent)
+            let receipt = await CtripFlightHandoffCoordinator.shared.perform(snapshot, operations: operations)
+            // Opening another app may itself invalidate the foreground lease.
+            // Record only the OS-accepted request, never infer its landing page.
+            guard self.conversation.flightOpenRequestIsCurrent(authorization, question: route.request),
+                  ConversationFlightSelectionResolver.isCurrent(selection, history: self.conversation.messages, now: Date()) else { return }
+            let result: String
+            if receipt.specificEntry == .accepted {
+                result = "已向携程发送打开 " + selection.offer.cardTitle + " 选价页的请求，请核对实际页面的航班和票价。"
+            } else if receipt.outcome == .busy {
+                result = "已有一次携程跳转正在处理，请稍候再选择。"
+            } else if [.missingInformation, .lookupFailed].contains(receipt.outcome) {
+                result = receipt.notice ?? "未能补齐这班航班的信息，请重新核对后再试。"
+            } else {
+                result = "未能打开这班航班的选价页，请稍后重试或在携程核对航班号。"
+            }
+            self.conversation.reportTaskHandoff(text: result, to: replyID, in: conversationID)
+        }
+    }
+
     /// Resolve legacy calls only from a current chat link or the explicitly focused task.
     func bookFlight(_ offer: CtripFlightOffer) {
         if let message = conversation.messages.last(where: { flightHandoffOffers(for: $0).contains(offer) }) {
@@ -330,7 +389,13 @@ import UIKit
             if isVisible(), conversation.currentConversationID == origin.conversationID { notice = "所选航班已变化，请重新选择" }
             return
         }
-        let operations = CtripFlightUIKitHandoffOperations(model: self, isVisible: isVisible)
+        let presentation = conversation.flightOpeningPresentationRevision
+        let latestMessage = conversation.messages.last?.id
+        let operations = CtripFlightUIKitHandoffOperations(model: self, isVisible: { [weak self] in
+            guard let self else { return false }
+            return isVisible() && self.conversation.flightOpeningPresentationRevision == presentation &&
+                self.conversation.messages.last?.id == latestMessage
+        })
         Task { _ = await CtripFlightHandoffCoordinator.shared.perform(snapshot, operations: operations) }
     }
     fileprivate func flightHandoffSnapshot(_ offer: CtripFlightOffer, origin: CtripFlightHandoffOrigin) -> CtripFlightHandoffSnapshot? {
@@ -374,28 +439,35 @@ struct CtripFlightHandoffSnapshot: Equatable, Sendable {
     let origin: CtripFlightHandoffOrigin
     let offer: CtripFlightOffer
     let clipboardText: String
-    var specificURL: URL? { offer.flightSpecificBookingURL }
+    let sourceMessage: AssistantMessage?
+    static func exactEntries(for offer: CtripFlightOffer) -> [URL] {
+        [offer.nativeFlightSelectionURL, offer.reconstructedNativeFlightSelectionURL].compactMap { $0 }.reduce(into: []) {
+            if !$0.contains($1) { $0.append($1) }
+        }
+    }
+    var specificURLs: [URL] { Self.exactEntries(for: offer) }
+    var specificURL: URL? { specificURLs.first }
 
     static func capture(_ offer: CtripFlightOffer, origin: CtripFlightHandoffOrigin,
                         currentConversationID: UUID, message: AssistantMessage?, offers: [CtripFlightOffer]) -> Self? {
         guard currentConversationID == origin.conversationID, origin.messageID != nil, origin.taskID == nil, message?.id == origin.messageID,
               let selected = offers.first(where: { $0 == offer }) else { return nil }
-        return Self(origin: origin, offer: selected, clipboardText: selected.bookingSummary)
+        return Self(origin: origin, offer: selected, clipboardText: selected.bookingSummary, sourceMessage: message)
     }
     static func captureTask(_ offer: CtripFlightOffer, origin: CtripFlightHandoffOrigin,
                             currentConversationID: UUID, taskID: UUID, offers: [CtripFlightOffer]) -> Self? {
         guard currentConversationID == origin.conversationID, origin.messageID == nil, origin.taskID == taskID,
               let selected = offers.first(where: { $0 == offer }) else { return nil }
-        return Self(origin: origin, offer: selected, clipboardText: selected.bookingSummary)
+        return Self(origin: origin, offer: selected, clipboardText: selected.bookingSummary, sourceMessage: nil)
     }
 }
 
-enum CtripFlightHandoffStage: String, Sendable { case snapshot, clipboard, specificEntry, generalEntry, finished }
+enum CtripFlightHandoffStage: String, Sendable { case snapshot, lookup, clipboard, specificEntry, generalEntry, finished }
 enum CtripFlightClipboardResult: String, Sendable { case notAttempted, prepared, failed }
 /// Accepted means only that the OS accepted the app entry. It proves no prefill or order.
 enum CtripFlightEntryResult: String, Sendable { case notAttempted, accepted, unavailable, failed }
 enum CtripFlightHandoffOutcome: String, Sendable {
-    case preparing, clipboardPrepared, specificAccepted, generalAccepted, unavailable, failed, busy, originChanged
+    case preparing, clipboardPrepared, specificAccepted, generalAccepted, unavailable, failed, missingInformation, lookupFailed, busy, originChanged
 }
 
 struct CtripFlightHandoffReceipt: Equatable, Sendable {
@@ -417,12 +489,15 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
         let subject = isSchedule ? "参考时刻" : "航班信息"
         switch outcome {
         case .specificAccepted, .generalAccepted:
-            return isSchedule ? "参考时刻已复制，请在携程查价并核对航班" : "航班信息已复制，请在携程核对并选票"
-        case .unavailable: return subject + "已复制，请安装携程旅行 App 后继续选票"
+            return "已向携程发送打开这班航班选价页的请求，请核对实际页面"
+        case .unavailable: return subject + "已复制，请安装携程极速版后继续选票"
         case .failed:
-            return clipboard == .prepared ? subject + "已复制，暂时无法打开携程，请稍后重试" : "未能准备航班信息剪贴板，请重试"
-        case .busy: return "正在准备携程交接，请稍候"
-        case .preparing, .clipboardPrepared, .originChanged: return nil
+            return clipboard == .prepared ? "未能打开这班航班的选价页，请稍后重试" : "未能准备航班信息剪贴板，请重试"
+        case .missingInformation: return "未能补齐这班航班的信息，暂未打开携程，请核对航班日期和航线后重试"
+        case .lookupFailed: return "补查这班航班失败，请稍后重试"
+        case .busy: return "正在准备这班航班的选价页，请稍候"
+        case .preparing: return stage == .lookup ? "正在补查这班航班的信息" : nil
+        case .clipboardPrepared, .originChanged: return nil
         }
     }
 }
@@ -430,9 +505,8 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
 @MainActor protocol CtripFlightHandoffOperations: AnyObject {
     func originIsCurrent(_ snapshot: CtripFlightHandoffSnapshot) -> Bool
     func prepareClipboard(_ text: String) -> Bool
-    func canOpenGeneralEntry() -> Bool
+    func lookupSelection(query: String, for snapshot: CtripFlightHandoffSnapshot) async throws -> String
     func openSpecificEntry(_ url: URL) async -> Bool
-    func openGeneralEntry() async -> Bool
     func publish(_ receipt: CtripFlightHandoffReceipt, for snapshot: CtripFlightHandoffSnapshot)
 }
 
@@ -468,8 +542,39 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
         isRunning = true
         defer { isRunning = false }
         lastReceipt = receipt
+        // Keep the original snapshot throughout lookup. A fresh provider offer
+        // is payload only and cannot replace the source/visible-turn authority.
+        var selected = snapshot.offer
+        if selected.preferredNativeFlightSelectionURL == nil {
+            guard let query = selected.nativeFlightSelectionLookupQuery else {
+                receipt.outcome = .missingInformation
+                return finish(receipt, snapshot: snapshot, operations: operations)
+            }
+            receipt.stage = .lookup; lastReceipt = receipt
+            operations.publish(receipt, for: snapshot)
+            do {
+                let response = try await operations.lookupSelection(query: query, for: snapshot)
+                guard operations.originIsCurrent(snapshot), !Task.isCancelled else {
+                    receipt.outcome = .originChanged
+                    return finish(receipt, snapshot: snapshot, operations: operations)
+                }
+                guard let refreshed = CtripFlightParser.refreshedNativeFlightSelection(response, for: snapshot.offer) else {
+                    receipt.outcome = .missingInformation
+                    return finish(receipt, snapshot: snapshot, operations: operations)
+                }
+                selected = refreshed
+            } catch {
+                receipt.outcome = operations.originIsCurrent(snapshot) && !Task.isCancelled ? .lookupFailed : .originChanged
+                return finish(receipt, snapshot: snapshot, operations: operations)
+            }
+        }
+        let entries = CtripFlightHandoffSnapshot.exactEntries(for: selected)
+        guard operations.originIsCurrent(snapshot), !Task.isCancelled, !entries.isEmpty else {
+            receipt.outcome = .originChanged
+            return finish(receipt, snapshot: snapshot, operations: operations)
+        }
         receipt.stage = .clipboard
-        guard operations.prepareClipboard(snapshot.clipboardText) else {
+        guard operations.prepareClipboard(selected.bookingSummary) else {
             receipt.clipboard = .failed; receipt.outcome = .failed
             return finish(receipt, snapshot: snapshot, operations: operations)
         }
@@ -479,12 +584,12 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
             receipt.outcome = .originChanged
             return finish(receipt, snapshot: snapshot, operations: operations)
         }
-        if let url = snapshot.specificURL {
+        for url in entries {
             receipt.stage = .specificEntry; lastReceipt = receipt
             let accepted = await operations.openSpecificEntry(url)
             receipt.specificEntry = accepted ? .accepted : .failed
             lastReceipt = receipt
-            guard operations.originIsCurrent(snapshot) else {
+            guard operations.originIsCurrent(snapshot), !Task.isCancelled else {
                 receipt.outcome = .originChanged
                 return finish(receipt, snapshot: snapshot, operations: operations)
             }
@@ -493,40 +598,35 @@ struct CtripFlightHandoffReceipt: Equatable, Sendable {
                 return finish(receipt, snapshot: snapshot, operations: operations)
             }
         }
-        receipt.stage = .generalEntry; lastReceipt = receipt
-        guard operations.canOpenGeneralEntry() else {
-            receipt.generalEntry = .unavailable; receipt.outcome = .unavailable
-            return finish(receipt, snapshot: snapshot, operations: operations)
-        }
-        guard operations.originIsCurrent(snapshot) else {
-            receipt.outcome = .originChanged
-            return finish(receipt, snapshot: snapshot, operations: operations)
-        }
-        let accepted = await operations.openGeneralEntry()
-        receipt.generalEntry = accepted ? .accepted : .failed
-        receipt.outcome = accepted ? .generalAccepted : .failed
+        receipt.outcome = .failed
         return finish(receipt, snapshot: snapshot, operations: operations)
     }
 }
 
 @MainActor private final class CtripFlightUIKitHandoffOperations: CtripFlightHandoffOperations {
     private weak var model: PhoneAgentViewModel?
-    private let generalURL = URL(string: "ctrip://wireless/flight_inquire")!
     private let isVisible: @MainActor () -> Bool
     init(model: PhoneAgentViewModel, isVisible: @escaping @MainActor () -> Bool) { self.model = model; self.isVisible = isVisible }
     func originIsCurrent(_ snapshot: CtripFlightHandoffSnapshot) -> Bool {
-        isVisible() && model?.flightHandoffSnapshot(snapshot.offer, origin: snapshot.origin) == snapshot
+        UIApplication.shared.applicationState == .active && isVisible() &&
+            model?.flightHandoffSnapshot(snapshot.offer, origin: snapshot.origin) == snapshot
     }
     func prepareClipboard(_ text: String) -> Bool {
         guard !text.isEmpty else { return false }
         UIPasteboard.general.string = text
         return UIPasteboard.general.string == text
     }
-    func canOpenGeneralEntry() -> Bool { UIApplication.shared.canOpenURL(generalURL) }
-    func openSpecificEntry(_ url: URL) async -> Bool {
-        await UIApplication.shared.open(url, options: [.universalLinksOnly: true])
+    func lookupSelection(query: String, for snapshot: CtripFlightHandoffSnapshot) async throws -> String {
+        guard originIsCurrent(snapshot), let queryFlights = model?.conversation.flightQuery else {
+            throw AgentError.message("旅行查询模块尚未就绪，请检查携程连接后重试")
+        }
+        return try await queryFlights(query)
     }
-    func openGeneralEntry() async -> Bool { await UIApplication.shared.open(generalURL) }
+    func openSpecificEntry(_ url: URL) async -> Bool {
+        guard url.scheme == "ctrippro", url.host == "wireless", url.path == "/flight_inland_singletransition",
+              UIApplication.shared.applicationState == .active, UIApplication.shared.canOpenURL(url) else { return false }
+        return await UIApplication.shared.open(url)
+    }
     func publish(_ receipt: CtripFlightHandoffReceipt, for snapshot: CtripFlightHandoffSnapshot) {
         guard originIsCurrent(snapshot), let notice = receipt.notice else { return }
         model?.notice = notice

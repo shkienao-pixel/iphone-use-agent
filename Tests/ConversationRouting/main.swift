@@ -31,6 +31,26 @@ import Foundation
             settings.maxResponseTokens = 6144; settings.jsonMode = true
             PrivacyConsent.grant(settings)
             let router = UnifiedConversationRouter(settings: settings, apiKey: "offline-unused")
+            do {
+                let instant=ISO8601DateFormatter().date(from:"2026-10-26T11:00:00Z")!
+                let query="2026-10-27深圳到北京单程直飞，1位成人经济舱"
+                let raw="来源：携程官方查询\n### MF8350\n出发日期：2026-10-27\n出发时间：21:00\n到达时间：23:55\n出发机场：深圳宝安国际机场 T3\n到达机场：北京大兴国际机场\n航程类型：直飞\n舱位：经济舱\n乘客：1位成人\n价格：398元/人"
+                var source=AssistantMessage(role:"assistant",text:raw);source.createdAt=instant.addingTimeInterval(-30)
+                source.flightQuery=query;source.flightOffers=CtripFlightParser.offers(raw,query:query,at:source.createdAt)
+                RoutingWireProbe.reset(); let beforeLocalRequests=RoutingWireProbe.requests.count
+                let input=try ConversationRoutingInput(question:"第一班",history:[source],taskContext:"{}",now:instant,timeZoneIdentifier:"Asia/Shanghai")
+                let local=try await router.route(input:input)
+                expect(local.mode == .flightOpen && local.flightSelection?.source.id == source.id && local.flightOpenAuthorization == nil,label+": local ordinal creates source binding but no runtime lease")
+                expect(RoutingWireProbe.requests.count==beforeLocalRequests,label+": exact flight selection never calls the model")
+                let neutral=(0..<24).map { i in AssistantMessage(role:i.isMultiple(of:2) ? "user" : "assistant",text:"普通对话 \(i)") }
+                let longInput=try ConversationRoutingInput(question:"打开第一班",history:[source]+neutral,taskContext:"{}",now:instant,timeZoneIdentifier:"Asia/Shanghai")
+                let longResult=try await router.route(input:longInput)
+                expect(longResult.flightSelection?.source.id == source.id && RoutingWireProbe.requests.count==beforeLocalRequests,label+": locally visible current source survives model history truncation")
+                RoutingWireProbe.reset();RoutingWireProbe.content = #"{"mode":"flightOpen","request":"打开MF8350","message":"已经打开","flightSelection":{"flightNo":"MF8350"}}"#
+                await rejects(label+": model JSON cannot request local flight opening") {
+                    _ = try await router.route(question:"你好",history:[],taskContext:"{}")
+                }
+            }
             RoutingWireProbe.reset()
             let control = try await router.route(question: "你好", history: [], taskContext: "{}")
             expect(control.mode == .chat, label + ": ordinary short question remains routable")

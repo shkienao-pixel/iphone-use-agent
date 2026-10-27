@@ -209,6 +209,10 @@ struct AssistantView: View {
     @State private var webSearch = false
     @State private var transcriptTask: Task<Void, Never>?
     @FocusState private var composing: Bool
+    private var flightOpeningVisible: Bool {
+        allowsDictation && !clear && !realtime && !webSearch && memoryEditor == nil &&
+            !showAttachmentPhotos && !showAttachmentFiles
+    }
     var body: some View {
         ScrollViewReader { reader in
             ScrollView {
@@ -250,7 +254,7 @@ struct AssistantView: View {
                                             SelaMarkdownText(text: message.text)
                                         }
                                         PaotuiConversationCards(card: card,
-                                            active: model.conversation.isCurrentPaotuiCard(card) && MeituanPaotuiConversation.shared.isCurrent(card),
+                                            presentation: { model.conversation.paotuiCardPresentation(card) },
                                             onSelect: { model.conversation.selectPaotui(card, $0) })
                                     } else {
                                     let offers = model.conversation.flightOffers(for: message)
@@ -503,8 +507,12 @@ struct AssistantView: View {
             let questionRequested = model.voiceMode == .question
             synchronizeConversationDraft()
             if model.conversation.claimPresentation(presentationID) { stopConversationMedia() }
+            model.conversation.setFlightOpeningVisible(flightOpeningVisible, owner: presentationID)
             model.assistantInputActive = composing || dictating
             if questionRequested { model.voiceMode = .question; startListening() }
+        }
+        .onChange(of: flightOpeningVisible) { _, visible in
+            model.conversation.setFlightOpeningVisible(visible, owner: presentationID)
         }
         .onChange(of: model.voiceMode) { _, mode in
             if model.conversation.ownsPresentation(presentationID), mode == .question { startListening() }

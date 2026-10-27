@@ -138,6 +138,10 @@ import Foundation
         var nativeRoute: CheckedContinuation<ConversationRoute, Never>?, handledOrigin: UUID?, handledReply: UUID?
         var capturedSessions: [UUID: UUID] = [:]
         handoff.backgroundTaskSessions = { [actualTask: backgroundSession] }
+        var terminalChangeBeforeHandoff = false
+        handoff.onProcessingChange = {
+            if handoff.activityRequests.isEmpty && handledReply == nil { terminalChangeBeforeHandoff = true }
+        }
         handoff.unifiedRoute = { input in capturedSessions = input.backgroundSessions; return await withCheckedContinuation { nativeRoute = $0 } }
         handoff.onActionInConversation = { _, replyID, origin in
             handledOrigin = origin; handledReply = replyID
@@ -153,6 +157,7 @@ import Foundation
         try await settle { handoff.processingConversationIDs.isEmpty }
         expect(capturedSessions == [actualTask: backgroundSession], "Intent routing receives the submitted native worker session snapshot")
         expect(handledOrigin == handoffOrigin && handledReply != nil, "Offscreen native handoff carries its real originating conversation and reply")
+        expect(!terminalChangeBeforeHandoff, "The background runtime remains owned until synchronous native task handoff is established")
         expect(handoff.currentConversationID == handoffReplacement && handoff.messages.isEmpty && handoff.draft == "另一个独立任务的输入", "Offscreen task acceptance cannot overwrite the new page")
         expect(handoff.conversations.first(where: { $0.id == handoffOrigin })?.messages.last?.taskID == actualTask && handoff.conversations.first(where: { $0.id == handoffOrigin })?.messages.last?.text == "原生后台任务已接收", "Native acceptance and task binding update the source acknowledgement")
 
@@ -397,6 +402,62 @@ import Foundation
         expect(!validation.send(settings: settings, apiKey: "", memories: memories, attachments: [attachment, attachment]), "Invalid duplicate attachments are rejected")
         expect(validation.retryAttachments == [attachment], "Rejected attachment validation preserves the prior valid selection")
         expect(!validation.loading && validation.messages.isEmpty, "Rejected send never starts or persists a request")
+
+        var transientAttempts = 0
+        let recovered: String = try await AssistantConversation.retryReadOnly(settings: settings) {
+            transientAttempts += 1
+            if transientAttempts == 1 { throw URLError(.networkConnectionLost) }
+            return "网络恢复后的回答"
+        }
+        expect(recovered == "网络恢复后的回答" && transientAttempts == 2, "Read-only interpretation/answer retries a transient disconnect once")
+        var exhaustedAttempts = 0
+        do {
+            let _: String = try await AssistantConversation.retryReadOnly(settings: settings) {
+                exhaustedAttempts += 1; throw URLError(.timedOut)
+            }
+            expect(false, "Repeated network failure must propagate")
+        } catch {
+            expect(exhaustedAttempts == 2, "Repeated transient failure uses a bounded two-attempt budget")
+        }
+        var permanentAttempts = 0
+        do {
+            let _: String = try await AssistantConversation.retryReadOnly(settings: settings) {
+                permanentAttempts += 1; throw URLError(.serverCertificateUntrusted)
+            }
+        } catch { expect(permanentAttempts == 1, "Certificate/authentication failures cannot enter network recovery") }
+        var deniedAttempts = 0
+        PrivacyConsent.permitted = false
+        do {
+            let _: String = try await AssistantConversation.retryReadOnly(settings: settings) {
+                deniedAttempts += 1; return "不得请求"
+            }
+        } catch { expect(deniedAttempts == 0, "Read-only recovery checks current consent before every request") }
+        PrivacyConsent.permitted = true
+
+        let expiring = conversation("background-expiration"), expirationStart = model.requests.count
+        expiring.draft = "后台待查询的原问题 A"
+        let expiringA = expiring.currentConversationID
+        _ = expiring.send(settings: settings, apiKey: "", memories: memories)
+        try await settle { model.requests.count == expirationStart + 1 }
+        let activityA = expiring.activityRequests.first!
+        expect(activityA.id == expiringA && activityA.title == "后台待查询的原问题 A", "Island metadata is bound to the submitted user request and its generation")
+        expiring.newConversation(); let expiringB = expiring.currentConversationID
+        expiring.draft = "独立查询 B"
+        _ = expiring.send(settings: settings, apiKey: "", memories: memories)
+        try await settle { model.requests.count == expirationStart + 2 }
+        expiring.expireBackgroundRequests([expiringA], expectedTokens: [expiringA: UUID()])
+        expect(expiring.processingConversationIDs == [expiringA, expiringB], "Stale OS expiration cannot cancel a replacement request generation")
+        expiring.expireBackgroundRequests([expiringA], expectedTokens: [expiringA: activityA.token])
+        expect(expiring.processingConversationIDs == [expiringB] && expiring.loading,
+            "Expiration synchronously settles only its matching request while another conversation keeps working")
+        expect(expiring.conversations.first(where: { $0.id == expiringA })?.draft == "后台待查询的原问题 A",
+            "OS expiration restores the originating conversation's exact query")
+        model.complete(expirationStart, answer: "过期后迟到的结果不得覆盖")
+        model.complete(expirationStart + 1, answer: "独立查询 B 的结果")
+        try await settle { expiring.processingConversationIDs.isEmpty }
+        expect(expiring.currentConversationID == expiringB && expiring.messages.last?.text == "独立查询 B 的结果" &&
+            expiring.conversations.first(where: { $0.id == expiringA })?.messages.isEmpty == true,
+            "Late expired results cannot restart work or overwrite the surviving conversation")
 
         let report: [String: Any] = ["checks": checks, "failures": failures, "mode": "offline continuations only; no model/network/device access"]
         print(String(data: try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]), encoding: .utf8)!)

@@ -1,0 +1,85 @@
+{
+  "provenance": {
+    "officialAPK": "https://download2.ctrip.com/html5/64_Ctrip_V8.96.6_SIT4.5_product_Product_30254352_55554008.apk",
+    "version": "8.96.6",
+    "sha256": "abf2f5ec64074dccabd5e7ea341d61e0fd17552a97f4e8399c8a5ba9ae80a8bb",
+    "environment": "Fresh isolated anonymous Android 36 AVD SelaFlightNativeGoal; cold process with cleared task for each no-price case",
+    "acceptance": "Observed selected flight, date, airports, clock pair and fare-policy list. URL reception alone was not accepted. iPhone Lite not yet physically verified."
+  },
+  "cases": [
+    {
+      "flightNo": "MF8350",
+      "departureTime": "21:00",
+      "arrivalTime": "23:55",
+      "date": "2026-10-27",
+      "origin": "SZX",
+      "destination": "BJS",
+      "description": {
+        "trip": 1,
+        "flights": [
+          {
+            "seg": 1,
+            "fromCityCode": "SZX",
+            "toCityCode": "BJS",
+            "departureDate": "2026-10-27T21:00:00",
+            "subChannelId": 3,
+            "flightNo": "MF8350",
+            "class": "Y"
+          }
+        ]
+      },
+      "nativeURL": "ctrip://wireless/flight_inland_singletransition?c2=0&c3=SZX&c4=BJS&c5=20261027&c9=%7B%22trip%22%3A1%2C%22flights%22%3A%5B%7B%22seg%22%3A1%2C%22fromCityCode%22%3A%22SZX%22%2C%22toCityCode%22%3A%22BJS%22%2C%22departureDate%22%3A%222026-10-27T21%3A00%3A00%22%2C%22subChannelId%22%3A3%2C%22flightNo%22%3A%22MF8350%22%2C%22class%22%3A%22Y%22%7D%5D%7D&Channel=3&fromOpenUrl=1&routeCardVersion=G",
+      "landing": {
+        "flight": "MF8350",
+        "date": "10-27",
+        "departure": "21:00",
+        "arrival": "23:55",
+        "departureAirport": "宝安T3",
+        "arrivalAirport": "大兴",
+        "page": "native selected-flight fare policies"
+      },
+      "evidence": "MF8350-no-price-settled.png"
+    },
+    {
+      "flightNo": "MF8336",
+      "departureTime": "12:10",
+      "arrivalTime": "15:30",
+      "date": "2026-10-27",
+      "origin": "SZX",
+      "destination": "BJS",
+      "description": {
+        "trip": 1,
+        "flights": [
+          {
+            "seg": 1,
+            "fromCityCode": "SZX",
+            "toCityCode": "BJS",
+            "departureDate": "2026-10-27T12:10:00",
+            "subChannelId": 3,
+            "flightNo": "MF8336",
+            "class": "Y"
+          }
+        ]
+      },
+      "nativeURL": "ctrip://wireless/flight_inland_singletransition?c2=0&c3=SZX&c4=BJS&c5=20261027&c9=%7B%22trip%22%3A1%2C%22flights%22%3A%5B%7B%22seg%22%3A1%2C%22fromCityCode%22%3A%22SZX%22%2C%22toCityCode%22%3A%22BJS%22%2C%22departureDate%22%3A%222026-10-27T12%3A10%3A00%22%2C%22subChannelId%22%3A3%2C%22flightNo%22%3A%22MF8336%22%2C%22class%22%3A%22Y%22%7D%5D%7D&Channel=3&fromOpenUrl=1&routeCardVersion=G",
+      "landing": {
+        "flight": "MF8336",
+        "date": "10-27",
+        "departure": "12:10",
+        "arrival": "15:30",
+        "departureAirport": "宝安T3",
+        "arrivalAirport": "大兴",
+        "page": "native selected-flight fare policies"
+      },
+      "evidence": "MF8336-no-price-settled.png"
+    }
+  ],
+  "negativeControl": {
+    "description": {
+      "trip": 1,
+      "flights": []
+    },
+    "result": "No previous selected-flight fare page restored; final screen was Android launcher. Cause undetermined.",
+    "evidence": "empty-description-control-settled.png"
+  }
+}

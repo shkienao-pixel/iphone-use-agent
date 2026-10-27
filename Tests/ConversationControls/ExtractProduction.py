@@ -32,7 +32,7 @@ pending_callback = member(vm, "        conversation.pendingTaskSubmission = { [w
 members = {
     "routeBridge": "    func installRouteBridge() {\n" + pending_callback + "\n" + closure + "\n    }",
     "pendingTask": member(vm, "    func pendingTaskForConversation(_ conversationID: UUID) -> ConversationTaskSubmission?"),
-    "taskContext": member(coordinator, "    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil) -> String"),
+    "taskContext": member(coordinator, "    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil, originatingConversationID: UUID? = nil) -> String"),
     "actionHandler": member(coordinator, "    func handleConversationAction(_ route: ConversationRoute, messageID: UUID)"),
     "resume": member(vm, "    func resumeVoiceTask("),
     "manualBusy": declaration(vm, "    @Published var manualBusy ="),
@@ -55,6 +55,6 @@ for name in names:
     "completeOriginalMethods": True, "methodSubstitutions": [],
     "methodSHA256": {name: hashlib.sha256(value.encode()).hexdigest() for name, value in members.items()},
     "wholeSourceSHA256": {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names},
-    "limits": "Extracted VM route closure, context/action/resume methods and interaction observers. Engine/queue/audio/router/consent are synthetic, not full VM/UI/voice/model/phone acceptance.",
+    "limits": "Extracted VM route closure, context/action/resume methods and interaction observers. Engine/queue/audio/router/consent are synthetic; flight opening fails immediately if reached and is tested by FlightSelection/CtripHandoff. Not full VM/UI/voice/model/phone acceptance.",
 }, indent=2) + "\n")
 print("ConversationControls: complete production methods and observers extracted without substitutions")

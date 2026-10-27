@@ -234,3 +234,146 @@ enum ConversationWorkingMemory {
         return record
     }
 }
+
+/// A process-local source binding. A model or an archived intent cannot create
+/// this value through ConversationRoute's Codable representation.
+struct ConversationFlightSelection: Equatable, Sendable {
+    let source: AssistantMessage
+    let offer: CtripFlightOffer
+    let requestedAt: Date
+    let timeZoneIdentifier: String
+}
+
+struct ConversationFlightOpenAuthorization: Equatable, Sendable {
+    let conversationID: UUID
+    let userMessageID: UUID
+    let requestToken: UUID
+    let presentationRevision: UUID
+}
+
+/// A deliberately narrow local action grammar: selecting a displayed flight
+/// opens its price page only. Comparisons, changed constraints and purchases
+/// remain ordinary routing/clarification; no model index grants authority.
+enum ConversationFlightSelectionResolver {
+    static let maximumSourceAge: TimeInterval = 30 * 60
+
+    static func route(question: String, history: [AssistantMessage], now: Date,
+                      timeZoneIdentifier: String, hasPendingClarification: Bool = false) -> ConversationRoute? {
+        let original = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard original.count <= 120, ConversationTurnSignal.instruction(original) == original,
+              !ConversationTurnSignal.discussionOnly(original) else { return nil }
+        let text = original.replacingOccurrences(of: #"\s"#, with: "", options: .regularExpression).uppercased()
+        let source = latestSource(in: history)
+        if source != nil, text.range(of: #"预订|订票|下单|支付|付款|买票|购买|就订"#, options: .regularExpression) != nil,
+           text.range(of: #"航班|机票|这班|第[一二三四五六七八九十0-9]+班|[A-Z0-9]{2}\d{3,4}"#, options: .regularExpression) != nil {
+            return clarification("请先打开所选航班的选价页核对票价；下单和付款需要你在携程确认。")
+        }
+        let number = #"(?:[1-9]\d?|[一二三四五六七八九十两]{1,3})"#
+        let reference = #"(?:倒数第"# + number + #"班|第"# + number + #"(?:班|个|趟)(?:航班)?|最后一班|首班(?:航班)?|这一班|这班(?:航班)?|这个航班|它|[A-Z0-9]{2}\d{3,4})"#
+        let pattern = #"^(?:请帮我|请你|麻烦你|麻烦|请|帮我)?(?:直接)?(?:(?:打开|查看|去看|看|选择|就选|就要|选|要|就)(?:一下)?)?("# + reference + #")(?:的)?(?:选价页|票价页|详情页|详情|航班)?(?:吧|就行|就可以)?[。！!]*$"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        let selectedReference = String(text[range])
+        let explicitFlightReference = selectedReference.contains("班") || !CtripFlightParser.flightNumbers(in: selectedReference).isEmpty
+        let latestAssistant = history.last { $0.role == "assistant" }
+        let continuesFlightClarification = latestAssistant?.intent?.mode == .clarify &&
+            latestAssistant?.intent?.diagnostics?.decisionSource == "localFlightSelection"
+        // Generic "第二个/它" belongs to the newest visible selection context,
+        // never an older flight hidden behind a newer restaurant/task answer.
+        if !explicitFlightReference, latestAssistant?.id != source?.id, !continuesFlightClarification { return nil }
+        // A short ordinal must not answer a different pending form by accident.
+        if hasPendingClarification, !continuesFlightClarification,
+           (!explicitFlightReference || text.range(of: #"打开|查看|去看|选价页|票价页"#, options: .regularExpression) == nil) { return nil }
+        guard let source else { return clarification("当前对话还没有可选的航班结果，请先查询航班。") }
+        guard fresh(source, now: now) else { return clarification("这份航班结果已过期，请重新查询后再选择。") }
+        let offers = displayedOffers(source: source, history: history)
+        guard !offers.isEmpty else { return clarification("最新一次查询没有可选航班，请先重新查询。") }
+        let matches: [CtripFlightOffer]
+        let codes = CtripFlightParser.flightNumbers(in: selectedReference)
+        if codes.count == 1, let code = codes.first {
+            matches = offers.filter { CtripFlightParser.flightNumbers(in: $0.title) == [code] }
+        } else if ["这一班", "这班", "这班航班", "这个航班", "它"].contains(selectedReference) {
+            matches = offers.count == 1 ? offers : []
+        } else {
+            let reverse = selectedReference.hasPrefix("倒数") || selectedReference == "最后一班"
+            let digits = selectedReference.replacingOccurrences(of: #"倒数|第|班|个|趟|航|最后|首"#, with: "", options: .regularExpression)
+            let ordinal = ["首班", "首班航班", "最后一班"].contains(selectedReference) ? 1 : numberValue(digits)
+            let index = ordinal.map { reverse ? offers.count - $0 : $0 - 1 }
+            matches = index.flatMap { offers.indices.contains($0) ? [offers[$0]] : nil } ?? []
+        }
+        guard matches.count == 1, let offer = matches.first else {
+            return clarification("请明确要打开的航班号，或说明当前结果中的第几班。")
+        }
+        guard (offer.preferredNativeFlightSelectionURL != nil || offer.nativeFlightSelectionLookupQuery != nil),
+              departureHasNotPassed(offer, now: now) else {
+            return clarification("这班航班的信息还不足以直接打开选价页，或出发时间已过，请重新查询这班航班后再试。")
+        }
+        var result = ConversationRoute(mode: .flightOpen, request: original,
+            message: "正在准备打开 " + offer.cardTitle + " 的选价页。", relatedMessageIDs: [source.id], relation: .reference)
+        result.decisionSource = "localFlightSelection"
+        result.flightSelection = .init(source: source, offer: offer, requestedAt: now, timeZoneIdentifier: timeZoneIdentifier)
+        return result
+    }
+
+    static func isCurrent(_ selection: ConversationFlightSelection, history: [AssistantMessage], now: Date) -> Bool {
+        guard let source = latestSource(in: history), source == selection.source, fresh(source, now: now),
+              now.timeIntervalSince(selection.requestedAt) >= -5,
+              now.timeIntervalSince(selection.requestedAt) <= 60,
+              (selection.offer.preferredNativeFlightSelectionURL != nil || selection.offer.nativeFlightSelectionLookupQuery != nil),
+              departureHasNotPassed(selection.offer, now: now) else { return false }
+        return displayedOffers(source: source, history: history).contains(selection.offer)
+    }
+
+    private static func latestSource(in history: [AssistantMessage]) -> AssistantMessage? {
+        history.last { $0.role == "assistant" && ($0.flightOffers != nil || $0.flightQuery != nil) }
+    }
+    private static func displayedOffers(source: AssistantMessage, history: [AssistantMessage]) -> [CtripFlightOffer] {
+        guard let saved = source.flightOffers else { return [] }
+        let prior = history.firstIndex { $0.id == source.id }.flatMap { history[..<$0].last { $0.role == "user" }?.text }
+        let query = source.flightQuery ?? saved.first?.query ?? prior ?? ""
+        let rebuilt = CtripFlightParser.offers(source.text, query: query, at: source.createdAt)
+        let offers = rebuilt.isEmpty ? CtripFlightParser.legacyFallbackOffers(saved, in: source.text) : rebuilt
+        return CtripFlightParser.displayOrder(source.text, representedBy: offers)
+    }
+    private static func fresh(_ source: AssistantMessage, now: Date) -> Bool {
+        let age = now.timeIntervalSince(source.createdAt)
+        return age.isFinite && age >= -300 && age <= maximumSourceAge
+    }
+    private static func departureHasNotPassed(_ offer: CtripFlightOffer, now: Date) -> Bool {
+        // This native contract is domestic China. Flight clocks use the departure
+        // airport's UTC+8, regardless of the person's current device timezone.
+        let departure = offer.leg(departure: true)
+        if departure.time == "待核对", offer.nativeFlightSelectionLookupQuery != nil,
+           let url = offer.nativeFlightListURL,
+           let compact = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "c4" })?.value {
+            let today = DateFormatter(); today.calendar = Calendar(identifier: .gregorian)
+            today.locale = Locale(identifier: "en_US_POSIX"); today.timeZone = TimeZone(identifier: "Asia/Shanghai")
+            today.dateFormat = "yyyyMMdd"
+            return compact >= today.string(from: now)
+        }
+        guard departure.date.range(of: #"^20\d{2}-\d{2}-\d{2}$"#, options: .regularExpression) != nil,
+              departure.time.range(of: #"^(?:[01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else { return false }
+        let formatter = DateFormatter(); formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"; formatter.isLenient = false
+        guard let instant = formatter.date(from: departure.date + " " + departure.time) else { return false }
+        return instant > now
+    }
+    private static func numberValue(_ text: String) -> Int? {
+        if let value = Int(text), (1...99).contains(value) { return value }
+        let digits: [Character:Int] = ["一":1,"二":2,"两":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9]
+        if text == "十" { return 10 }
+        if text.count == 1 { return text.first.flatMap { digits[$0] } }
+        let parts = text.split(separator: "十", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts.allSatisfy({ $0.count <= 1 }),
+              let tens = parts[0].isEmpty ? 1 : parts[0].first.flatMap({ digits[$0] }),
+              let ones = parts[1].isEmpty ? 0 : parts[1].first.flatMap({ digits[$0] }) else { return nil }
+        return tens * 10 + ones
+    }
+    private static func clarification(_ message: String) -> ConversationRoute {
+        var route = ConversationRoute(mode: .clarify, request: "", message: message, missingInformation: ["航班选择"], relation: .reference)
+        route.decisionSource = "localFlightSelection"
+        return route
+    }
+}

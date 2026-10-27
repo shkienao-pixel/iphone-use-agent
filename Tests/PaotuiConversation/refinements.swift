@@ -12,13 +12,13 @@ import Foundation
   try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
   defer { try? FileManager.default.removeItem(at: root) }
   let backend = Backend(), plan = PlanFixture()
-  let store = MeituanPaotuiStore(receiptURL: root.appendingPathComponent("orders.json"), clientFactory: backend.client)
+  let store = MeituanPaotuiStore(connection: PaotuiFixtureRuntime.connection(), receiptURL: root.appendingPathComponent("orders.json"), clientFactory: backend.client)
   try store.installCredential("offline-refinement-key")
   let controller = MeituanPaotuiConversation(store: store, planner: { _, _, _ in plan.calls += 1; return plan.value })
-  let settings = AgentSettings(), id = UUID()
+  let id = UUID()
   func respond(_ text: String, _ json: String, _ conversation: UUID = id, history: [AssistantMessage] = []) async throws -> PaotuiChatReply {
    plan.value = json
-   return try await controller.respond(question: text, history: history, conversationID: conversation, settings: settings, apiKey: "fixture")
+   return try await controller.respond(question: text, history: history, conversationID: conversation)
   }
   func choose(_ reply: PaotuiChatReply, _ value: String, _ conversation: UUID = id) async throws -> PaotuiChatReply {
    try await controller.select(reply.card!, .init(action: .choose, value: value), conversationID: conversation)
@@ -80,6 +80,18 @@ import Foundation
   expect(goods["goodsWeight"] as? Double == 1 && goods["goodTypes"] as? [Int] == [4], "Reviewed send weight/category reach the real production wire body")
   expect(!result.text.contains("商品费尚未确定"), "Send dialogue does not claim an unknown purchase cost")
 
+  let categoryID = UUID(), beforeCategory = backend.previews.count
+  result = try await respond("送一份物品，约半公斤", #"{"service":"send","goods":"物品一份","weight":0.5}"#, categoryID)
+  expect(result.card?.kind == "category" && result.card?.itemCategory == nil && result.card?.itemWeight == 0.5,
+         "An omitted send category remains unknown and is gathered by a native card")
+  expect(result.card?.options.contains(where: { $0.id == "document" }) == true && backend.previews.count == beforeCategory,
+         "Actual category choices are offered before any quote request")
+  result = try await choose(result, "document", categoryID)
+  result = try await choose(result, "address:2", categoryID)
+  result = try await choose(result, "address:1", categoryID)
+  expect(result.card?.kind == "request" && result.card?.itemCategory == "文件" && result.card?.itemWeight == 0.5,
+         "A native category choice completes the same send preparation without a default")
+
   backend.deliveryFee = 120
   let highID = UUID()
   result = try await respond("买一瓶水", #"{"service":"buy","goods":"水一瓶","nearby":true}"#, highID)
@@ -116,7 +128,9 @@ import Foundation
   expect(result.card?.kind == "places" && backend.searchRequests.last?["city"] as? String == "北京", "New destination discards prior merchant and uses its own city")
   result = try await choose(result, "poi:fixture-shop", cityID)
   let previewCount = backend.previews.count
-  do { _ = try await quote(result, cityID); fatalError("Cross-city quote accepted") } catch { checks += 1 }
+  result = try await quote(result, cityID)
+  expect(result.card?.kind == "info" && result.card?.canCreateOrder == false && controller.isCurrent(result.card!), "Cross-city validation returns a current recovery card without an offer")
+  expect(result.card?.options.map(\.id) == ["edit_preparation"] && !result.text.contains("无法连接"), "Deterministic city validation offers correction rather than an unchanged network retry")
   expect(backend.previews.count == previewCount, "Cross-city mismatch is caught before a quote request")
   do { _ = try await respond("变更", #"{"intent":"unexpected"}"#, cityID); fatalError("Unknown intent accepted") } catch { checks += 1 }
   do { _ = try await respond("变更", #"{"weight":-1}"#, cityID); fatalError("Invalid weight accepted") } catch { checks += 1 }

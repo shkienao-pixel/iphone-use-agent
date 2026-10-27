@@ -57,6 +57,7 @@ struct AppConnectionsView: View {
 }
 
 struct ExternalAppConnectionDetailView: View {
+    @EnvironmentObject private var model: PhoneAgentViewModel
     let service: ExternalAppService
     let onConfiguration: (SettingsPage) -> Void
     let onNavigate: (WorkspaceDestination) -> Void
@@ -74,7 +75,13 @@ struct ExternalAppConnectionDetailView: View {
             if service == .ctrip {
                 CtripSettingsView(showsIntro: false)
             } else if service == .meituan {
-                MeituanPaotuiView(onChat: { onNavigate(.assistant) })
+                MeituanPaotuiView(onChat: { onNavigate(.assistant) }, canRestoreConversation: { id in
+                    model.conversation.currentConversationID == id || model.conversation.conversations.contains { $0.id == id }
+                }, onRestoreConversation: { id in
+                    guard model.conversation.currentConversationID == id || model.conversation.openConversation(id) else { return false }
+                    onNavigate(.assistant)
+                    return true
+                })
             } else if service == .wps {
                 WPSConnectionView(onNavigate: onNavigate)
             } else {

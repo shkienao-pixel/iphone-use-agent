@@ -1,17 +1,10 @@
 import Foundation
 import CryptoKit
 
-enum AgentError: LocalizedError {
-    case message(String)
-    var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
-}
-struct MeituanMCPClient {
-    static func load(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { fatalError("Offline authorization check attempted network") }
-}
 @main struct AuthorizationChecks {
     static var checks=0
     static func expect(_ value:Bool,_ label:String){checks+=1;precondition(value,label)}
-    static func main() async throws {
+    @MainActor static func main() async throws {
         var requests:[URLRequest]=[]
         var payload:[String:Any]=["authCode":"fixture-code","shortLink":"https://dpurl.cn/fixture"]
         var status=200

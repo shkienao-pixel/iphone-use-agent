@@ -339,6 +339,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     Toggle("实时活动展示任务状态", isOn: Binding(get: { model.settings.liveTaskStatus != false }, set: { model.settings.liveTaskStatus = $0 })).tint(AgentPalette.accent)
                     Text("在锁屏与支持的灵动岛中显示步骤和状态，可暂停或停止当前任务；系统可能要求先认证设备。继续、补充和工具确认请回到 App。状态 60 秒未刷新时会提示核对；不增加后台执行时间。") .font(.caption).foregroundStyle(AgentPalette.secondaryText)
+                    TaskActivitySetupView()
                     if !model.taskActivity.error.isEmpty { AgentNotice(text: model.taskActivity.error) }
                     Divider()
                     Toggle("启用系统工具", isOn: Binding(get: { model.settings.systemToolsEnabled == true }, set: { model.settings.systemToolsEnabled = $0; if !$0 { model.settings.toolsOnly = false } })).tint(AgentPalette.accent)

@@ -46,6 +46,7 @@ struct Record {
     struct Archived { var id: UUID; var messages: [AssistantMessage] }
     let currentConversationID = UUID()
     var focusedTaskID: UUID?
+    func paotuiRoutingSummary(for conversationID: UUID) -> [String: Any]? { nil }
     var conversations: [Archived] = []
     var pendingTaskSubmission: (() -> ConversationTaskSubmission?)?
     var messages: [AssistantMessage] = []
@@ -119,6 +120,9 @@ struct Record {
     var actions: [(String, UUID?)] = [], halts = 0
     var historicalRecoveryAllowed = true
     var effectCount: Int { actions.count + engine.resumedIDs.count + halts + speech.cancellations + conversation.cancellations }
+    func openConversationFlight(_ route: ConversationRoute, replyID: UUID, conversationID: UUID) {
+        preconditionFailure("Flight opening is covered by FlightSelection and CtripHandoff, outside this task-control fixture")
+    }
     func enqueueDraft(priority: Bool, attachments: [ComposerAttachment] = [], conversationReference: String = "") -> Bool {
         guard enqueueAllowed else { notice = "offline queue full"; return false }
         taskQueue.items.append(.init()); actions.append(("enqueue", nil)); return true

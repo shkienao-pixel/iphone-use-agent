@@ -56,11 +56,11 @@ import Foundation
             createdAt: Date(), updatedAt: Date(), recipient: "https://model.invalid/chat/completions|Offline fixture", draft: "")
         let focusStore = AssistantConversationStore(url: focusURL); try focusStore.save([focusRecord], currentConversationID: focusRecord.id)
         let focusVM = PhoneAgentViewModel(url: focusURL); focusVM.installCallbacks()
-        let snapshotHook = focusVM.conversation.routingTaskContext!
+        let snapshotHook = focusVM.conversation.routingTaskContextInConversation!
         var hookCalls = 0, lateHookCalls = 0, seenQuestion = "", seenHistory: [AssistantMessage] = [], routedFocus: [ConversationRoutingInput] = []
-        focusVM.conversation.routingTaskContext = { question, history in
+        focusVM.conversation.routingTaskContextInConversation = { question, history, origin in
             hookCalls += 1; seenQuestion = question; seenHistory = history
-            return snapshotHook(question, history)
+            return snapshotHook(question, history, origin)
         }
         focusVM.conversation.unifiedRoute = { input in routedFocus.append(input); return .init(mode: .clarify, request: "", message: "请核对后再决定。") }
         var focusSettings = AgentSettings(); focusSettings.useMemories = true
@@ -75,7 +75,7 @@ import Foundation
         expect(hookCalls == 1 && seenQuestion == "第27个航班的行李呢？" && seenHistory == focusHistory &&
                CtripFlightSearchContext.latest(in: seenHistory)?.offers.count == 30,
                "The current question and complete ordered history are captured synchronously before any await")
-        focusVM.conversation.routingTaskContext = { _, _ in lateHookCalls += 1; return "{\"wrongLaterConversation\":true}" }
+        focusVM.conversation.routingTaskContextInConversation = { _, _, _ in lateHookCalls += 1; return "{\"wrongLaterConversation\":true}" }
         try await wait { !focusVM.conversation.loading }
         let focusObject = try JSONSerialization.jsonObject(with: Data(routedFocus[0].taskContext.utf8)) as! [String: Any]
         let focusRows = focusObject["flightOffers"] as! [[String: Any]]
@@ -85,7 +85,7 @@ import Foundation
         expect(routedFocus[0].memoryContext == focusMemories.reference && routedFocus[0].attachments == [focusAttachment] &&
                routedFocus[0].visuals.count == 1 && routedFocus[0].controlContext == focusControl && routedFocus[0].configuration?.model == focusSettings.model,
                "Focused context keeps the same input memory, selected media, control and configuration snapshots")
-        focusVM.conversation.routingTaskContext = { question, history in hookCalls += 1; return snapshotHook(question, history) }
+        focusVM.conversation.routingTaskContextInConversation = { question, history, origin in hookCalls += 1; return snapshotHook(question, history, origin) }
         focusVM.conversation.draft = "最后一个呢？"
         _ = focusVM.conversation.send(settings: focusSettings, apiKey: "offline-unused", memories: focusMemories)
         let beforeSwitchCalls = hookCalls; focusVM.conversation.newConversation()

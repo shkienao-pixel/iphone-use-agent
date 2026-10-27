@@ -24,6 +24,8 @@ for (phase, label) in [("preparing", "Prepare"), ("acting", "Working"), ("observ
                        ("idle", "Ready"), ("preview", "Ready")] {
     expect(TaskActivityPresentation.label(phase: phase, isStale: false) == label, "Correct current phase")
     expect(TaskActivityPresentation.label(phase: phase, isStale: true) == "待核对", "Stale compact UI must not claim running or done")
-    expect(TaskActivityPresentation.portraitPhase(phase: phase, isStale: true) == "needsUser", "Stale minimal UI needs a check state")
+    expect(TaskActivityPresentation.portraitPhase(phase: phase, isStale: true) == "stale", "Stale minimal UI needs its own static check state, overriding working and completed")
 }
+expect(TaskActivityPresentation.portraitPhase(phase: "needsUser", isStale: false) == "needsUser", "A real user handoff stays distinct from missing status updates")
+expect(TaskActivityPresentation.portraitPhase(phase: nil, isStale: true) == "stale", "An older activity without a phase must still expose stale state")
 print("PASS: \(count) total activity route and phase presentation checks")

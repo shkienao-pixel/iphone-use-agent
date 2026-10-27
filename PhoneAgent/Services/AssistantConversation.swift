@@ -22,6 +22,7 @@ final class AssistantConversation: ObservableObject {
     @Published private(set) var retryAttachments: [ComposerAttachment] = []
     var taskContext: (() -> String)?
     var routingTaskContext: ((String, [AssistantMessage]) -> String)?
+    var routingTaskContextInConversation: ((String, [AssistantMessage], UUID) -> String)?
     var taskControlContext: (() -> ConversationControlContext?)?
     var backgroundTaskSessions: (() -> [UUID: UUID])?
     var pendingTaskSubmission: (() -> ConversationTaskSubmission?)?
@@ -29,8 +30,14 @@ final class AssistantConversation: ObservableObject {
     var onAction: ((ConversationRoute, UUID) -> Void)?
     var onActionInConversation: ((ConversationRoute, UUID, UUID) -> Void)?
     var flightQuery: ((String) async throws -> String)?
-    var paotuiQuery: ((ConversationRoutingInput, UUID) async throws -> PaotuiChatReply)?
-    var paotuiSelection: ((PaotuiChatCard, PaotuiChatSelection, UUID) async throws -> PaotuiChatReply)?
+    var onProcessingChange: (() -> Void)?
+    var paotuiQuery: ((ConversationRoutingInput, PaotuiHostContext) async throws -> PaotuiChatReply)?
+    var paotuiSelection: ((PaotuiChatCard, PaotuiChatSelection, PaotuiHostContext) async throws -> PaotuiChatReply)?
+    var paotuiSummary: ((UUID) -> PaotuiSessionSummary?)?
+    var paotuiPresentation: ((PaotuiChatCard, UUID) -> PaotuiCardPresentation)?
+    /// Business modules revoke their own preparation state when the human clears
+    /// this conversation. The chat host does not own those modules or order logs.
+    var onConversationCleared: ((UUID) -> Void)?
     private var selectedSequence: [CameraObservationFrame] = []
     private var request: Task<Void, Never>?
     private var generation = UUID()
@@ -45,11 +52,12 @@ final class AssistantConversation: ObservableObject {
     private final class LiveRequest {
         let token: UUID
         let userMessageID: UUID
+        let submittedMessage: AssistantMessage
         let canBackground: Bool
         var task: Task<Void, Never>?
         var route: ConversationRoute?
-        init(token: UUID, userMessageID: UUID, canBackground: Bool) {
-            self.token = token; self.userMessageID = userMessageID; self.canBackground = canBackground
+        init(token: UUID, message: AssistantMessage, canBackground: Bool) {
+            self.token = token; self.userMessageID = message.id; submittedMessage = message; self.canBackground = canBackground
         }
     }
     private struct TransientState {
@@ -61,13 +69,117 @@ final class AssistantConversation: ObservableObject {
     private var liveRequests: [UUID: LiveRequest] = [:]
     private var transientStates: [UUID: TransientState] = [:]
     private var presentationOwners: [UUID] = []
+    private var flightOpeningVisibleOwners = Set<UUID>()
+    private var flightOpeningRevision = UUID()
+    private var claimedFlightOpenToken: UUID?
+    var flightOpeningPresentationRevision: UUID? {
+        guard let owner = presentationOwners.last, flightOpeningVisibleOwners.contains(owner) else { return nil }
+        return flightOpeningRevision
+    }
+    func setFlightOpeningVisible(_ visible: Bool, owner: UUID) {
+        let changed = visible ? flightOpeningVisibleOwners.insert(owner).inserted : flightOpeningVisibleOwners.remove(owner) != nil
+        if changed, presentationOwners.last == owner { flightOpeningRevision = UUID() }
+    }
+    func flightOpenRequestIsCurrent(_ authorization: ConversationFlightOpenAuthorization, question: String) -> Bool {
+        guard currentConversationID == authorization.conversationID, generation == authorization.requestToken,
+              let user = messages.last(where: { $0.role == "user" }), user.id == authorization.userMessageID,
+              user.text.trimmingCharacters(in: .whitespacesAndNewlines) == question else { return false }
+        return true
+    }
+    func hasClaimedFlightOpen(_ token: UUID) -> Bool { claimedFlightOpenToken == token }
+    func flightOpenIsCurrent(_ selection: ConversationFlightSelection, authorization: ConversationFlightOpenAuthorization,
+                             question: String, now: Date = Date()) -> Bool {
+        guard flightOpenRequestIsCurrent(authorization, question: question),
+              flightOpeningPresentationRevision == authorization.presentationRevision else { return false }
+        return ConversationFlightSelectionResolver.isCurrent(selection, history: messages, now: now)
+    }
+    func claimFlightOpen(_ selection: ConversationFlightSelection, authorization: ConversationFlightOpenAuthorization,
+                         question: String) -> Bool {
+        guard claimedFlightOpenToken != authorization.requestToken,
+              flightOpenIsCurrent(selection, authorization: authorization, question: question) else { return false }
+        claimedFlightOpenToken = authorization.requestToken
+        return true
+    }
     static let maximumParallelConversations = 4
 
     var backgroundRequestCount: Int { processingConversationIDs.filter { $0 != currentConversationID }.count }
 
     private func isLiveRequest(_ token: UUID, in id: UUID) -> Bool { liveRequests[id]?.token == token }
 
-    private func updateProcessingIDs() { processingConversationIDs = Set(liveRequests.keys) }
+    struct ActivityRequest {
+        let id: UUID
+        let token: UUID
+        let title: String
+    }
+    private(set) var activityRequestResults: [UUID: (token: UUID, succeeded: Bool)] = [:]
+    private var activityResultOrder: [UUID] = []
+    private func finishActivityRequest(_ token: UUID, in id: UUID, succeeded: Bool, notify: Bool = true) {
+        activityRequestResults[id] = (token, succeeded)
+        activityResultOrder.removeAll { $0 == id }; activityResultOrder.append(id)
+        while activityResultOrder.count > 100 {
+            activityRequestResults.removeValue(forKey: activityResultOrder.removeFirst())
+        }
+        if notify { onProcessingChange?() }
+    }
+    var activityRequests: [ActivityRequest] {
+        liveRequests.compactMap { id, live in
+            guard live.canBackground else { return nil }
+            return ActivityRequest(id: id, token: live.token, title: String(live.submittedMessage.text.prefix(80)))
+        }.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+    private func updateProcessingIDs(notify: Bool = true) {
+        processingConversationIDs = Set(liveRequests.keys)
+        if notify { onProcessingChange?() }
+    }
+
+    /// The OS can end a continuation grant. Settle only those exact requests
+    /// before returning from expiration; a late network response loses authority.
+    func expireBackgroundRequests(_ ids: Set<UUID>, expectedTokens: [UUID: UUID]? = nil) {
+        for id in ids {
+            guard let live = liveRequests[id], live.canBackground,
+                  expectedTokens == nil || expectedTokens?[id] == live.token else { continue }
+            live.task?.cancel()
+            failRequest(live.token, in: id, user: live.submittedMessage,
+                attachments: live.submittedMessage.attachments ?? [],
+                failure: "系统结束了本次后台运行，问题和已有结果已保留。回到 Sela 后可重新发送继续查询。")
+        }
+    }
+
+    /// Only interpretation and text answers enter here. Tool dispatch and
+    /// purchase actions must never be replayed after an uncertain response.
+    static func retryReadOnly<T>(settings: AgentSettings, operation: () async throws -> T) async throws -> T {
+        for attempt in 0..<2 {
+            try Task.checkCancellation()
+            guard PrivacyConsent.allowed(settings) else { throw RetryIssue(message: "数据使用授权已改变，原问题已保留") }
+            do { return try await operation() }
+            catch {
+                guard attempt == 0, let network = error as? URLError,
+                      [.networkConnectionLost, .timedOut, .notConnectedToInternet,
+                       .cannotConnectToHost, .dnsLookupFailed].contains(network.code) else { throw error }
+                try Task.checkCancellation()
+                try await Task.sleep(nanoseconds: 350_000_000)
+            }
+        }
+        throw CancellationError()
+    }
+
+    private static func requestFailure(_ failure: Error) -> String {
+        if let network = failure as? URLError {
+            switch network.code {
+            case .cancelled: return "请求已中断，问题已保留，请重新发送"
+            case .timedOut: return "查询等待超时，问题和已有结果已保留，请稍后重新发送。"
+            default: return "网络连接中断，问题和已有结果已保留。恢复网络后可重新发送。"
+            }
+        }
+        return failure.localizedDescription
+    }
+
+    private func beginRequest(message: AssistantMessage, canBackground: Bool, in id: UUID) -> LiveRequest {
+        let live = LiveRequest(token: UUID(), message: message, canBackground: canBackground)
+        liveRequests[id] = live; updateProcessingIDs()
+        generation = live.token; pendingMessageID = message.id; loading = true
+        return live
+    }
 
     /// View lifetime is independent of a conversation ID: the same composer can
     /// open another conversation, and a replacement can appear before its
@@ -79,6 +191,7 @@ final class AssistantConversation: ObservableObject {
         let replacing = previous != nil && previous != owner
         presentationOwners.removeAll { $0 == owner }
         presentationOwners.append(owner)
+        if previous != owner { flightOpeningRevision = UUID() }
         return replacing
     }
 
@@ -89,6 +202,7 @@ final class AssistantConversation: ObservableObject {
     @discardableResult
     func releasePresentation(_ owner: UUID) -> Bool {
         let wasCurrent = ownsPresentation(owner)
+        setFlightOpeningVisible(false, owner: owner)
         presentationOwners.removeAll { $0 == owner }
         return wasCurrent && presentationOwners.isEmpty
     }
@@ -109,7 +223,7 @@ final class AssistantConversation: ObservableObject {
 
     private func finishRequest(_ token: UUID, in id: UUID) {
         guard isLiveRequest(token, in: id) else { return }
-        liveRequests.removeValue(forKey: id); updateProcessingIDs()
+        liveRequests.removeValue(forKey: id); updateProcessingIDs(notify: false)
         if id == currentConversationID { loading = false; request = nil; pendingMessageID = nil }
     }
 
@@ -128,28 +242,32 @@ final class AssistantConversation: ObservableObject {
     /// completing A can never replace B's newer messages, draft or selection.
     @discardableResult
     private func appendReply(_ reply: AssistantMessage, token: UUID, in id: UUID,
-                             references: [AssistantConversationContextHit], route: ConversationRoute?) -> Bool {
+                             references: [AssistantConversationContextHit], route: ConversationRoute?, notifyActivity: Bool = true) -> Bool {
         guard isLiveRequest(token, in: id) else { return false }
         finishRequest(token, in: id)
+        var saved = false
+        defer { finishActivityRequest(token, in: id, succeeded: saved, notify: notifyActivity) }
         transientStates[id] = .init(route: route, replyID: reply.id)
         if id == currentConversationID {
             messages.append(reply)
             if messages.count > 100 { messages.removeFirst(messages.count - 100) }
             lastRoute = route; lastRoutedReplyID = reply.id; contextReferences = references
-            saveCurrent()
-            return storageError.isEmpty
+            saveCurrent(); saved = storageError.isEmpty
+            return saved
         }
         guard var record = conversations.first(where: { $0.id == id }) else { return false }
         record.messages.append(reply)
         if record.messages.count > 100 { record.messages.removeFirst(record.messages.count - 100) }
         record.contextReferences = references; record.updatedAt = Date()
-        return saveArchivedRecord(record)
+        saved = saveArchivedRecord(record)
+        return saved
     }
 
     private func failRequest(_ token: UUID, in id: UUID, user: AssistantMessage,
                              attachments: [ComposerAttachment], failure: String) {
         guard isLiveRequest(token, in: id) else { return }
         finishRequest(token, in: id)
+        defer { finishActivityRequest(token, in: id, succeeded: false) }
         transientStates[id] = .init(error: failure, attachments: attachments)
         if id == currentConversationID {
             if draft.isEmpty { draft = user.text }
@@ -280,14 +398,23 @@ final class AssistantConversation: ObservableObject {
         let body = answer.replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         return body.range(of: #"^(?:(?:好的|好|可以)[，,。！!\s]*)?(?:我(?:现在|这就|马上)?(?:已经)?)?(?:开始(?:执行|处理|创建|设置|为你|帮你|给你)|正在(?:执行|处理|创建|设置|添加|为你|帮你|给你)|已(?:经)?(?:创建|设置|添加|打开|关闭|发送|删除)|马上(?:开始|创建|设置)|将为你(?:创建|设置))"#, options: .regularExpression) != nil
     }
-    func isCurrentPaotuiCard(_ card: PaotuiChatCard) -> Bool {
-        !loading && card.conversationID == currentConversationID &&
-            messages.last(where: { $0.role == "assistant" })?.paotuiCard?.id == card.id
+    /// Module snapshots are read-only. Archived cards never establish a live session.
+    func paotuiRoutingSummary(for conversationID: UUID) -> [String: Any]? {
+        paotuiSummary?(conversationID)?.routingPayload
     }
+    func paotuiCardPresentation(_ card: PaotuiChatCard) -> PaotuiCardPresentation {
+        guard !loading, liveRequests[currentConversationID] == nil,
+              card.conversationID == currentConversationID else {
+            return .init(isCurrent: false, allowedActions: [])
+        }
+        return paotuiPresentation?(card, currentConversationID) ?? .init(isCurrent: false, allowedActions: [])
+    }
+    func isCurrentPaotuiCard(_ card: PaotuiChatCard) -> Bool { paotuiCardPresentation(card).isCurrent }
     func selectPaotui(_ card: PaotuiChatCard, _ selection: PaotuiChatSelection) {
-        guard isCurrentPaotuiCard(card), let handler = paotuiSelection else { return }
-        let conversationID = currentConversationID, token = UUID()
-        generation = token; loading = true; error = ""
+        guard paotuiCardPresentation(card).allows(selection.action), let handler = paotuiSelection,
+              liveRequests.count < Self.maximumParallelConversations else { return }
+        let conversationID = currentConversationID
+        error = ""
         let label: String
         switch selection.action {
         case .choose: label = card.options.first(where: { $0.id == selection.value })?.title ?? "选择方案"
@@ -299,22 +426,26 @@ final class AssistantConversation: ObservableObject {
         }
         let userMessage = AssistantMessage(role: "user", text: label)
         messages.append(userMessage); if messages.count > 100 { messages.removeFirst(messages.count - 100) }
-        pendingMessageID = userMessage.id; saveCurrent()
-        request = Task { [weak self] in
+        // Native card actions, including explicit confirmation, require the
+        // originating foreground chat. They share text request ownership.
+        let live = beginRequest(message: userMessage, canBackground: false, in: conversationID)
+        let token = live.token
+        saveCurrent()
+        let work = Task { [weak self] in
             do {
-                let reply = try await handler(card, selection, conversationID)
                 try Task.checkCancellation()
-                guard let self, self.generation == token, self.currentConversationID == conversationID else { return }
-                self.messages.append(AssistantMessage(role: "assistant", text: reply.text, paotuiCard: reply.card))
-                if self.messages.count > 100 { self.messages.removeFirst(self.messages.count - 100) }
-                self.loading = false; self.request = nil; self.pendingMessageID = nil; self.saveCurrent()
+                let reply = try await handler(card, selection, .init(conversationID: conversationID, requestID: token))
+                try Task.checkCancellation()
+                guard let self, self.isLiveRequest(token, in: conversationID) else { return }
+                _ = self.appendReply(AssistantMessage(role: "assistant", text: reply.text, paotuiCard: reply.card),
+                    token: token, in: conversationID, references: [], route: nil)
             } catch {
-                guard let self, self.generation == token, self.currentConversationID == conversationID else { return }
-                self.loading = false; self.request = nil; self.pendingMessageID = nil
-                self.messages.append(AssistantMessage(role: "assistant", text: "本次跑腿操作未完成，请重新核对当前对话。\n" + error.localizedDescription))
-                self.saveCurrent()
+                guard let self, self.isLiveRequest(token, in: conversationID) else { return }
+                self.failRequest(token, in: conversationID, user: userMessage, attachments: [],
+                    failure: error is CancellationError ? "跑腿操作已中断，请重新核对当前对话" : error.localizedDescription)
             }
         }
+        live.task = work; request = work
     }
     /// Update only an existing assistant message linked to this actual task.
     /// A late completion cannot create a conversation or change the open draft.
@@ -379,7 +510,8 @@ final class AssistantConversation: ObservableObject {
     }
     func cancel() {
         if let live = liveRequests.removeValue(forKey: currentConversationID) {
-            live.task?.cancel(); updateProcessingIDs()
+            live.task?.cancel(); updateProcessingIDs(notify: false)
+            finishActivityRequest(live.token, in: currentConversationID, succeeded: false)
         }
         generation = UUID(); request?.cancel(); request = nil
         if loading, let pendingMessageID, messages.last?.id == pendingMessageID {
@@ -452,7 +584,9 @@ final class AssistantConversation: ObservableObject {
     /// Explicitly clears only the selected conversation, leaving other chats.
     func clear() {
         focusedTaskID = nil
-        cancel(); messages = []; draft = ""; selectedFrame = nil; selectedSequence = []; error = ""; contextReferences = []; retryAttachments = []
+        cancel()
+        onConversationCleared?(currentConversationID)
+        messages = []; draft = ""; selectedFrame = nil; selectedSequence = []; error = ""; contextReferences = []; retryAttachments = []
         clearFlightPresentations()
         saveCurrent()
     }
@@ -489,6 +623,7 @@ final class AssistantConversation: ObservableObject {
         if historyChanged {
             payload["flightSearch"] = NSNull(); payload["flightOffers"] = []
             payload["paotuiConversationActive"] = false
+            payload["paotuiSession"] = NSNull()
         }
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]), let value = String(data: data, encoding: .utf8) else { return "{}" }
         return value
@@ -781,11 +916,12 @@ final class AssistantConversation: ObservableObject {
         if !recipient.isEmpty, recipient != key { newConversation() }
         recipient = key
         let memoryHistory = messages
+        let submittedFlightOpeningRevision = flightOpeningPresentationRevision
         let submittedSelectedTaskID = focusedTaskID
         let submittedPendingTask = pendingTaskSubmission?().flatMap { $0.conversationID == currentConversationID ? $0 : nil }
         let sessionTaskIDs = ConversationTaskScope.linkedTaskIDs(in: memoryHistory, selectedTaskID: submittedSelectedTaskID, pendingTaskID: submittedPendingTask?.taskID)
         let submittedTaskContext = ConversationTaskScope.taskContext(
-            routingTaskContext?(text, memoryHistory) ?? taskContext?() ?? "{}", taskIDs: sessionTaskIDs)
+            routingTaskContextInConversation?(text, memoryHistory, currentConversationID) ?? routingTaskContext?(text, memoryHistory) ?? taskContext?() ?? "{}", taskIDs: sessionTaskIDs)
         let submittedControlContext = ConversationTaskScope.controlContext(taskControlContext?(), taskIDs: sessionTaskIDs, pendingTaskID: submittedPendingTask?.taskID)
         let submittedBackgroundSessions = ConversationTaskScope.backgroundSessions(backgroundTaskSessions?() ?? [:], taskIDs: sessionTaskIDs)
         let routeRequest = unifiedRoute, flightRequest = flightQuery, errandsRequest = paotuiQuery
@@ -797,11 +933,11 @@ final class AssistantConversation: ObservableObject {
                                         timeZoneIdentifier: TimeZone.current.identifier)
         messages.append(message); pendingMessageID = message.id
         if messages.count > 100 { messages.removeFirst(messages.count - 100) }
-        draft = ""; error = ""; loading = true; let token = UUID(); generation = token
+        draft = ""; error = ""
         let conversationID = currentConversationID
+        let live = beginRequest(message: message, canBackground: frame == nil && sequence.isEmpty, in: conversationID)
+        let token = live.token
         saveCurrent()
-        let live = LiveRequest(token: token, userMessageID: message.id, canBackground: frame == nil && sequence.isEmpty)
-        liveRequests[conversationID] = live; updateProcessingIDs()
         let work = Task { [weak self] in
             do {
                 let memoryStarted = ProcessInfo.processInfo.systemUptime
@@ -837,7 +973,21 @@ final class AssistantConversation: ObservableObject {
                     timeZoneIdentifier: message.timeZoneIdentifier ?? TimeZone.current.identifier, backgroundSessions: submittedBackgroundSessions,
                     selectedTaskID: submittedSelectedTaskID, conversationID: conversationID, pendingTask: submittedPendingTask)
                 let routingStarted = ProcessInfo.processInfo.systemUptime
-                let route = try await routeRequest?(routingInput)
+                var route = try await Self.retryReadOnly(settings: settings) { try await routeRequest?(routingInput) }
+                if route?.mode == .flightOpen {
+                    // Only this live human turn supplies the process-local
+                    // opening lease. Decoded/archived model fields cannot do so.
+                    guard let selection = route?.flightSelection,
+                          ConversationFlightSelectionResolver.isCurrent(selection, history: safeHistory, now: Date()) else {
+                        throw RetryIssue(message: "所选航班来源已变化，请重新选择")
+                    }
+                    if let submittedFlightOpeningRevision {
+                        route?.flightOpenAuthorization = .init(conversationID: conversationID,
+                            userMessageID: message.id, requestToken: token, presentationRevision: submittedFlightOpeningRevision)
+                    } else {
+                        route = ConversationRoute(mode: .clarify, request: "", message: "请回到本次对话后重新选择要打开的航班。")
+                    }
+                }
                 guard preparedMemory.recallRevision == nil || preparedMemory.recallRevision == memories.recallRevision else {
                     throw RetryIssue(message: "记忆已更新，旧的理解结果未采用，请重新发送")
                 }
@@ -850,7 +1000,7 @@ final class AssistantConversation: ObservableObject {
                 live.route = route
                 if self?.currentConversationID == conversationID { self?.lastRoute = route }
                 let flightQuestion = route?.mode == .flightQuery ? route!.request : text
-                let actionRoute = route.flatMap { [.task, .supplement, .resume, .pause, .stop, .clarify].contains($0.mode) ? $0 : nil }
+                let actionRoute = route.flatMap { [.task, .supplement, .resume, .pause, .stop, .clarify, .flightOpen].contains($0.mode) ? $0 : nil }
                 let answer: String
                 var responseModel: String? = nil
                 var searched: Bool? = nil
@@ -863,7 +1013,7 @@ final class AssistantConversation: ObservableObject {
                 }
                 else if route?.mode == .paotuiQuery {
                     guard let query = errandsRequest else { throw RetryIssue(message: "美团会话模块尚未就绪，请稍后重试") }
-                    let reply = try await query(routingInput, conversationID)
+                    let reply = try await query(routingInput, .init(conversationID: conversationID, requestID: token))
                     answer = reply.text; paotuiCard = reply.card
                 }
                 else if let actionRoute { answer = actionRoute.mode == .task ? "正在交接执行请求" : actionRoute.message }
@@ -876,12 +1026,16 @@ final class AssistantConversation: ObservableObject {
                    rememberedRecent.allSatisfy({ ($0.attachments ?? []).isEmpty }), ConnectedConversationClient.supports(settings) {
                     usedReferences = references
                     if self?.currentConversationID == conversationID { self?.contextReferences = references }
-                    let reply = try await ConnectedConversationClient(settings: settings, apiKey: apiKey).answer(question: text, history: rememberedRecent, memoryContext: context, assistantIdentity: preparedMemory.identity)
+                    let reply = try await Self.retryReadOnly(settings: settings) {
+                        try await ConnectedConversationClient(settings: settings, apiKey: apiKey).answer(question: text, history: rememberedRecent, memoryContext: context, assistantIdentity: preparedMemory.identity)
+                    }
                     answer = reply.text; responseModel = reply.model; searched = reply.searched
                 } else {
                     usedReferences = references
                     if self?.currentConversationID == conversationID { self?.contextReferences = references }
-                    answer = try await VisionClient(settings: settings, apiKey: apiKey).answer(question: text, frame: frame, history: rememberedRecent, memoryContext: context, sequence: sequence, attachments: attachments, assistantIdentity: preparedMemory.identity)
+                    answer = try await Self.retryReadOnly(settings: settings) {
+                        try await VisionClient(settings: settings, apiKey: apiKey).answer(question: text, frame: frame, history: rememberedRecent, memoryContext: context, sequence: sequence, attachments: attachments, assistantIdentity: preparedMemory.identity)
+                    }
                 }
                 try Task.checkCancellation()
                 guard let self, self.isLiveRequest(token, in: conversationID) else { return }
@@ -901,7 +1055,10 @@ final class AssistantConversation: ObservableObject {
                         decisionSource: route.decisionSource ?? "host")
                     reply.intent = intent
                 }
-                let saved = self.appendReply(reply, token: token, in: conversationID, references: usedReferences, route: route)
+                // Keep the same runtime grant and island alive through a
+                // synchronous route-to-worker handoff, even after backgrounding.
+                defer { self.onProcessingChange?() }
+                let saved = self.appendReply(reply, token: token, in: conversationID, references: usedReferences, route: route, notifyActivity: false)
                 if let actionRoute {
                     let handler = self.onActionInConversation
                     let legacyHandler = self.currentConversationID == conversationID ? self.onAction : nil
@@ -909,7 +1066,7 @@ final class AssistantConversation: ObservableObject {
                         if let handler { handler(actionRoute, reply.id, conversationID) }
                         else { legacyHandler?(actionRoute, reply.id) }
                     }
-                    if actionRoute.mode == .task, !self.taskHandoffEstablished(to: reply.id, in: conversationID) {
+                    if [.task, .flightOpen].contains(actionRoute.mode), !self.taskHandoffEstablished(to: reply.id, in: conversationID) {
                         let failure = !saved ? "任务未启动：对话记录未保存，执行请求没有交接。" :
                             handler == nil && legacyHandler == nil ? "任务未启动：执行入口尚未就绪，原请求已保留。" :
                             "任务未启动：执行器没有确认接收这次请求，原请求已保留。"
@@ -925,7 +1082,7 @@ final class AssistantConversation: ObservableObject {
             } catch {
                 guard let self, self.isLiveRequest(token, in: conversationID) else { return }
                 self.failRequest(token, in: conversationID, user: message, attachments: attachments,
-                    failure: error is CancellationError ? "请求已中断，问题已保留，请重新发送" : error.localizedDescription)
+                    failure: error is CancellationError ? "请求已中断，问题已保留，请重新发送" : Self.requestFailure(error))
             }
         }
         live.task = work; request = work

@@ -3,7 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>LSApplicationQueriesSchemes</key>
-	<array><string>ctrip</string></array>
+	<array>
+		<string>ctrip</string>
+		<string>ctrippro</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Sela</string>
 	<key>CFBundleExecutable</key>
@@ -35,6 +38,7 @@
 	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>processing</string>
 		<string>screen-capture</string>
 		<string>bluetooth-central</string>
 		<string>audio</string>
@@ -92,5 +96,9 @@
 	<string>确认工具请求后，查找或添加你指定的日程。匹配结果将发送给你授权的 AI 服务。</string>
 	<key>NSRemindersUsageDescription</key>
 	<string>确认工具请求后，查找或添加你指定的提醒。匹配结果将发送给你授权的 AI 服务。</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).continued.*</string>
+	</array>
 </dict>
 </plist>

@@ -16,6 +16,8 @@ enum TaskActivityPresentation {
     }
 
     static func portraitPhase(phase: String?, isStale: Bool) -> String {
-        isStale ? "needsUser" : (phase ?? "thinking")
+        // Staleness needs its own static mark; it must not look like an active
+        // task waiting for user input, or keep a completed/working badge.
+        isStale ? "stale" : (phase ?? "thinking")
     }
 }

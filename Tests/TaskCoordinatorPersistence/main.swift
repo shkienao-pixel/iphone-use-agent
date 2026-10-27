@@ -194,6 +194,19 @@ import Combine
             executionInFlight: false, taskStorageAvailable: true)
         check(!ToolReceiptMaintenancePolicy.mayRemove(key: cancellingID.uuidString + ":write", state: "completed", context: protected),
             "A volatile recoverable checkpoint still protects its write receipts after cancellation")
+        let expiring = CoordinatorHarness(url: folder.appendingPathComponent("expiry.json"), maximum: 1)
+        let expiringFirst = try expiring.submit("active during expiry")
+        let expiringQueued = try expiring.submit("queued during expiry")
+        expiring.workers[0].holdCancellation = true
+        let expiryTokens = Dictionary(uniqueKeysWithValues: expiring.pool.executionRecords.map { ($0.id, expiring.pool.token($0.id)!) })
+        check(Set(expiryTokens.keys) == Set([expiringFirst, expiringQueued]), "The execution snapshot covers active and queued work")
+        expiring.pool.pauseForBackgroundExpiration(expiryTokens)
+        await settle()
+        check(expiring.workers.count == 1 && !expiring.pool.running(expiringQueued), "Batch expiry revokes queued run authority before active cancellation can free a slot")
+        check(expiring.pool.record(expiringQueued)?.outcome == .paused && expiring.pool.busy(expiringFirst), "Queued checkpoint pauses while active cancellation remains unsettled")
+        check(expiring.pool.executionRecords.map(\.id) == [expiringFirst], "The execution grant must cover cancellation settlement without retaining paused queued work")
+        expiring.workers[0].releasing = false; await settle()
+        check(expiring.pool.executionRecords.isEmpty && expiring.workers.count == 1, "Settled expiry does not dispatch another worker")
         print("Task coordinator persistence: \(count) actual coordinator/repository checks passed; worker boundary synthetic, no device/model/network calls")
     }
 }

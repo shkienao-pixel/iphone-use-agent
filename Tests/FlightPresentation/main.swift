@@ -285,7 +285,7 @@ import Foundation
         expect(sharedCards.map(\.cardPrice) == ["561元 · 不含税", "420元 · 不含税", "615元 · 不含税", "970元 · 不含税", "970元 · 不含税"], "Codeshare fares inherit explicit tax qualifications without borrowing another fare's amount")
         expect(sharedCards[0].leg(departure: true).time == "21:00" && sharedCards[0].leg(departure: true).airport == "上海虹桥国际机场 T2", "Short departure labels keep time and airport")
         expect(sharedCards.dropFirst().allSatisfy { $0.leg(departure: true).time == "21:05" && $0.leg(departure: true).date == "2026-10-27" && $0.leg(departure: false).airport == "北京大兴国际机场" }, "Each shared fare inherits its own parent times, date and airports")
-        expect(sharedCards.allSatisfy { $0.flightSpecificBookingURL == nil && $0.bookingButtonTitle == "复制并打开携程" }, "Missing source links expose a truthful app-selection fallback")
+        expect(sharedCards.allSatisfy { $0.flightSpecificBookingURL == nil && $0.nativeFlightListURL != nil && $0.bookingButtonTitle == "补查并打开这班航班" }, "Incomplete selected quotes offer bounded same-flight lookup instead of a city/date list")
         expect(sharedCards[2].bookingSummary.contains("MF3627") && sharedCards[2].bookingSummary.contains("615元") && !sharedCards[2].bookingSummary.contains("561元"), "Handoff text carries only the selected fare and its full search conditions")
         let sharedNarrative = CtripFlightParser.narrative(sharedFares, representedBy: sharedCards)
         expect(!sharedNarrative.contains("起飞：") && !sharedNarrative.contains("到达：") && sharedNarrative.contains("行李额度和退改仍需核对"), "Shared-card core fields are not duplicated in prose while unrepresented policy information stays available")
@@ -309,14 +309,14 @@ import Foundation
             expect(linked.flightSpecificBookingURL == nil, "A generic booking/account page is never labelled a flight-specific handoff")
         }
         linked.bookingURL = URL(string: "https://flights.ctrip.com/order/verified-source-id")
-        expect(linked.flightSpecificBookingURL == linked.bookingURL && linked.bookingButtonTitle == "去携程预订", "An explicit source booking resource can be attempted as App-only prebooking without claiming payment")
+        expect(linked.flightSpecificBookingURL == linked.bookingURL && linked.bookingButtonTitle == "补查并打开这班航班", "A source HTTPS resource cannot replace the same-flight supplemental action")
         let prefixedFare = "来源：携程官方查询\n2026年10月26日北京到上海\n### HO1254\n起降时间：21:20 出发 - 23:30 到达\n当前票价：经济舱约420元（2.4折，不含税费）"
         let prefixedCards = CtripFlightParser.offers(prefixedFare, query: "2026年10月26日北京到上海")
         expect(prefixedCards.count == 1 && prefixedCards[0].cardPrice == "约420元 · 不含税费" && !prefixedCards[0].isSchedule, "Actual current-fare alias and cabin prefix preserve the provider amount and qualifier")
         let pipeFare = "来源：携程官方查询\n## 2026-10-30 深圳→北京 上午直飞（1成人经济舱）\n- **ZH9101**｜07:00宝安起飞，10:15首都到达｜经济舱 1280元"
         let pipeCards = CtripFlightParser.offers(pipeFare, query: "2026年10月30日深圳到北京上午")
         expect(pipeCards.count == 1 && pipeCards[0].cardPrice == "1280元" && pipeCards[0].leg(departure: true).airport == "宝安", "Actual full-width-pipe flight rows preserve time, airport and fare")
-        expect(referenceCards[0].bookingButtonTitle == "去携程查价" && referenceCards[0].bookingSummary.contains("尚未核价"), "Timetable handoff copies an unpriced reference and asks Ctrip to check the fare")
+        expect(referenceCards[0].bookingButtonTitle == "补充航班信息" && referenceCards[0].bookingSummary.contains("尚未核价"), "An undated reference asks for the missing flight identity facts")
         let anonymousSchedule = "来源：携程官方查询\n以下时刻来源于网络，仅供参考\n### 18:00 虹桥T2 - 20:15 首都T2\n日期：2026-10-29\n票价：待核实"
         let anonymousCards = CtripFlightParser.offers(anonymousSchedule, query: "2026-10-29上海到北京")
         expect(anonymousCards.count == 1 && anonymousCards[0].isSchedule && anonymousCards[0].cardTitle == "航班时刻参考" && anonymousCards[0].leg(departure: true).airport == "虹桥T2", "A timetable with two explicit times and airports can have a reference card without inventing a flight number")
@@ -1169,6 +1169,306 @@ import Foundation
             expect(actual.allSatisfy { !$0.cardWarnings.isEmpty } && actualNarrative.contains("未检索到上午出发的直飞航班"), "Actual mismatched morning requirement remains visible on cards and in text")
             let replay = CtripFlightParser.offers(original.text, query: original.query, at: Date(timeIntervalSince1970: 2_000_000_000)).filter { !$0.isSchedule }
             expect(replay.map { $0.leg(departure: true).date + $0.leg(departure: false).date } == actual.map { $0.leg(departure: true).date + $0.leg(departure: false).date }, "Actual archived reply cannot change journey dates when displayed after midnight or years later")
+        }
+        do {
+        let source = CtripFlightOffer(id: "HU7779", title: "HU7779", details: "出发日期：2026-10-30\n出发时间：07:05\n到达时间：09:00\n出发机场：深圳宝安国际机场 T3\n到达机场：武汉天河国际机场 T3\n舱位：经济舱\n乘客：1位成人\n计价单位：1人/单程\n航程类型：直飞", price: "600元", bookingURL: nil, query: "查询2026年10月30日深圳到武汉单程1位成人经济舱", queriedAt: Date(timeIntervalSince1970: 0))
+        func change(_ old: String, _ new: String) -> CtripFlightOffer {
+            var value = source; value.details = value.details.replacingOccurrences(of: old, with: new); return value
+        }
+        func params(_ offer: CtripFlightOffer) -> [String: String] {
+            guard let url = offer.nativeFlightListURL, let parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return [:] }
+            return Dictionary(uniqueKeysWithValues: (parts.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        }
+        let expected = ["c1": "1", "c2": "SZX", "c3": "WUH", "c4": "20261030", "c6": "1"]
+        expect(source.nativeFlightListURL?.scheme == "ctrippro" && source.nativeFlightListURL?.host == "wireless" && source.nativeFlightListURL?.path == "/flight_inland_singlelist", "native list target, no H5 wrapper")
+        expect(params(source) == expected, "official minimal list params exactly match source")
+        expect(CtripFlightParser.nativeFlightListURL(for: source, scheme: "ctrip")?.scheme == "ctrip", "same official ctrip scheme supported")
+        expect(CtripFlightParser.nativeFlightListURL(for: source, scheme: "https") == nil, "no arbitrary scheme")
+        expect(!source.nativeFlightListURL!.absoluteString.contains("HU7779") && !source.nativeFlightListURL!.absoluteString.contains("booking"), "route does not imply selected flight or order")
+        var reference = source; reference.referenceOnly = true
+        expect(params(reference) == expected, "unpriced timetable can open matching city/date result list")
+        var queryOnly = source; queryOnly.details = ""
+        expect(params(queryOnly) == expected, "complete absolute query fills missing source endpoints and date")
+        var plainSingleDate = queryOnly; plainSingleDate.query = "查询2026-10-30深圳到武汉"
+        expect(params(plainSingleDate) == expected, "A plain city pair and single absolute date need no explicit singleway, adult or economy wording")
+        var withArrivalFields = queryOnly
+        withArrivalFields.query = "查询2026年10月30日深圳到武汉的实际航班，返回出发及到达机场。"
+        expect(params(withArrivalFields) == expected, "Requested arrival fields are not mistaken for another city pair")
+        withArrivalFields.query = "查询2026年10月30日深圳到武汉的航班；深圳到武汉只查当天。"
+        expect(params(withArrivalFields) == expected, "Repeating the same city pair does not invent a second journey")
+        withArrivalFields.query = "查询2026年10月30日深圳到武汉的单程机票，排序：中转次数少→含等待总耗时短→一致的可比报价低→起飞早→来源稳定。"
+        expect(params(withArrivalFields) == expected, "Sorting priorities joined by arrows are not mistaken for a multi-city journey")
+        var sourceOnly = source; sourceOnly.query = "明天的这班"
+        expect(params(sourceOnly) == expected, "source absolute date does not drift with query relative text")
+        var relativeOnly = queryOnly; relativeOnly.query = "明天深圳到武汉"
+        expect(relativeOnly.nativeFlightListURL == nil, "missing absolute date is not guessed")
+        var iataOnly = queryOnly; iataOnly.query = "查询2026-10-30 PVG-PEK单程"
+        expect(params(iataOnly)["c2"] == "SHA" && params(iataOnly)["c3"] == "BJS", "explicit airport codes map to official metro codes")
+        var multiPassenger = source; multiPassenger.details = multiPassenger.details.replacingOccurrences(of: "1位成人", with: "2位成人、1位儿童").replacingOccurrences(of: "经济舱", with: "商务舱")
+        expect(params(multiPassenger) == expected, "party/cabin are not falsely encoded by city/date-only handoff")
+        let badSources: [(String, CtripFlightOffer)] = [
+            ("invalid calendar date", change("2026-10-30", "2026-02-30")),
+            ("conflicting date", change("出发时间：07:05", "出发时间：2026-10-31 07:05")),
+            ("duplicate date conflict", change("出发日期：2026-10-30", "出发日期：2026-10-30\n出发日期：2026-10-31")),
+            ("duplicate city conflict", change("出发机场：深圳宝安国际机场 T3", "出发机场：深圳宝安国际机场 T3\n出发机场：上海虹桥")),
+            ("source airport city conflict", change("出发机场：深圳宝安国际机场 T3", "出发机场：深圳宝安国际机场 T3\n出发城市：上海")),
+            ("time airport city conflict", change("出发时间：07:05", "出发时间：07:05（北京首都）")),
+            ("unknown airport", change("深圳宝安国际机场 T3", "ZZZ")),
+            ("excluded region", change("深圳宝安国际机场 T3", "HKG")),
+            ("ambiguous alias", change("深圳宝安国际机场 T3", "凤凰")),
+            ("mismatched airport annotation", change("深圳宝安国际机场 T3", "深圳宝安（PVG）")),
+            ("multiple segments", change("航程类型：直飞", "航程类型：直飞\n第一段：HU7779\n第二段：CA1234")),
+            ("transfer minimum scope", change("航程类型：直飞", "航程类型：中转"))
+        ]
+        for (name, offer) in badSources { expect(offer.nativeFlightListURL == nil, name) }
+        for text in ["查询2026-10-31深圳到武汉单程", "查询2026-10-30上海到武汉单程", "查询2026-10-30深圳到上海单程", "查询2026-10-30和2026-10-31深圳到武汉", "查询2026-10-30深圳到武汉往返", "查询2026-10-30深圳到武汉多程", "查询2026-10-30深圳到武汉，武汉到北京", "查询2026年10月30日深圳到武汉，武汉到北京", "查询2026-10-30深圳到武汉，火星到木星", "查询2026-10-30深圳→武汉→北京"] {
+            var invalid = source; invalid.query = text
+            expect(invalid.nativeFlightListURL == nil, "query-source conflict or unsupported round/multiple trip")
+        }
+        var multiCode = source; multiCode.title = "HU7779 + CA1234"
+        expect(multiCode.nativeFlightListURL == nil, "multi flight minimum scope")
+        expect(source.flightSpecificBookingURL == nil && source.bookingButtonTitle == "打开这班航班", "Complete direct economy facts expose the reconstructed selected-flight handoff")
+        var providerLinked = source
+        providerLinked.bookingURL = URL(string: "https://flights.ctrip.com/order/provider-resource")
+        expect(providerLinked.bookingButtonTitle == "打开这班航班" && providerLinked.flightSpecificBookingURL == providerLinked.bookingURL,
+               "The fact-based selected-flight route has priority while the source HTTPS resource remains available")
+        providerLinked.details = ""; providerLinked.query = "缺少路线日期"
+        expect(providerLinked.nativeFlightListURL == nil && providerLinked.bookingButtonTitle == "补充航班信息",
+               "A source HTTPS resource cannot pretend an incomplete selected-flight native handoff exists")
+        }
+        do {
+            let fixtureDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
+            let data = try Data(contentsOf: fixtureDirectory.appendingPathComponent("build209-screenshot-flight-response.json"))
+            let raw = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            let result = CtripFlightParser.offers(raw["text"] as! String, query: raw["query"] as! String,
+                at: Date(timeIntervalSinceReferenceDate: raw["createdAt"] as! Double))
+            expect(result.count == 10, "Exact 18:12 source preserves all ten flights")
+            expect(result.allSatisfy { $0.leg(departure: true).time != "待核对" && $0.leg(departure: false).time != "待核对" }, "Slash-separated takeoff/arrival label restores all ten source clock pairs")
+            let selected = result.first { $0.title.contains("HU7712") }!
+            expect(selected.leg(departure: true).time == "18:15" && selected.leg(departure: false).time == "21:30", "Exact screenshot flight restores its own departure and arrival")
+            expect(selected.leg(departure: true).airport == "深圳 · 宝安机场T3" && selected.leg(departure: false).airport == "北京 · 首都国际机场T2", "Screenshot city context binds short source airports without copying a leading from")
+            expect(result.allSatisfy { $0.leg(departure: true).date == "2026-10-27" && $0.nativeFlightListURL != nil }, "Natural from-city departure phrasing opens the requested October 27 list for every source flight")
+            expect(result.first { $0.title.contains("MU6670") }?.leg(departure: false).date == "2026-10-28", "Explicit next-day 00:50 arrival remains October 28")
+            expect(selected.field("舱位") == "经济舱" && selected.field("乘客") == "", "Only source-confirmed cabin is inherited; source-absent passenger count remains unknown")
+            let selectedURL = URLComponents(url: selected.nativeFlightListURL!, resolvingAgainstBaseURL: false)!
+            let params = Dictionary(uniqueKeysWithValues: selectedURL.queryItems!.map { ($0.name, $0.value!) })
+            expect(params == ["c1":"1", "c2":"SZX", "c3":"BJS", "c4":"20261027", "c6":"1"], "Exact screenshot route/date become the native Lite search rather than old or current search state")
+        }
+        do {
+            let fixtureDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
+            let data = try Data(contentsOf: fixtureDirectory.appendingPathComponent("build209-single-flight-sections-response.json"))
+            let raw = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            let result = CtripFlightParser.offers(raw["text"] as! String, query: raw["query"] as! String,
+                at: Date(timeIntervalSinceReferenceDate: raw["createdAt"] as! Double))
+            expect(result.count == 1, "A real official single-flight reply grouped by field headings no longer disappears")
+            let selected = result[0]
+            expect(selected.title.contains("HU7779") && selected.leg(departure: true).time == "07:05" && selected.leg(departure: false).time == "09:00", "Grouped flight keeps its planned times while actual-time unavailable prose does not replace them")
+            expect(selected.leg(departure: true).date == "2026-10-30" && selected.leg(departure: false).date == "2026-10-30", "Spaced source date remains an exact calendar date")
+            expect(selected.cardPrice == "350.0 元 · 不含税" && !selected.isSchedule, "Actual grouped flight fare and explicit tax qualification remain a quote")
+            expect(selected.leg(departure: true).airport == "深圳宝安国际机场（SZX） T3" && selected.leg(departure: false).airport == "武汉天河国际机场（WUH） T2", "Source angle markers and separated terminal labels preserve both actual airports")
+            expect(selected.nativeFlightListURL != nil && selected.nativeFlightSelectionURL == nil, "Grouped quote retains its city/date list while an absent provider URL remains absent")
+            let ambiguous = (raw["text"] as! String) + "\n航班号：CA1234"
+            expect(CtripFlightParser.offers(ambiguous, query: raw["query"] as! String).isEmpty, "Grouped fallback cannot merge multiple unrelated flight identities")
+        }
+        do {
+            var selected = CtripFlightOffer(id: "selection", title: "HU7779", details: "出发日期：2026-10-30\n出发时间：07:05\n到达时间：09:00\n出发机场：深圳宝安 T3\n到达机场：武汉天河 T2\n舱位：经济舱\n航程类型：直飞", price: "350元", bookingURL: nil, query: "2026-10-30深圳到武汉", queriedAt: at)
+            let context = #"{"trip":1,"flights":[{"seg":1,"flightNo":"HU7779","fromCityCode":"SZX","toCityCode":"WUH","departureDate":"2026-10-30T07:05:00","subChannelId":3,"class":"Y"}]}"#
+            var url = URLComponents(); url.scheme = "ctrippro"; url.host = "wireless"; url.path = "/flight_inland_singletransition"
+            url.queryItems = [URLQueryItem(name:"c3",value:"SZX"),URLQueryItem(name:"c4",value:"WUH"),URLQueryItem(name:"c5",value:"20261030"),URLQueryItem(name:"c9",value:context),URLQueryItem(name:"Channel",value:"3"),URLQueryItem(name:"fromOpenUrl",value:"1"),URLQueryItem(name:"routeCardVersion",value:"G")]
+            selected.bookingURL = url.url
+            expect(selected.nativeFlightSelectionURL == url.url && selected.bookingButtonTitle == "打开这班航班", "Actual provider native selected-flight route is preserved only with exact route/date and returned flight context")
+            let nativeReply = "来源：携程官方查询\n### HU7779\n" + selected.details + "\n价格：350元\n原生选价链接：[打开](" + url.url!.absoluteString + ")"
+            let nativeParsed = CtripFlightParser.offers(nativeReply, query: selected.query, at: at)
+            expect(nativeParsed.count == 1 && nativeParsed[0].nativeFlightSelectionURL == url.url, "Native source link inside a Markdown label survives parsing with its server context intact")
+            var wrongFlight = selected; wrongFlight.title = "HU7712"
+            expect(wrongFlight.nativeFlightSelectionURL == nil, "Native selected context for another flight cannot be replayed")
+            var wrongDate = selected; wrongDate.query = "2026-10-31深圳到武汉"
+            expect(wrongDate.nativeFlightSelectionURL == nil, "Source/query date conflict blocks selected route")
+            var fake = url; fake.queryItems = url.queryItems!.map { $0.name == "c9" ? URLQueryItem(name:"c9",value:"HU7779") : $0 }
+            var missingContext = selected; missingContext.bookingURL = fake.url
+            expect(missingContext.nativeFlightSelectionURL == nil, "A bare flight-number string is not a provider JSON flight description")
+            var duplicate = url; duplicate.queryItems!.append(URLQueryItem(name:"c5",value:"20261031"))
+            var duplicateOffer = selected; duplicateOffer.bookingURL = duplicate.url
+            expect(duplicateOffer.nativeFlightSelectionURL == nil, "Conflicting duplicate selected-route parameters are rejected")
+            var schedule = selected; schedule.referenceOnly = true
+            expect(schedule.nativeFlightSelectionURL == nil, "An unpriced timetable cannot use a provider selection URL")
+            var placeholder = selected; placeholder.bookingURL = nil
+            placeholder.details = "出发日期：2026-10-30\n出发时间：待核实\n出发机场：机场待核实\n到达机场：到达机场待核对"
+            expect(placeholder.nativeFlightListURL != nil, "Explicit missing-field placeholders do not discard a complete independent query city/date")
+        }
+        do {
+            let fixtureDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
+            let data = try Data(contentsOf: fixtureDirectory.appendingPathComponent("build210-live-single-flight-response.json"))
+            let raw = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            let result = CtripFlightParser.offers(raw["text"] as! String, query: raw["query"] as! String,
+                at: Date(timeIntervalSinceReferenceDate: raw["createdAt"] as! Double))
+            expect(result.count == 1, "Exact live background response with combined departure datetime yields a card")
+            let selected = result[0]
+            print("Live flight replay:",selected.cardTitle,selected.cardPrice,selected.leg(departure:true),selected.leg(departure:false),selected.nativeFlightListURL?.absoluteString ?? "no-list-route")
+            expect(selected.cardTitle == "MF8350 · 厦门航空有限公司" && selected.cardPrice == "398元 · 不含税", "Live selected flight retains its returned identity, 398-yuan fare and tax basis")
+            expect(selected.leg(departure:true) == .init(time:"21:00",airport:"深圳宝安国际机场 T3",date:"2026-10-27") && selected.leg(departure:false) == .init(time:"23:55",airport:"北京大兴国际机场 T3",date:"2026-10-27"), "Combined datetime and comma-separated terminal fields restore all actual live endpoint values")
+            expect(selected.field("乘客") == "1位成人" && selected.field("舱位") == "经济舱" && selected.field("航程类型") == "直飞", "Source-confirmed live summary preserves adult, cabin and direct-flight facts")
+            expect(selected.nativeFlightListURL?.absoluteString == "ctrippro://wireless/flight_inland_singlelist?c1=1&c2=SZX&c3=BJS&c4=20261027&c6=1" && selected.nativeFlightSelectionURL == nil, "Live quote preserves list fallback while its absent provider-selected URL stays absent")
+            let conflicting = (raw["text"] as! String).replacingOccurrences(of:"- **出发日期时间**",with:"- 出发日期：2026-10-28\n- **出发日期时间**")
+            expect(CtripFlightParser.offers(conflicting,query:raw["query"] as! String).isEmpty, "Grouped fallback rejects conflicting standalone date and combined departure datetime")
+        }
+        do {
+            let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/native-selected-flight-android-contract.json")
+            let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as! [String: Any]
+            let cases = fixture["cases"] as! [[String: Any]]
+            func parameters(_ url: URL?) -> [String: String] {
+                guard let url, let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return [:] }
+                return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+            }
+            func description(_ url: URL?) -> NSDictionary? {
+                guard let c9 = parameters(url)["c9"], let bytes = c9.data(using: .utf8) else { return nil }
+                return (try? JSONSerialization.jsonObject(with: bytes)) as? NSDictionary
+            }
+            var target: CtripFlightOffer!
+            for sample in cases {
+                let code = sample["flightNo"] as! String, clock = sample["departureTime"] as! String
+                let offer = CtripFlightOffer(id: code, title: code, details: "航班号：\(code)\n出发日期：2026-10-27\n出发时间：\(clock)\n到达时间：\(sample["arrivalTime"] as! String)\n出发机场：深圳宝安国际机场 T3\n到达机场：北京大兴国际机场 T3\n舱位：经济舱\n航程类型：直飞", price: "398元", bookingURL: nil, query: "查询2026-10-27深圳到北京单程", queriedAt: at)
+                let url = offer.reconstructedNativeFlightSelectionURL
+                expect(url?.scheme == "ctrippro" && url?.host == "wireless" && url?.path == "/flight_inland_singletransition", "Reconstructed route is native selected-flight entry")
+                let actual = parameters(url), tested = parameters(URL(string: sample["nativeURL"] as! String))
+                expect(actual.filter { $0.key != "c9" } == tested.filter { $0.key != "c9" }, "Outer selected-flight parameters match the anonymous Android experiment")
+                expect(description(url)?.isEqual(sample["description"] as! NSDictionary) == true, "Every flight-description field equals the payload that reached the actual native fare page")
+                expect(offer.preferredNativeFlightSelectionURL == url && offer.nativeFlightSelectionURL == nil, "Reconstruction does not pretend a provider-returned URL exists")
+                expect(offer.bookingButtonTitle == "打开这班航班", "Selected-flight affordance follows the actual native transition candidate")
+                let compact = parameters(url)["c9"]!
+                expect(!["price", "productID", "policyID", "transactionNo", "messageToken", "auth", "token", "signature"].contains(where: compact.contains), "Fact description contains no price, product, order, credential or signature field")
+                if code == "MF8350" { target = offer }
+            }
+            expect(cases.count == 2 && parameters(target.reconstructedNativeFlightSelectionURL)["c5"] == "20261027", "Both independently switched flights and requested absolute date remain bound")
+            var repriced = target!; repriced.price = "450元 · 含税"
+            expect(repriced.reconstructedNativeFlightSelectionURL == target.reconstructedNativeFlightSelectionURL, "Changing a quoted price does not fabricate a native fare policy or alter flight identity")
+            var noPrice = target!; noPrice.price = ""
+            expect(noPrice.reconstructedNativeFlightSelectionURL == target.reconstructedNativeFlightSelectionURL, "The experimentally working description does not depend on sending a price")
+            var provider = target!
+            var actualProvider = URLComponents(url: target.reconstructedNativeFlightSelectionURL!, resolvingAgainstBaseURL: false)!
+            actualProvider.queryItems!.append(URLQueryItem(name: "providerMarker", value: "returned-resource"))
+            provider.bookingURL = actualProvider.url
+            expect(provider.nativeFlightSelectionURL == actualProvider.url && provider.preferredNativeFlightSelectionURL == actualProvider.url, "An actual valid provider URL retains priority byte-for-byte over reconstruction")
+            provider.bookingURL = URL(string: "ctrippro://wireless/flight_inland_singletransition?c9=invalid")
+            expect(provider.nativeFlightSelectionURL == nil && provider.preferredNativeFlightSelectionURL == target.reconstructedNativeFlightSelectionURL, "An invalid supplied URL does not hide a complete independent factual description")
+            func providerContext(_ edit: (inout [String: Any], inout [String: Any]) -> Void) throws -> CtripFlightOffer {
+                var body = cases[0]["description"] as! [String: Any]
+                var flight = (body["flights"] as! [[String: Any]])[0]
+                edit(&body, &flight)
+                body["flights"] = [flight]
+                let context = String(data: try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]), encoding: .utf8)!
+                var native = actualProvider
+                native.queryItems = native.queryItems!.map { $0.name == "c9" ? URLQueryItem(name: "c9", value: context) : $0 }
+                var offer = target!; offer.bookingURL = native.url; return offer
+            }
+            let innerConflicts: [(String, String, Any)] = [
+                ("inner source city", "fromCityCode", "SHA"),
+                ("inner destination city", "toCityCode", "WUH"),
+                ("inner source date", "departureDate", "2026-10-28T21:00:00"),
+                ("inner source clock", "departureDate", "2026-10-27T12:10:00"),
+                ("date without the confirmed clock", "departureDate", "2026-10-27"),
+                ("invalid departure calendar", "departureDate", "2026-02-30T21:00:00"),
+                ("another flight identity", "flightNo", "MF8336"),
+                ("flight identity embedded in prose", "flightNo", "查询MF8350"),
+                ("unverified class", "class", "C"),
+                ("wrong segment", "seg", 2),
+                ("wrong subchannel", "subChannelId", 2),
+                ("boolean segment is not numeric one", "seg", true)
+            ]
+            for (reason, key, value) in innerConflicts {
+                let invalid = try providerContext { _, flight in flight[key] = value }
+                expect(invalid.nativeFlightSelectionURL == nil && invalid.preferredNativeFlightSelectionURL == target.reconstructedNativeFlightSelectionURL, "Provider \(reason) cannot override the independently confirmed flight")
+            }
+            for key in ["seg", "fromCityCode", "toCityCode", "departureDate", "subChannelId", "flightNo", "class"] {
+                let missing = try providerContext { _, flight in flight.removeValue(forKey: key) }
+                expect(missing.nativeFlightSelectionURL == nil && missing.preferredNativeFlightSelectionURL == target.reconstructedNativeFlightSelectionURL, "Missing provider \(key) falls back to factual reconstruction")
+            }
+            for trip: Any in [2, true, "1", NSNull()] {
+                let invalid = try providerContext { body, _ in body["trip"] = trip }
+                expect(invalid.nativeFlightSelectionURL == nil && invalid.preferredNativeFlightSelectionURL == target.reconstructedNativeFlightSelectionURL, "Provider non-single or mistyped trip cannot override the single-flight facts")
+            }
+            let missingTrip = try providerContext { body, _ in body.removeValue(forKey: "trip") }
+            expect(missingTrip.nativeFlightSelectionURL == nil, "Missing provider trip type is not inferred")
+            let reversed = try providerContext { _, flight in flight["fromCityCode"] = "BJS"; flight["toCityCode"] = "SZX" }
+            expect(reversed.nativeFlightSelectionURL == nil, "Reversed inner route cannot pass correct outer route parameters")
+            let bait = try providerContext { body, flight in
+                flight.removeValue(forKey: "flightNo"); body["metadata"] = ["displayFlight": "MF8350"]
+            }
+            expect(bait.nativeFlightSelectionURL == nil && bait.preferredNativeFlightSelectionURL == target.reconstructedNativeFlightSelectionURL, "A matching flight number in metadata cannot stand in for flights[0].flightNo")
+            let metadata = try providerContext { body, _ in body["metadata"] = ["otherFlight": "MF8336"] }
+            expect(metadata.nativeFlightSelectionURL == metadata.bookingURL && metadata.preferredNativeFlightSelectionURL == metadata.bookingURL, "Unrelated provider metadata does not replace actual structurally matching flight fields")
+            func edited(_ old: String, _ new: String) -> CtripFlightOffer {
+                var offer = target!; offer.details = offer.details.replacingOccurrences(of: old, with: new); return offer
+            }
+            let invalid: [(String, CtripFlightOffer)] = [
+                ("missing direct confirmation", edited("航程类型：直飞", "")),
+                ("transfer cannot become a single direct segment", edited("航程类型：直飞", "航程类型：中转")),
+                ("contradictory direct facts", edited("航程类型：直飞", "航程类型：直飞\n航程类型：经停")),
+                ("missing economy confirmation", edited("舱位：经济舱", "")),
+                ("unverified business cabin", edited("舱位：经济舱", "舱位：商务舱")),
+                ("ambiguous source cabins", edited("舱位：经济舱", "舱位：经济舱\n舱位：商务舱")),
+                ("unknown cabin remains unknown", edited("舱位：经济舱", "舱位：待核实")),
+                ("missing time", edited("出发时间：21:00", "")),
+                ("unconfirmed time", edited("出发时间：21:00", "出发时间：待核实")),
+                ("ambiguous clocks", edited("出发时间：21:00", "出发时间：21:00或22:00")),
+                ("conflicting clocks", edited("出发时间：21:00", "出发时间：21:00\n出发时间：22:00")),
+                ("source flight identity conflict", edited("航班号：MF8350", "航班号：MF8336")),
+                ("invalid calendar day", edited("2026-10-27", "2026-02-30")),
+                ("source/query day conflict", edited("2026-10-27", "2026-10-28")),
+                ("source/query city conflict", edited("深圳宝安国际机场 T3", "上海虹桥 T2")),
+                ("multiple source segments", edited("航程类型：直飞", "航程类型：直飞\n第一段：MF8350\n第二段：CA1234"))
+            ]
+            for (reason, offer) in invalid { expect(offer.reconstructedNativeFlightSelectionURL == nil, reason) }
+            var reference = target!; reference.referenceOnly = true
+            expect(reference.reconstructedNativeFlightSelectionURL == nil, "Timetable references do not claim a quoted selected-flight handoff")
+            var multiple = target!; multiple.title = "MF8350 / MF8336"
+            expect(multiple.reconstructedNativeFlightSelectionURL == nil, "Several flight identities cannot become one native selection")
+            var noDate = edited("出发日期：2026-10-27", ""); noDate.query = "明天深圳到北京"
+            expect(noDate.reconstructedNativeFlightSelectionURL == nil, "Relative dates cannot acquire a made-up absolute departure date")
+            for trip in ["往返", "多程"] {
+                var offer = target!; offer.query += trip
+                expect(offer.reconstructedNativeFlightSelectionURL == nil, "Unsupported trip type does not use the single-flight contract")
+            }
+            expect(CtripFlightParser.reconstructedNativeFlightSelectionURL(for: target, scheme: "https") == nil, "Native factual description does not allow arbitrary schemes")
+            expect(CtripFlightParser.reconstructedNativeFlightSelectionURL(for: target, scheme: "ctrip")?.scheme == "ctrip", "The official full-app scheme is available for the same verified contract")
+            let exact = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL.deletingLastPathComponent().appendingPathComponent("build210-live-single-flight-response.json"))) as! [String: Any]
+            let live = CtripFlightParser.offers(exact["text"] as! String, query: exact["query"] as! String, at: at)[0]
+            expect(description(live.reconstructedNativeFlightSelectionURL)?.isEqual(cases[0]["description"] as! NSDictionary) == true, "Actual grouped live MF8350 reply constructs exactly the no-price description that reached its fare page")
+            let screenshot = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL.deletingLastPathComponent().appendingPathComponent("build209-screenshot-flight-response.json"))) as! [String: Any]
+            let cards = CtripFlightParser.offers(screenshot["text"] as! String, query: screenshot["query"] as! String, at: at)
+            expect(cards.allSatisfy { $0.field("航程类型") == "直飞" && $0.preferredNativeFlightSelectionURL != nil }, "The screenshot's explicit all-direct source statement supports every correctly parsed single-flight card")
+        }
+        do {
+            let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/build210-live-single-flight-response.json")
+            let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as! [String: Any]
+            let text = raw["text"] as! String, query = raw["query"] as! String
+            let captured = Date(timeIntervalSinceReferenceDate: raw["createdAt"] as! Double)
+            let complete = CtripFlightParser.offers(text, query: query, at: captured)[0]
+            var missingTime = complete
+            missingTime.details = missingTime.details.components(separatedBy: .newlines).filter { !$0.hasPrefix("出发时间：") }.joined(separator: "\n")
+            expect(missingTime.preferredNativeFlightSelectionURL == nil && missingTime.nativeFlightSelectionLookupQuery != nil, "A specific dated card can supplement its missing clock")
+            let lookup = missingTime.nativeFlightSelectionLookupQuery!
+            expect(lookup.contains("MF8350") && lookup.contains("2026-10-27") && lookup.contains("SZX") && lookup.contains("BJS") && lookup.count <= 4096, "Supplemental query binds absolute date, code and known cities within the existing request limit")
+            let refreshed = CtripFlightParser.refreshedNativeFlightSelection(text, for: missingTime, at: captured)
+            expect(refreshed?.preferredNativeFlightSelectionURL == complete.preferredNativeFlightSelectionURL && refreshed?.cardPrice == complete.cardPrice, "The actual live response fills missing fields without changing the selected native flight")
+            var relativeWording = missingTime; relativeWording.query = "明天深圳到北京经济舱"
+            expect(relativeWording.nativeFlightSelectionLookupQuery?.contains("出发日期：2026-10-27") == true, "Source absolute date anchors a legacy relative human query without reinterpreting tomorrow")
+            var noDate = relativeWording; noDate.details = noDate.details.replacingOccurrences(of: "出发日期：2026-10-27", with: "")
+            expect(noDate.nativeFlightSelectionLookupQuery == nil, "A relative-only card cannot invent the supplemental date")
+            var wrongCabin = missingTime; wrongCabin.details += "\n舱位：商务舱"
+            expect(wrongCabin.nativeFlightSelectionLookupQuery == nil, "Known ambiguous or non-economy cabin cannot be silently changed in a lookup")
+            var businessQuery = missingTime; businessQuery.query = "2026-10-27深圳到北京商务舱"
+            expect(businessQuery.nativeFlightSelectionLookupQuery == nil, "An unknown source cabin cannot downgrade the user's known business requirement")
+            var changedClock = complete; changedClock.details = changedClock.details.replacingOccurrences(of: "舱位：经济舱", with: "舱位：待核实")
+            let movedClock = text.replacingOccurrences(of: "21:00", with: "21:30")
+            expect(CtripFlightParser.refreshedNativeFlightSelection(movedClock, for: changedClock, at: captured) == nil, "Supplementing cabin cannot overwrite a known original departure clock")
+            let wrongAirport = text.replacingOccurrences(of: "北京大兴国际机场", with: "北京首都国际机场")
+            expect(CtripFlightParser.refreshedNativeFlightSelection(wrongAirport, for: missingTime, at: captured) == nil, "Same BJS city code cannot conceal changing the known selected airport from Daxing to Capital")
+            let changedDay = text.replacingOccurrences(of: "2026年10月27日", with: "2026年10月28日")
+            expect(CtripFlightParser.refreshedNativeFlightSelection(changedDay, for: missingTime, at: captured) == nil, "A matching flight number cannot override the original selected date")
+            let noEndpoints = text.replacingOccurrences(of: "- **出发机场**：深圳宝安国际机场，T3航站楼", with: "").replacingOccurrences(of: "- **到达机场**：北京大兴国际机场，T3航站楼", with: "")
+            expect(CtripFlightParser.refreshedNativeFlightSelection(noEndpoints, for: missingTime, at: captured) == nil, "Request city fields cannot stand in for missing returned airport facts")
+            expect(CtripFlightParser.refreshedNativeFlightSelection(text, for: missingTime, at: captured.addingTimeInterval(86400 * 3)) == nil, "A delayed supplemental query cannot open a flight that has already departed")
         }
         print("Flight presentation checks passed (\(checks) checks; offline source and legacy fixtures)")
     }

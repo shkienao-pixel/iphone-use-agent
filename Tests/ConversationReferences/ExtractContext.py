@@ -10,7 +10,7 @@ output.mkdir(parents=True, exist_ok=False)
 name = "PhoneAgent/Services/UnifiedConversationCoordinator.swift"
 source = (root / name).read_bytes()
 text = source.decode()
-signature = "    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil) -> String"
+signature = "    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil, originatingConversationID: UUID? = nil) -> String"
 assert text.count(signature) == 1
 start = text.index(signature); cursor = text.index("{", start) + 1; depth = 1
 while depth:

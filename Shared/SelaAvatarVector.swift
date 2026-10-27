@@ -11,19 +11,35 @@ enum SelaAvatarVector {
               let data = try? Data(contentsOf: url), let value = try? JSONDecoder().decode([String: Node].self, from: data) else { return [:] }
         return value
     }()
-    static func draw(_ name: String, context: inout GraphicsContext) {
-        if let node = expressions[name] { draw(node, context: &context) }
+    /// Optional pose matches the approved island preview without changing the
+    /// neutral expression used elsewhere in the app.
+    struct Pose {
+        var gazeTranslation: CGPoint = .zero
+        var gazeScale: CGSize = CGSize(width: 1, height: 1)
+        var browTranslation: CGPoint = .zero
+        static let neutral = Pose()
     }
-    private static func draw(_ node: Node, context: inout GraphicsContext) {
+    static func draw(_ name: String, context: inout GraphicsContext, pose: Pose = .neutral) {
+        if let node = expressions[name] { draw(node, context: &context, pose: pose) }
+    }
+    private static func draw(_ node: Node, context: inout GraphicsContext, pose: Pose) {
         var local = context
         let a = node.attributes
+        let classes = a["class"] ?? ""
+        if classes.split(separator: " ").contains("avatar-gaze") {
+            local.translateBy(x: pose.gazeTranslation.x, y: pose.gazeTranslation.y)
+            local.scaleBy(x: pose.gazeScale.width, y: pose.gazeScale.height)
+        }
+        if classes.split(separator: " ").contains("avatar-brows") {
+            local.translateBy(x: pose.browTranslation.x, y: pose.browTranslation.y)
+        }
         if let transform = a["transform"], transform.hasPrefix("rotate") {
             let n = numbers(transform)
             if n.count == 3 {
                 local.translateBy(x: n[1], y: n[2]); local.rotate(by: .degrees(n[0])); local.translateBy(x: -n[1], y: -n[2])
             }
         }
-        if node.tag == "g" { for child in node.children { draw(child, context: &local) }; return }
+        if node.tag == "g" { for child in node.children { draw(child, context: &local, pose: pose) }; return }
         let path: Path
         if node.tag == "ellipse" {
             let cx = Double(a["cx"] ?? "0") ?? 0, cy = Double(a["cy"] ?? "0") ?? 0
@@ -31,20 +47,25 @@ enum SelaAvatarVector {
             path = Path(ellipseIn: CGRect(x: cx-rx, y: cy-ry, width: rx*2, height: ry*2))
         } else if node.tag == "path" { path = svgPath(a["d"] ?? "") }
         else { return }
-        let classes = a["class"] ?? ""
         let isFillPath = classes.contains("brow-fill") || classes.contains("smile-fill")
-        let fill = a["fill"] ?? (node.tag == "path" && !isFillPath ? "none" : "#38414e")
+        let fill = a["stroke"] != nil ? "none" : (a["fill"] ?? (node.tag == "path" && !isFillPath ? "none" : "#38414e"))
         local.opacity = Double(a["opacity"] ?? "1") ?? 1
-        if fill != "none" {
-            if fill.contains("EyeInk") {
-                local.fill(path, with: .linearGradient(Gradient(colors: [Color(red: 0.41, green: 0.44, blue: 0.49), Color(red: 0.1, green: 0.13, blue: 0.16)]), startPoint: CGPoint(x: path.boundingRect.minX, y: path.boundingRect.minY), endPoint: CGPoint(x: path.boundingRect.maxX, y: path.boundingRect.maxY)))
-            } else {
-                local.fill(path, with: .color(color(fill, classes: classes)))
-            }
-        }
+        if fill != "none" { local.fill(path, with: shading(fill, path: path, classes: classes)) }
         if node.tag == "path" && !isFillPath || a["stroke"] != nil {
-            local.stroke(path, with: .color(Color(red: 0.22, green: 0.25, blue: 0.3)), style: StrokeStyle(lineWidth: classes.contains("focus-mark") ? 2.5 : 3.8, lineCap: .round, lineJoin: .round))
+            local.stroke(path, with: shading(a["stroke"] ?? "#38414e", path: path, classes: classes), style: StrokeStyle(lineWidth: classes.contains("focus-mark") ? 2.5 : 3.8, lineCap: .round, lineJoin: .round))
         }
+    }
+    private static func shading(_ value: String, path: Path, classes: String) -> GraphicsContext.Shading {
+        let colors: [Color]?
+        if value.contains("EyeInk") {
+            colors = [Color(red: 105.0 / 255, green: 113.0 / 255, blue: 125.0 / 255), Color(red: 26.0 / 255, green: 34.0 / 255, blue: 42.0 / 255)]
+        } else if value.contains("BrowInk") {
+            colors = [Color(red: 74.0 / 255, green: 78.0 / 255, blue: 84.0 / 255), Color(red: 48.0 / 255, green: 54.0 / 255, blue: 61.0 / 255)]
+        } else if value.contains("MouthInk") {
+            colors = [Color(red: 102.0 / 255, green: 80.0 / 255, blue: 74.0 / 255), Color(red: 53.0 / 255, green: 45.0 / 255, blue: 43.0 / 255)]
+        } else { colors = nil }
+        guard let colors else { return .color(color(value, classes: classes)) }
+        return .linearGradient(Gradient(colors: colors), startPoint: CGPoint(x: path.boundingRect.midX, y: path.boundingRect.minY), endPoint: CGPoint(x: path.boundingRect.midX, y: path.boundingRect.maxY))
     }
     private static func color(_ value: String, classes: String) -> Color {
         if value.contains("Shadow") { return Color.brown.opacity(0.09) }

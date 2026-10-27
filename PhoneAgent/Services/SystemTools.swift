@@ -222,12 +222,14 @@ final class SystemTools: ObservableObject {
             guard credential == MeituanConnectionStore.credential, MeituanConnectionStore.verified else { throw AgentError.message("美团授权已改变，本次结果未采用") }
             result = "来源：美团官方酒旅接口，仅查询，不代表已预订或付款。\n" + answer
         case .meituan_paotui:
-            result = "来源：美团跑腿官方接口，仅查询与询价，尚未下单。\n" + (try await MeituanPaotuiStore.shared.tool(request.query!))
+            result = try await PaotuiModule.shared.query(request.query!, context: .init(taskID: taskID, invocationID: id))
         case .ctrip_query:
             let credential = CtripStore.apiKey()
             guard CtripStore.enabled, !credential.isEmpty else { throw AgentError.message("携程连接已关闭或授权码不可用") }
             let connectionMode = CtripStore.connectionMode
-            let answer = try await CtripClient(apiKey: credential, apiEndpoint: connectionMode.endpoint).query(query: request.query!)
+            let answer = try await CtripClient(apiKey: credential, apiEndpoint: connectionMode.endpoint).queryFlights(query: request.query!, canRetry: {
+                CtripStore.enabled && CtripStore.apiKey() == credential && CtripStore.connectionMode == connectionMode
+            }).displayText
             try Task.checkCancellation()
             guard CtripStore.enabled, CtripStore.apiKey() == credential, CtripStore.connectionMode == connectionMode else { throw AgentError.message("携程授权已改变，本次结果未采用") }
             result = "来源：携程问道官方接口\n查询时间：\(ISO8601DateFormatter().string(from: Date()))\n以下为旅行查询参考信息，不代表已预订或付款：\n" + answer
@@ -327,7 +329,7 @@ final class SystemTools: ObservableObject {
             } catch { throw AgentError.message("健康读取已返回，但完成回执保存失败；请保留未知状态，不能自动重新读取") }
         }
         try Task.checkCancellation()
-        return request.operation == .ctrip_query ? result : String(result.prefix(12000))
+        return [.ctrip_query, .meituan_paotui].contains(request.operation) ? result : String(result.prefix(12000))
     }
     private func authorize(_ operation: SystemToolRequest.Operation) async throws {
         switch operation {

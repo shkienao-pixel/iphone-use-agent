@@ -21,6 +21,8 @@ struct ReferenceRecord: Equatable {
 @MainActor final class ReferenceConversation {
     let currentConversationID = UUID()
     var focusedTaskID: UUID?
+    var paotuiSummaries: [UUID: [String: Any]] = [:]
+    func paotuiRoutingSummary(for conversationID: UUID) -> [String: Any]? { paotuiSummaries[conversationID] }
 }
 @MainActor final class PhoneAgentViewModel {
     let history = ReferenceHistory(), engine = ReferenceEngine()

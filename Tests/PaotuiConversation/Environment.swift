@@ -1,26 +1,5 @@
 import Foundation
 
-enum AgentError: LocalizedError {
-    case message(String)
-    var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
-}
-struct MeituanMCPClient {
-    static func load(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { fatalError("Offline check attempted network") }
-}
-enum ConnectionCredentialStore {
-    static var data: [String:String] = [:]
-    static func read(_ key: String) -> String { data[key] ?? "" }
-    static func save(_ value: String, account: String) throws { data[account] = value }
-}
-@MainActor struct UIApplication {
-    static let shared = Self()
-    func open(_ url: URL) async -> Bool { false }
-}
-struct MeituanPaotuiAuthorization {
-    struct Session { let link: URL }
-    func start() async throws -> Session { fatalError("Offline check attempted authorization") }
-    func finish(_ session: Session) async throws -> String? { fatalError("Offline check attempted authorization") }
-}
 @MainActor final class Backend {
     var submissions: [[String:Any]] = []
     var previews: [[String:Any]] = []
@@ -58,11 +37,4 @@ struct MeituanPaotuiAuthorization {
         let bytes=try JSONSerialization.data(withJSONObject:["code":0,"result":"SUCCESS","data":String(data:inner,encoding:.utf8)!])
         return (bytes,HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:nil)!)
     }
-}
-
-struct AgentSettings {}
-struct VisionClient {
- let settings: AgentSettings
- let apiKey: String
- func routeConversation(input: ConversationRoutingInput, instructions: String) async throws -> String { fatalError("Offline check attempted model") }
 }

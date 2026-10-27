@@ -1315,6 +1315,9 @@ struct ContentView: View {
         let record = model.engine.currentRecord.flatMap { $0.id == id ? $0 : nil }
             ?? model.history.records.first { $0.id == id }
         guard let record else {
+            if id == model.conversation.currentConversationID || model.conversation.conversations.contains(where: { $0.id == id }) {
+                navigate(.assistant, assistantAction: .open(id)); return
+            }
             model.notice = "这条任务记录已不在本机，请从侧栏查看现有任务。"
             return
         }

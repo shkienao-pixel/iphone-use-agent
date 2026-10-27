@@ -6,11 +6,41 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import time
 import uuid
 
 
 def transfer(config, direction, source, destination, bundle):
+    if config.get('simulator'):
+        cache = config.setdefault('_simulator_containers', {})
+        if bundle not in cache:
+            try:
+                lookup = subprocess.run(['xcrun', 'simctl', 'get_app_container', config['device'], bundle, 'data'], capture_output=True, timeout=8)
+            except subprocess.TimeoutExpired:
+                return subprocess.CompletedProcess([], 1, b'', b'Simulator container lookup timed out')
+            if lookup.returncode:
+                return lookup
+            cache[bundle] = lookup.stdout.decode().strip()
+        container = Path(cache[bundle]).resolve()
+        relative = Path(source if direction == 'from' else destination)
+        if relative.is_absolute() or '..' in relative.parts:
+            raise RuntimeError('Simulator transfers require a container-relative path.')
+        inside = (container / relative).resolve()
+        if not inside.is_relative_to(container):
+            raise RuntimeError('Simulator transfer escaped its app container.')
+        src, dest = (inside, Path(destination)) if direction == 'from' else (Path(source), inside)
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            temporary = dest.with_name(dest.name + '.transfer-' + str(uuid.uuid4()))
+            try:
+                shutil.copyfile(src, temporary)
+                os.replace(temporary, dest)
+            finally:
+                temporary.unlink(missing_ok=True)
+            return subprocess.CompletedProcess([], 0, b'', b'')
+        except OSError:
+            return subprocess.CompletedProcess([], 1, b'', b'Transfer not ready')
     return subprocess.run(['xcrun', 'devicectl', 'device', 'copy', direction, '--device', config['device'],
                            '--domain-type', 'appDataContainer', '--domain-identifier', bundle,
                            '--source', str(source), '--destination', str(destination)], capture_output=True)
@@ -52,10 +82,17 @@ def main():
         safe += ['engine_releasing', 'execution_settled', 'health_authorization_pending']
         safe += ['model_authentication', 'chatgpt_plan_authorized', 'chatgpt_access_expires_at', 'chatgpt_model_count', 'chatgpt_last_http_failure']
         safe += ['chatgpt_protocol_diagnostics']
+        safe += ['live_activity_count', 'live_activity_states', 'live_activity_error', 'background_execution_error',
+                 'background_execution', 'simulator_fixture_background', 'live_activity_creation_allowed',
+                 'live_activity_display_permission', 'live_activity_preview_active', 'live_activity_preview_message']
         print(json.dumps({k: state.get(k) for k in safe}, ensure_ascii=False)); return
     # One writer per mailbox. In-flight CoreDevice copies must never be
     # overwritten by another UI command before their exact result arrives.
     debug_operations = ('stop_task', 'check_model', 'check_plan_inference', 'navigate', 'automatic_execution', 'stop_alarm_card_fixture_a09')
+    if args.operation == 'activity_fixture':
+        if not config.get('simulator') or not config.get('activity_fixtures'):
+            raise RuntimeError('Activity fixtures require an explicitly enabled simulator session.')
+        debug_operations += ('activity_fixture',)
     lock = (out / ('.sela-command.lock' if args.operation in debug_operations else '.operator.lock')).open('a+')
     try:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -70,7 +107,7 @@ def main():
     if args.operation in debug_operations:
         sela_state(config, out)
         command = {'id': str(uuid.uuid4()), 'session': config['sela_session'], 'operation':
-                   {'stop_task': 'stop', 'check_model': 'check_model', 'check_plan_inference': 'check_plan_inference', 'navigate': 'navigate', 'automatic_execution': 'automatic_execution', 'stop_alarm_card_fixture_a09': 'stop_alarm_card_fixture_a09'}[args.operation],
+                   {'stop_task': 'stop', 'check_model': 'check_model', 'check_plan_inference': 'check_plan_inference', 'navigate': 'navigate', 'automatic_execution': 'automatic_execution', 'stop_alarm_card_fixture_a09': 'stop_alarm_card_fixture_a09', 'activity_fixture': 'activity_fixture'}[args.operation],
                    'expiresAt': time.time() + 14}
         if args.text: command['value'] = args.text
         path = out / 'sela-command.json'; path.write_text(json.dumps(command))

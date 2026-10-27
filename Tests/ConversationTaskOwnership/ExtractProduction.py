@@ -28,7 +28,7 @@ members = {
     "pending": field(vm, "    var pendingConversationTask:"),
     "pendingConsent": field(vm, "    private var pendingConsentStart ="),
     "pendingScope": member(vm, "    func pendingTaskForConversation(_ conversationID: UUID) -> ConversationTaskSubmission?"),
-    "context": member(coordinator, "    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil) -> String"),
+    "context": member(coordinator, "    func unifiedTaskContext(history messages: [AssistantMessage], question: String? = nil, originatingConversationID: UUID? = nil) -> String"),
 }
 for signature in ["    private var automaticPreparationConversationTaskID:", "    private var pendingConsentConversationTask:"]:
     if signature in vm:
@@ -45,7 +45,8 @@ record = member(vm, "        engine.onRecord = { [weak self] record in")
 persistence = member(vm, "        engine.persistRecord = { [weak self] record in")
 context = member(vm, "        conversation.taskContext = { [weak self] in")
 routing_context = member(vm, "        conversation.routingTaskContext = { [weak self] question, history in") if "        conversation.routingTaskContext = {" in vm else ""
-members["installCallbacks"] = "    func installCallbacks() {\n" + persistence + "\n" + record + "\n" + context + "\n" + routing_context + "\n    }"
+origin_context = member(vm, "        conversation.routingTaskContextInConversation = { [weak self] question, history, origin in")
+members["installCallbacks"] = "    func installCallbacks() {\n" + persistence + "\n" + record + "\n" + context + "\n" + routing_context + "\n" + origin_context + "\n    }"
 modern = "ConversationTaskSubmission?" in members["pending"]
 adapter = """
     @discardableResult

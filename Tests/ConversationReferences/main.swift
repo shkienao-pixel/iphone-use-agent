@@ -37,6 +37,23 @@ import Foundation
         let empty = PhoneAgentViewModel()
         let emptyPayload = try payload(empty.unifiedTaskContext(history: []))
         expect(emptyPayload.tasks.isEmpty && emptyPayload.offers.isEmpty, "Empty history has no invented reference records")
+        func contextObject(_ context: String) throws -> [String: Any] {
+            try JSONSerialization.jsonObject(with: Data(context.utf8)) as! [String: Any]
+        }
+        let origin = empty.conversation.currentConversationID, otherOrigin = UUID()
+        let persistedCard = PaotuiChatCard(conversationID: origin, kind: "confirm", title: "旧报价")
+        let persistedOnly = try contextObject(empty.unifiedTaskContext(history: [.init(role: "assistant", text: "旧卡", paotuiCard: persistedCard)]))
+        expect(persistedOnly["paotuiConversationActive"] as? Bool == false && persistedOnly["paotuiSession"] is NSNull,
+            "Persisted last-card evidence cannot establish an active errands session")
+        empty.conversation.paotuiSummaries[origin] = ["active": true, "phase": "quoted", "goods": "A 的水"]
+        empty.conversation.paotuiSummaries[otherOrigin] = ["active": false, "phase": "outcome", "goods": "B 的回执"]
+        let liveSummary = try contextObject(empty.unifiedTaskContext(history: []))
+        expect(liveSummary["paotuiConversationActive"] as? Bool == true && (liveSummary["paotuiSession"] as? [String: Any])?["goods"] as? String == "A 的水",
+            "Routing uses the actual live summary even without a persisted last card")
+        let explicitOrigin = try contextObject(empty.unifiedTaskContext(history: [], originatingConversationID: otherOrigin))
+        expect(explicitOrigin["paotuiConversationActive"] as? Bool == false && (explicitOrigin["paotuiSession"] as? [String: Any])?["goods"] as? String == "B 的回执",
+            "An explicit originating conversation selects its own module summary")
+        empty.conversation.paotuiSummaries = [:]
         let (normal, normalRecords) = viewModel()
         let normalOffer = offer("MU5101 上海到北京", query: "明天上海到北京，直飞，2人")
         let normalMessages = history(normalRecords, offers: [normalOffer], text: "普通查询结果")

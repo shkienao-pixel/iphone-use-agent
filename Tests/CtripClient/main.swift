@@ -19,6 +19,30 @@ actor CtripFlightSequence {
     }
 }
 
+actor CtripRecoverySequence {
+    enum Step {
+        case answer(String), empty, lost, timeout, cancelled, invalidJSON, invalidResult
+    }
+    var queries: [String] = []
+    let steps: [Step]
+    init(_ steps: [Step]) { self.steps = steps }
+    func load(_ request: URLRequest) throws -> (Data, HTTPURLResponse) {
+        let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+        queries.append((body["inputs"] as! [String: String])["query"]!)
+        let data: Data
+        switch steps[min(queries.count - 1, steps.count - 1)] {
+        case .answer(let text): data = try JSONSerialization.data(withJSONObject: ["result": text])
+        case .empty: data = try JSONSerialization.data(withJSONObject: ["result": " \n"])
+        case .lost: throw URLError(.networkConnectionLost)
+        case .timeout: throw URLError(.timedOut)
+        case .cancelled: throw CancellationError()
+        case .invalidJSON: data = Data("not JSON".utf8)
+        case .invalidResult: data = try JSONSerialization.data(withJSONObject: ["result": ["error": "envelope-secret"]])
+        }
+        return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
 @main struct CtripClientChecks {
     static var checks = 0
     static let token = "rawsecret-M8!/?&=+"
@@ -56,6 +80,53 @@ actor CtripFlightSequence {
             check(!CtripClient.realtimeQuoteUnavailable(text), "Inventory or partial-field absence was retried as a provider failure")
         }
         let sameQuery = "查询2026年10月29日上海到北京，18点以后、直飞、1位成人经济舱，预算900元。"
+        for first: CtripRecoverySequence.Step in [.lost, .timeout, .empty] {
+            let sequence = CtripRecoverySequence([first, .answer(quoted)])
+            let result = try await CtripClient(apiKey: token, transport: { try await sequence.load($0) }).queryFlights(query: sameQuery)
+            let queries = await sequence.queries
+            check(result.attempts == 2 && result.displayText == quoted && !result.realtimeUnavailable,
+                  "A recoverable read-only flight query did not return its recovered quote")
+            check(queries == [sameQuery, sameQuery], "Transport recovery changed the query or exceeded one retry")
+        }
+        for second: CtripRecoverySequence.Step in [.lost, .timeout, .empty] {
+            let sequence = CtripRecoverySequence([.answer(unavailable), second])
+            let result = try await CtripClient(apiKey: token, transport: { try await sequence.load($0) }).queryFlights(query: sameQuery)
+            let queries = await sequence.queries
+            check(result.attempts == 2 && result.providerText == unavailable && result.realtimeUnavailable,
+                  "A failed retry discarded the first schedule reference")
+            check(result.retryFailure != nil && result.displayText.contains("已保留首次返回") &&
+                  result.displayText.contains("不代表实时可售"), "Preserved reference hid its failed retry or appeared saleable")
+            check(queries.count == 2, "Preserving a reference started a third provider query")
+        }
+        let mixed = CtripRecoverySequence([.lost, .answer(unavailable), .answer(quoted)])
+        let mixedResult = try await CtripClient(apiKey: token, transport: { try await mixed.load($0) }).queryFlights(query: sameQuery)
+        let mixedCount = await mixed.queries.count
+        check(mixedCount == 2 && mixedResult.realtimeUnavailable && mixedResult.attempts == 2,
+              "Transport and provider retries did not share one retry budget")
+        let failedTwice = CtripRecoverySequence([.lost, .timeout, .answer(quoted)])
+        do {
+            _ = try await CtripClient(apiKey: token, transport: { try await failedTwice.load($0) }).queryFlights(query: sameQuery)
+            preconditionFailure("Two failed transport attempts produced a false success")
+        } catch {
+            check(error.localizedDescription.contains("已自动重试一次"), "Exhausted transport retries hid their final state")
+        }
+        let failedTwiceCount = await failedTwice.queries.count
+        check(failedTwiceCount == 2, "Flight query exceeded its total retry budget")
+        let revokedTransport = CtripRecoverySequence([.lost, .answer(quoted)])
+        await asyncFailure { try await CtripClient(apiKey: token, transport: { try await revokedTransport.load($0) }).queryFlights(query: sameQuery, canRetry: { false }).displayText }
+        let revokedTransportCount = await revokedTransport.queries.count
+        check(revokedTransportCount == 1, "Transport recovery bypassed revoked consent")
+        for first: CtripRecoverySequence.Step in [.invalidJSON, .invalidResult, .answer(token)] {
+            let sequence = CtripRecoverySequence([first, .answer(quoted)])
+            await asyncFailure { try await CtripClient(apiKey: token, transport: { try await sequence.load($0) }).queryFlights(query: sameQuery).displayText }
+            let count = await sequence.queries.count
+            check(count == 1, "Malformed or credential-echoing responses were automatically retried")
+        }
+        let cancelledRecovery = CtripRecoverySequence([.answer(unavailable), .cancelled])
+        do {
+            _ = try await CtripClient(apiKey: token, transport: { try await cancelledRecovery.load($0) }).queryFlights(query: sameQuery)
+            preconditionFailure("A cancelled retry was disguised as a preserved reference")
+        } catch is CancellationError { checks += 1 }
         for (replies, attempts, unavailableExpected) in [([quoted], 1, false), ([unavailable, quoted], 2, false), ([unavailable, unavailable], 2, true)] {
             let sequence = CtripFlightSequence(replies)
             let value = try await CtripClient(apiKey: token, transport: { try await sequence.load($0) }).queryFlights(query: sameQuery)

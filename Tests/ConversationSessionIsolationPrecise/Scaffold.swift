@@ -57,6 +57,9 @@ import Foundation
  func haltQueue(_ text:String){}
  func cancelVoicePreparation(message:String?=nil){voicePending=false}
  func queueConversationScreenTask(_ route:ConversationRoute)->UUID?{nil}
+ func openConversationFlight(_ route:ConversationRoute,replyID:UUID,conversationID:UUID){
+  preconditionFailure("Flight opening is covered by FlightSelection and CtripHandoff, outside this session-isolation fixture")
+ }
  func startAgent(attachments:[ComposerAttachment],conversationTask:ConversationTaskSubmission?)->Bool{false}
  func supplementTask(_ text:String)->String{""}
  func resumeVoiceTask(expectedContext:ConversationControlContext?)async->String{""}

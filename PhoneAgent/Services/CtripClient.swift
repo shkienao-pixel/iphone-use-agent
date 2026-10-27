@@ -23,8 +23,12 @@ struct CtripClient {
         let providerText: String
         let attempts: Int
         let realtimeUnavailable: Bool
+        var retryFailure: String? = nil
         var displayText: String {
             guard realtimeUnavailable else { return providerText }
+            if let retryFailure {
+                return "携程首次查询未取得实时报价，自动重试时未能完成：\(retryFailure)。\n\n已保留首次返回的时刻参考，尚未核价，不代表实时可售；可去携程查价。\n\n" + providerText
+            }
             return "携程暂未返回本次查询的实时报价。已自动重试一次，仍未取得报价。\n\n以下时刻参考尚未核价，不代表实时可售；可去携程查价。\n\n" + providerText
         }
     }
@@ -37,8 +41,15 @@ struct CtripClient {
     // Tests inject offline fixtures. Production uses only this bounded ephemeral transport.
     var transport: (URLRequest) async throws -> (Data, HTTPURLResponse) = Self.load
 
-    private enum TransportFailure: Error {
-        case response, origin, size, http(Int), timeout, network
+    private enum TransportFailure: LocalizedError {
+        case response, origin, size, http(Int), timeout, network, connectionLost, emptyResult
+        var canRetryFlightQuery: Bool {
+            switch self {
+            case .timeout, .connectionLost, .emptyResult: return true
+            default: return false
+            }
+        }
+        var errorDescription: String? { message }
         var message: String {
             switch self {
             case .response: return "携程服务没有返回有效的 HTTP 响应"
@@ -51,6 +62,15 @@ struct CtripClient {
                 return "携程服务暂时无法完成查询，请稍后重试"
             case .timeout: return "携程查询超时，请稍后重试"
             case .network: return "无法连接携程服务，请检查网络"
+            case .connectionLost: return "与携程的网络连接已中断"
+            case .emptyResult: return "携程未返回可用的查询结果，请稍后重试"
+            }
+        }
+        static func networkFailure(_ error: URLError) -> Self {
+            switch error.code {
+            case .timedOut: return .timeout
+            case .networkConnectionLost: return .connectionLost
+            default: return .network
             }
         }
     }
@@ -113,11 +133,16 @@ struct CtripClient {
         catch let failure as TransportFailure { throw failure }
         catch let error as URLError {
             if error.code == .cancelled { throw CancellationError() }
-            throw error.code == .timedOut ? TransportFailure.timeout : TransportFailure.network
+            throw TransportFailure.networkFailure(error)
         } catch { throw TransportFailure.network }
     }
 
     func query(query: String) async throws -> String {
+        do { return try await queryOnce(query: query) }
+        catch let failure as TransportFailure { throw AgentError.message(failure.message) }
+    }
+
+    private func queryOnce(query: String) async throws -> String {
         let outgoing = try request(query: query)
         try Task.checkCancellation()
         let data: Data
@@ -126,13 +151,13 @@ struct CtripClient {
             (data, response) = try await transport(outgoing)
             try Task.checkCancellation()
         } catch is CancellationError { throw CancellationError() }
-        catch let failure as TransportFailure { throw AgentError.message(failure.message) }
+        catch let failure as TransportFailure { throw failure }
         catch let error as URLError {
             if error.code == .cancelled { throw CancellationError() }
-            throw AgentError.message(error.code == .timedOut ? TransportFailure.timeout.message : TransportFailure.network.message)
-        } catch { throw AgentError.message(TransportFailure.network.message) }
-        guard response.url == apiEndpoint else { throw AgentError.message(TransportFailure.origin.message) }
-        guard (200...299).contains(response.statusCode) else { throw AgentError.message(TransportFailure.http(response.statusCode).message) }
+            throw TransportFailure.networkFailure(error)
+        } catch { throw TransportFailure.network }
+        guard response.url == apiEndpoint else { throw TransportFailure.origin }
+        guard (200...299).contains(response.statusCode) else { throw TransportFailure.http(response.statusCode) }
         if apiEndpoint == Self.wendaoEndpoint,
            var envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any], envelope["result"] == nil {
             let payload = envelope["data"] as? [String: Any] ?? envelope
@@ -144,20 +169,37 @@ struct CtripClient {
         return try Self.decode(data, token: apiKey)
     }
 
-    // A successful HTTP response can still be a provider-side flight-tool failure.
-    // Retry that explicit condition once with identical constraints. Empty inventory,
-    // missing baggage/taxes, authentication failures and rate limits are not retried.
+    // Queries are read-only. A lost connection, timeout, empty business response or
+    // explicit provider quote failure shares one retry budget, with identical
+    // constraints and fresh consent checks. Inventory, malformed/unsafe responses,
+    // authentication failures and rate limits are never retried.
     func queryFlights(query: String, canRetry: () async -> Bool = { true }) async throws -> FlightResult {
-        let first = try await self.query(query: query)
-        guard Self.realtimeQuoteUnavailable(first) else {
-            return FlightResult(providerText: first, attempts: 1, realtimeUnavailable: false)
+        var firstReference: String?
+        for attempt in 1...2 {
+            do {
+                let answer = try await queryOnce(query: query)
+                let unavailable = Self.realtimeQuoteUnavailable(answer)
+                if !unavailable || attempt == 2 {
+                    return FlightResult(providerText: answer, attempts: attempt, realtimeUnavailable: unavailable)
+                }
+                firstReference = answer
+            } catch is CancellationError { throw CancellationError() }
+            catch let failure as TransportFailure {
+                try Task.checkCancellation()
+                guard failure.canRetryFlightQuery else { throw AgentError.message(failure.message) }
+                if attempt == 2 {
+                    if let firstReference {
+                        return FlightResult(providerText: firstReference, attempts: 2,
+                                            realtimeUnavailable: true, retryFailure: failure.message)
+                    }
+                    throw AgentError.message(failure.message + "（已自动重试一次）")
+                }
+            }
+            try Task.checkCancellation()
+            guard await canRetry() else { throw AgentError.message("携程连接已改变，请重新查询") }
+            try Task.checkCancellation()
         }
-        try Task.checkCancellation()
-        guard await canRetry() else { throw AgentError.message("携程连接已改变，请重新查询") }
-        try Task.checkCancellation()
-        let second = try await self.query(query: query)
-        return FlightResult(providerText: second, attempts: 2,
-                            realtimeUnavailable: Self.realtimeQuoteUnavailable(second))
+        preconditionFailure("Flight query exceeded its bounded attempts")
     }
 
     static func realtimeQuoteUnavailable(_ text: String) -> Bool {
@@ -203,9 +245,14 @@ struct CtripClient {
         }
         let result: String?
         if let text = envelope["result"] as? String { result = text }
-        else { result = (envelope["result"] as? [String: Any])?["content"] as? String }
+        else if let value = envelope["result"], !(value is NSNull) {
+            guard let content = (value as? [String: Any])?["content"] as? String else {
+                throw AgentError.message("携程未返回有效的查询结果格式")
+            }
+            result = content
+        } else { result = nil }
         guard let result, !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AgentError.message("携程未返回可用的查询结果，请稍后重试")
+            throw TransportFailure.emptyResult
         }
         // Fail closed if the provider echoes a code, including commonly escaped forms.
         // Preserve ordinary business text byte-for-byte; normalization is only for detection.

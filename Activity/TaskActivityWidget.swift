@@ -16,17 +16,17 @@ struct PhoneAgentActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .top, spacing: 14) {
-                            SelaIslandPortrait(phase: TaskActivityPresentation.portraitPhase(phase: context.state.phase, isStale: context.isStale), width: 28)
+                            SelaIslandPortrait(phase: TaskActivityPresentation.portraitPhase(phase: context.state.phase, isStale: context.isStale), width: 40, updatedAt: context.state.updatedAt)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("Sela").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.65))
-                                Text(TaskActivityPresentation.label(phase: context.state.phase, isStale: context.isStale)).font(.system(size: 19, weight: .semibold))
+                                Text(context.state.isPreview == true ? (context.isStale ? "预览结束" : "角色预览") : TaskActivityPresentation.label(phase: context.state.phase, isStale: context.isStale)).font(.system(size: 19, weight: .semibold))
                                     .lineLimit(1).minimumScaleFactor(0.8)
                             }
                             Spacer(minLength: 4)
-                            if context.state.completed == true { ActivityStatusGlyph(completed: true) }
-                            else { Text("第 \(context.state.step) 步").font(.system(size: 12).monospacedDigit()).foregroundStyle(.white.opacity(0.7)) }
+                            if !context.isStale && context.state.completed == true { ActivityStatusGlyph(completed: true) }
+                            else if context.state.isPreview != true { Text("第 \(context.state.step) 步").font(.system(size: 12).monospacedDigit()).foregroundStyle(.white.opacity(0.7)) }
                         }
-                        Text(context.isStale ? "状态暂未更新，打开 App 核对" : context.state.status)
+                        Text(context.state.isPreview == true && context.isStale ? "预览已结束，返回 Sela 清理预览卡片" : context.isStale ? "状态暂未更新，打开 App 核对" : context.state.status)
                             .font(.system(size: 12)).lineLimit(1).foregroundStyle(.white.opacity(0.78)).invalidatableContent()
                         // A GUI task has no known total; don't invent a percentage.
                         Rectangle().fill(Color.white.opacity(0.17)).frame(height: 1)
@@ -34,15 +34,16 @@ struct PhoneAgentActivityWidget: Widget {
                     }.padding(.horizontal, 4).padding(.bottom, 12)
                 }
             } compactLeading: {
-                SelaIslandPortrait(phase: TaskActivityPresentation.portraitPhase(phase: context.state.phase, isStale: context.isStale), width: 23)
+                SelaIslandPortrait(phase: TaskActivityPresentation.portraitPhase(phase: context.state.phase, isStale: context.isStale), width: 34, updatedAt: context.state.updatedAt)
             } compactTrailing: {
-                if context.state.completed == true { ActivityStatusGlyph(completed: true) }
-                else { Text(TaskActivityPresentation.label(phase: context.state.phase, isStale: context.isStale)).font(.system(size: 11, weight: .medium)).fixedSize() }
+                if !context.isStale && context.state.completed == true { ActivityStatusGlyph(completed: true) }
+                else { Text(context.state.isPreview == true ? (context.isStale ? "预览结束" : "角色预览") : TaskActivityPresentation.label(phase: context.state.phase, isStale: context.isStale)).font(.system(size: 11, weight: .medium)).fixedSize() }
             } minimal: {
-                if context.state.completed == true { ActivityStatusGlyph(completed: true) }
-                else { SelaIslandPortrait(phase: TaskActivityPresentation.portraitPhase(phase: context.state.phase, isStale: context.isStale), width: 22) }
+                // Screen broadcasting can cause iOS to choose this presentation.
+                // Carry the phase on the portrait itself; trailing text is absent.
+                SelaIslandPortrait(phase: TaskActivityPresentation.portraitPhase(phase: context.state.phase, isStale: context.isStale), width: 34, updatedAt: context.state.updatedAt)
             }
-            .widgetURL(TaskActivityLink.url(taskID: context.attributes.taskID))
+            .widgetURL(context.state.isPreview == true ? URL(string: "phoneagent://activity-preview")! : TaskActivityLink.url(taskID: context.state.displayTaskID ?? context.attributes.taskID))
             .keylineTint(Color(red: 0.87, green: 0.85, blue: 0.77))
         }
     }
@@ -68,19 +69,19 @@ private struct LockScreenTaskActivity: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 16) {
-                SelaIslandPortrait(phase: TaskActivityPresentation.portraitPhase(phase: context.state.phase, isStale: context.isStale), width: 42)
+                SelaIslandPortrait(phase: TaskActivityPresentation.portraitPhase(phase: context.state.phase, isStale: context.isStale), width: 54, updatedAt: context.state.updatedAt)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(context.state.taskTitle ?? "Sela").font(.headline).lineLimit(2)
-                    Text(context.isStale ? "状态暂未更新，打开 App 核对" : context.state.status)
+                    Text(context.state.isPreview == true && context.isStale ? "预览已结束，返回 Sela 清理预览卡片" : context.isStale ? "状态暂未更新，打开 App 核对" : context.state.status)
                         .font(.subheadline).foregroundStyle(ink.opacity(0.90)).invalidatableContent()
                 }
                 Spacer()
-                if context.state.completed == true { ActivityStatusGlyph(completed: true) }
+                if !context.isStale && context.state.completed == true { ActivityStatusGlyph(completed: true) }
             }
             ActivityTaskButtons(attributes: context.attributes, state: context.state, tint: ink)
         }
         .padding(18).foregroundStyle(ink)
-        .widgetURL(TaskActivityLink.url(taskID: context.attributes.taskID))
+        .widgetURL(context.state.isPreview == true ? URL(string: "phoneagent://activity-preview")! : TaskActivityLink.url(taskID: context.state.displayTaskID ?? context.attributes.taskID))
         .activityBackgroundTint(backgroundTint)
         .activitySystemActionForegroundColor(ink)
     }
@@ -104,9 +105,9 @@ private struct ActivityTaskButtons: View {
                     }.accessibilityHint("结束此任务，暂停队列并保留等待项，系统可能要求认证设备")
                 }
             }
-            Link(destination: TaskActivityLink.url(taskID: attributes.taskID)) {
-                Label("打开 App", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity, minHeight: 28).background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            }.accessibilityHint("回到 App 核对任务；打开不会自动继续")
+            Link(destination: state.isPreview == true ? URL(string: "phoneagent://activity-preview")! : TaskActivityLink.url(taskID: state.displayTaskID ?? attributes.taskID)) {
+                Label(state.isPreview == true ? "返回 Sela" : "打开 App", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity, minHeight: 28).background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            }.accessibilityHint(state.isPreview == true ? "返回 Sela 并结束角色预览" : "回到 App 核对任务；打开不会自动继续")
         }.font(.system(size: 12, weight: .semibold)).buttonStyle(.plain).tint(tint).foregroundStyle(tint)
     }
 }

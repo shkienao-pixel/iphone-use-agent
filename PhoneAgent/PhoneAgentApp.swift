@@ -31,6 +31,7 @@ struct PhoneAgentApp: App {
                     authorization.sceneActive(phase != .background)
                     if phase == .active {
                         NotesShortcutBridge.shared.becameActive()
+                        viewModel.refreshBackgroundExecution()
                         Task { await viewModel.taskNotifications.refreshAuthorization() }
                     }
                 }

@@ -113,6 +113,12 @@ struct PaotuiChatCard: Identifiable, Codable, Equatable, Sendable {
     var service = ""
     var deliveryFee: Double? = nil
     var goodsPrice: Double? = nil
+    // Exact display evidence is optional so older saved cards remain readable.
+    // It grants no authority; the live Session still owns the canonical quote.
+    var currency: String? = nil
+    var deliveryFeeMinorUnits: Int64? = nil
+    var goodsPriceMinorUnits: Int64? = nil
+    var deliveryFeeText: String? = nil
     var goodsPriceNote = "商品价格待骑手／商家确认"
     var estimate = ""
     var distance = ""
@@ -134,8 +140,52 @@ struct PaotuiChatCard: Identifiable, Codable, Equatable, Sendable {
         guard let deliveryFee, let goodsPrice, (deliveryFee + goodsPrice).isFinite else { return nil }
         return deliveryFee + goodsPrice
     }
+    private var hasExactMoney: Bool {
+        currency != nil || deliveryFeeMinorUnits != nil || goodsPriceMinorUnits != nil || deliveryFeeText != nil
+    }
+    /// Integer formatting keeps every fen intact even above Double's exact range.
+    private static func exactAmountText(_ minorUnits: Int64, currency: String?) -> String? {
+        guard currency == "CNY", minorUnits >= 0 else { return nil }
+        let whole = minorUnits / 100, fraction = minorUnits % 100
+        let number: String
+        if fraction == 0 { number = String(whole) }
+        else if fraction % 10 == 0 { number = "\(whole).\(fraction / 10)" }
+        else { number = "\(whole)." + (fraction < 10 ? "0" : "") + String(fraction) }
+        return number + " 元"
+    }
+    private static func legacyAmountText(_ amount: Double?) -> String? {
+        guard let amount, amount.isFinite, amount >= 0 else { return nil }
+        return amount.formatted(.number.precision(.fractionLength(0...2))) + " 元"
+    }
+    var deliveryFeeDisplayText: String? {
+        if hasExactMoney { return deliveryFeeMinorUnits.flatMap { Self.exactAmountText($0, currency: currency) } }
+        return Self.legacyAmountText(deliveryFee)
+    }
+    var goodsPriceDisplayText: String? {
+        if hasExactMoney { return goodsPriceMinorUnits.flatMap { Self.exactAmountText($0, currency: currency) } }
+        return Self.legacyAmountText(goodsPrice)
+    }
+    var totalDisplayText: String? {
+        guard hasExactMoney else { return Self.legacyAmountText(total) }
+        guard let deliveryFeeMinorUnits, let goodsPriceMinorUnits,
+              deliveryFeeMinorUnits >= 0, goodsPriceMinorUnits >= 0 else { return nil }
+        let total = deliveryFeeMinorUnits.addingReportingOverflow(goodsPriceMinorUnits)
+        guard !total.overflow else { return nil }
+        return Self.exactAmountText(total.partialValue, currency: currency)
+    }
+    private var exactMoneyIsValid: Bool {
+        guard currency == nil || currency == "CNY",
+              deliveryFeeMinorUnits.map({ $0 >= 0 && currency == "CNY" }) ?? true,
+              goodsPriceMinorUnits.map({ $0 >= 0 && currency == "CNY" }) ?? true else { return false }
+        if let deliveryFeeText {
+            guard let deliveryFeeMinorUnits,
+                  deliveryFeeText == Self.exactAmountText(deliveryFeeMinorUnits, currency: currency) else { return false }
+        }
+        return true
+    }
     var valid: Bool {
-        ["addresses", "senderAddresses", "places", "request", "quotes", "confirm", "receipt", "info", "mode", "method", "weight"].contains(kind) &&
+        exactMoneyIsValid &&
+        ["addresses", "senderAddresses", "places", "request", "quotes", "confirm", "receipt", "info", "mode", "method", "weight", "category"].contains(kind) &&
         title.count <= 1000 && goods.count <= 500 && purchaseAddress.count <= 2000 && recipientAddress.count <= 2000 &&
         service.count <= 100 && note.count <= 4000 && goodsPriceNote.count <= 1000 && estimate.count <= 500 && distance.count <= 100 &&
         (recipientContact?.count ?? 0) <= 200 && (senderContact?.count ?? 0) <= 200 && (orderURL?.count ?? 0) <= 2048 &&
@@ -506,19 +556,19 @@ enum CtripFlightParser {
         ("计价单位", ["适用人数及计价单位", "计价单位"]),
         ("出发城市", ["出发城市"]), ("到达城市", ["到达城市"]),
         ("行李/退改/预订链接", ["行李/退改/预订链接"]),
-        ("起降时间", ["日期时间", "起降时间"]),
+        ("起降时间", ["日期时间", "起降时间", "起飞/到达时间", "起飞/到达"]),
         ("机场", ["机场/航站楼", "起降机场", "机场"]),
-        ("出发时间", ["出发时间", "起飞时间", "起飞"]), ("到达时间", ["到达时间", "抵达时间", "到达", "抵达"]),
+        ("出发时间", ["出发日期时间", "计划起飞时间", "出发时间", "起飞时间", "起飞"]), ("到达时间", ["到达日期时间", "计划到达时间", "到达时间", "抵达时间", "到达", "抵达"]),
         ("出发机场", ["出发机场", "起飞机场", "始发机场"]), ("到达机场", ["到达机场", "抵达机场", "降落机场"]),
         ("出发日期", ["出发日期", "起飞日期", "日期"]), ("航班号", ["航班号", "航班号码"]),
-        ("航空公司", ["航空公司", "航司"]), ("舱位", ["舱位", "舱等"]),
+        ("航空公司", ["承运航司", "航空公司", "航司"]), ("舱位", ["舱位", "舱等"]),
         ("飞行时长", ["飞行时长", "飞行时间", "航程时长"]), ("总耗时", ["含等待总耗时", "总耗时", "总时长"]), ("机型", ["机型"]),
         ("中转机场", ["中转机场", "经停机场"]), ("中转行程", ["中转行程"]), ("行李", ["行李", "行李额度", "行李额"]),
         ("标签", ["标签"]), ("说明", ["说明"]), ("中转地", ["中转等待", "中转地"]), ("航程类型", ["航程类型", "行程类型"]),
         ("中转次数", ["中转次数", "换乘次数", "转机次数"]),
-        ("退改", ["退改", "退改签", "退改签政策", "退改政策"]), ("是否含税", ["是否含税"]),
+        ("退改", ["退改", "退改签", "退改签政策", "退改政策"]), ("是否含税", ["是否含税", "含税口径", "税费口径"]),
         ("价格", ["币种及报价", "经济舱参考票价", "经济舱参考价", "经济舱票价", "经济舱价格", "当前票价", "单程票价", "参考票价", "参考价格", "含税总价", "票面价格", "票面价", "参考价", "票价", "价格"]),
-        ("预订链接", ["携程预订链接", "携程订票链接", "预订链接", "订票链接"])
+        ("预订链接", ["携程预订链接", "携程订票链接", "原生选价链接", "原生预订链接", "选价链接", "预订链接", "订票链接"])
     ]
     private static func normalizedFieldLabel(_ value: String) -> String {
         plain(value).replacingOccurrences(of: #"[\s/／|｜、·及与和]"#, with: "", options: .regularExpression)
@@ -562,7 +612,7 @@ enum CtripFlightParser {
         return String(value[range])
     }
     static func sourceDate(_ value: String) -> String? {
-        let pattern = #"(?<!\d)(20\d{2})[-年/](\d{1,2})[-月/](\d{1,2})(?:日)?(?!\d)"#
+        let pattern = #"(?<!\d)(20\d{2})\s*[-年/]\s*(\d{1,2})\s*[-月/]\s*(\d{1,2})\s*(?:日)?(?!\d)"#
         guard let raw = match(pattern, in: value), let year = match(pattern, in: raw, group: 1).flatMap(Int.init),
               let month = match(pattern, in: raw, group: 2).flatMap(Int.init), let day = match(pattern, in: raw, group: 3).flatMap(Int.init) else { return nil }
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
@@ -606,7 +656,7 @@ enum CtripFlightParser {
                 if let explicit, explicit.count <= 48 { scope.airport = explicit }
                 else if let dateText = match(#"20\d{2}(?:年\d{1,2}月\d{1,2}日|-\d{2}-\d{2})"#, in: value),
                         let range = value.range(of: dateText),
-                        let airport = match(#"^\s*([\p{L}]{2,28}机场\s*(?:T\d{1,2})?)\s*(?:航站楼)?出发"#, in: String(value[range.upperBound...]), group: 1) {
+                        let airport = match(#"^\s*(?:从)?([\p{L}]{2,28}机场\s*(?:T\d{1,2})?)\s*(?:航站楼)?出发"#, in: String(value[range.upperBound...]), group: 1) {
                     scope.airport = airport
                 }
                 if !["是否", "不确定", "可能"].contains(where: { value.contains($0) }) {
@@ -650,6 +700,17 @@ enum CtripFlightParser {
             return Field(name: name, value: text)
         }
         return parsed.flatMap { field -> [Field] in
+            if ["出发机场", "到达机场"].contains(field.name),
+               let airport = match(#"^([\p{Han}]{2,28}(?:机场)?)[，,]\s*(T\d{1,2})航站楼$"#, in: field.value, group: 1),
+               let terminal = match(#"^([\p{Han}]{2,28}(?:机场)?)[，,]\s*(T\d{1,2})航站楼$"#, in: field.value, group: 2) {
+                return [Field(name: field.name, value: airport + " " + terminal)]
+            }
+            if ["出发机场", "到达机场"].contains(field.name),
+               let airport = match(#"^<([^<>]{2,48})>[（(]([A-Z]{3})[）)][，,]\s*航站楼\s*(T\d{1,2})$"#, in: field.value, group: 1),
+               let code = match(#"^<([^<>]{2,48})>[（(]([A-Z]{3})[）)][，,]\s*航站楼\s*(T\d{1,2})$"#, in: field.value, group: 2),
+               let terminal = match(#"^<([^<>]{2,48})>[（(]([A-Z]{3})[）)][，,]\s*航站楼\s*(T\d{1,2})$"#, in: field.value, group: 3) {
+                return [Field(name: field.name, value: airport + "（" + code + "） " + terminal)]
+            }
             if field.name == "舱位", let cabin = match(#"^(经济舱|商务舱|公务舱|头等舱)"#, in: field.value),
                let price = match(#"票价\s*([¥￥]?\s*\d{1,7}(?:\.\d{1,2})?\s*元[^）)\n]{0,100})"#, in: field.value, group: 1), priceLabel(price) != nil {
                 return [Field(name: "舱位", value: cabin), Field(name: "价格", value: price)]
@@ -861,8 +922,49 @@ enum CtripFlightParser {
             } else if active != nil { active!.lines.append(index) }
         }
         if let active { result.append(active) }
-        return (result + tableSections(lines, contexts: contexts))
-            .flatMap { sharedFareSections($0, lines: lines) }.sorted { $0.heading < $1.heading }
+        let grouped = result + tableSections(lines, contexts: contexts)
+        if grouped.isEmpty, let single = singleFlightGroupedSection(lines, contexts: contexts) { return [single] }
+        return grouped.flatMap { sharedFareSections($0, lines: lines) }.sorted { $0.heading < $1.heading }
+    }
+
+    /// Some official replies organize one flight by information headings rather
+    /// than by flight heading. Merge only a single unambiguous flight identity
+    /// with complete explicit endpoints; never join unrelated candidate blocks.
+    private static func singleFlightGroupedSection(_ lines: [String], contexts: [Scope]) -> Section? {
+        let allCodes = Set(flightNumbers(in: lines.joined(separator: "\n")))
+        guard allCodes.count == 1, let code = allCodes.first else { return nil }
+        let rowIndices = lines.indices.filter { contexts[$0].official == true && !fields(lines[$0]).isEmpty }
+        var entries = rowIndices.flatMap { fields(lines[$0]) }
+        let required = ["航班号", "出发时间", "到达时间", "出发机场", "到达机场", "价格"]
+        guard required.allSatisfy({ name in entries.contains { $0.name == name } }),
+              entries.filter({ $0.name == "航班号" }).allSatisfy({ flightNumbers(in: $0.value) == [code] }),
+              let date = entries.first(where: { $0.name == "出发日期" }).flatMap({ sourceDate($0.value) }) ??
+                entries.first(where: { $0.name == "出发时间" }).flatMap({ sourceDate($0.value) }),
+              let departure = entries.first(where: { $0.name == "出发时间" }).flatMap({ clock($0.value) }),
+              let arrival = entries.first(where: { $0.name == "到达时间" }).flatMap({ clock($0.value) }),
+              let price = entries.firstIndex(where: { $0.name == "价格" }), priceLabel(entries[price].value) != nil else { return nil }
+        for name in required {
+            guard Set(entries.filter { $0.name == name }.map(\.value)).count == 1 else { return nil }
+        }
+        let departureDates = Set(entries.filter { ["出发日期", "出发时间"].contains($0.name) }.compactMap { sourceDate($0.value) })
+        guard departureDates == [date] else { return nil }
+        if !entries.contains(where: { $0.name == "出发日期" }) { entries.append(Field(name: "出发日期", value: date)) }
+        let routeRows = lines.enumerated().filter { contexts[$0.offset].official == true }.map(\.element)
+        if routeRows.contains(where: { plain($0).range(of: #"^(?:[-*•]\s*)?航段\s*[:：][^。\n]{2,80}[，,]\s*直飞(?:[，,]|$)"#, options: .regularExpression) != nil }),
+           !entries.contains(where: { $0.name == "航程类型" }) { entries.append(Field(name: "航程类型", value: "直飞")) }
+        if let tax = entries.first(where: { $0.name == "是否含税" })?.value, tax.contains("不含税") {
+            entries[price].value += "，不含税"
+        }
+        if let index = entries.firstIndex(where: { $0.name == "出发时间" }) { entries[index].value = date + " " + departure }
+        if let index = entries.firstIndex(where: { $0.name == "到达时间" }),
+           sourceDate(entries[index].value) == nil, relativeDay(entries[index].value) == nil, arrival >= departure {
+            entries[index].value = date + " " + arrival
+        }
+        let flightLabel = entries.first { $0.name == "航班号" }?.value ?? ""
+        let airline = entries.first { $0.name == "航空公司" }?.value ??
+            match(#"[（(]([^）)]+航空[^）)]*)[）)]"#, in: flightLabel, group: 1) ?? ""
+        return Section(title: code + (airline.isEmpty ? "" : "（" + airline + "）"), heading: rowIndices.first ?? 0,
+                       lines: rowIndices, inline: entries, official: true)
     }
 
     /// The overall travel date must be stated as a query date in the source
@@ -1237,11 +1339,2262 @@ enum CtripFlightParser {
               host == "ctrip.com" || host.hasSuffix(".ctrip.com") || host == "trip.com" || host.hasSuffix(".trip.com") else { return nil }
         return url
     }
+    // Generated 2026-10-26 from Ctrip official searchBoxRecommend; mainland type1 only.
+    // Keys normalized by removing whitespace and uppercasing. Collisions excluded.
+    private static let nativeListCityAliases: [String: String] = [
+        "AAT": "AAT",
+        "ACF": "ACF",
+        "ACX": "ACX",
+        "AEB": "AEB",
+        "AERSHAN": "YIE",
+        "AHJ": "AHJ",
+        "AKA": "AKA",
+        "AKESU": "AKU",
+        "AKSU": "AKU",
+        "AKU": "AKU",
+        "ALAER": "ACF",
+        "ALAR": "ACF",
+        "ALASHANYOUQI": "RHT",
+        "ALASHANZUOQI": "AXF",
+        "ALETAI": "AAT",
+        "ALI": "NGQ",
+        "ALXALEFTBANNER": "AXF",
+        "ALXARIGHTBANNER": "RHT",
+        "ANKANG": "AKA",
+        "ANQING": "AQG",
+        "ANSHAN": "AOG",
+        "ANSHUN": "AVA",
+        "ANYANG": "AYN",
+        "AOG": "AOG",
+        "APJ": "APJ",
+        "AQG": "AQG",
+        "ARXAN": "YIE",
+        "AVA": "AVA",
+        "AXF": "AXF",
+        "AYN": "AYN",
+        "BAICHENG": "DBC",
+        "BAISE": "AEB",
+        "BAISHAN": "NBS",
+        "BALIKUN": "DHH",
+        "BAOSHAN": "BSD",
+        "BAOTOU": "BAV",
+        "BAR": "BAR",
+        "BARKOL": "DHH",
+        "BAV": "BAV",
+        "BAYANNAOER": "RLK",
+        "BAYANNUR": "RLK",
+        "BAZHONG": "BZX",
+        "BEIHAI": "BHY",
+        "BEIJING": "BJS",
+        "BENGBU": "BFU",
+        "BFJ": "BFJ",
+        "BFU": "BFU",
+        "BFY": "BFU",
+        "BHY": "BHY",
+        "BIJIE": "BFJ",
+        "BJS": "BJS",
+        "BOLE": "BPL",
+        "BOZHOU": "BZJ",
+        "BPE": "BPE",
+        "BPL": "BPL",
+        "BPX": "BPX",
+        "BSD": "BSD",
+        "BUERJIN": "KJI",
+        "BURQIN": "KJI",
+        "BZJ": "BZJ",
+        "BZX": "BZX",
+        "CAN": "CAN",
+        "CANGYUAN": "CWJ",
+        "CDE": "CDE",
+        "CGD": "CGD",
+        "CGO": "CGO",
+        "CGQ": "CGQ",
+        "CHANGCHUN": "CGQ",
+        "CHANGDE": "CGD",
+        "CHANGDU": "BPX",
+        "CHANGSHA": "CSX",
+        "CHANGZHI": "CIH",
+        "CHANGZHOU": "CZX",
+        "CHAOYANG": "CHG",
+        "CHENGDE": "CDE",
+        "CHENGDU": "CTU",
+        "CHENZHOU": "HCZ",
+        "CHG": "CHG",
+        "CHIFENG": "CIF",
+        "CHIZHOU": "JUH",
+        "CHONGQING": "CKG",
+        "CIF": "CIF",
+        "CIH": "CIH",
+        "CKG": "CKG",
+        "CQW": "CQW",
+        "CSX": "CSX",
+        "CTU": "CTU",
+        "CWJ": "CWJ",
+        "CZX": "CZX",
+        "DALI": "DLU",
+        "DALIAN": "DLC",
+        "DANDONG": "DDG",
+        "DAOCHENG": "DCY",
+        "DAOCHENGCOUNTY": "DCY",
+        "DAQING": "DQA",
+        "DAT": "DAT",
+        "DATONG": "DAT",
+        "DAZHOU": "DZH",
+        "DBC": "DBC",
+        "DCY": "DCY",
+        "DDG": "DDG",
+        "DDR": "RKZ",
+        "DEJ": "TEN",
+        "DELINGHA": "HXD",
+        "DHH": "DHH",
+        "DIG": "DIG",
+        "DIQING": "DIG",
+        "DLC": "DLC",
+        "DLU": "DLU",
+        "DNH": "DNH",
+        "DONGYING": "DOY",
+        "DOY": "DOY",
+        "DQA": "DQA",
+        "DSN": "DSN",
+        "DTU": "DTU",
+        "DUNHUANG": "DNH",
+        "DXJ": "DXJ",
+        "DYG": "DYG",
+        "DZH": "DZH",
+        "EERDUOSI": "DSN",
+        "EHU": "EHU",
+        "EJINAQI": "EJN",
+        "EJINBANNER": "EJN",
+        "EJN": "EJN",
+        "ENH": "ENH",
+        "ENSHI": "ENH",
+        "ENY": "ENY",
+        "ERENHOT": "ERL",
+        "ERL": "ERL",
+        "ERLIANHAOTE": "ERL",
+        "EZHOU": "EHU",
+        "FOC": "FOC",
+        "FOSHAN": "FUO",
+        "FUG": "FUG",
+        "FUO": "FUO",
+        "FUYANG": "FUG",
+        "FUYUAN": "FYJ",
+        "FUYUN": "FYN",
+        "FUZHOU": "FOC",
+        "FYJ": "FYJ",
+        "FYN": "FYN",
+        "GANZHOU": "KOW",
+        "GANZI": "GZG",
+        "GEERMU": "GOQ",
+        "GMQ": "GMQ",
+        "GOLMUD": "GOQ",
+        "GOLOG": "GMQ",
+        "GOQ": "GOQ",
+        "GUANGYUAN": "GYS",
+        "GUANGZHOU": "CAN",
+        "GUILIN": "KWL",
+        "GUIYANG": "KWE",
+        "GUOLUO": "GMQ",
+        "GUYUAN": "GYU",
+        "GXH": "GXH",
+        "GYS": "GYS",
+        "GYU": "GYU",
+        "GZG": "GZG",
+        "HAERBIN": "HRB",
+        "HAIKOU": "HAK",
+        "HAILAER": "HLD",
+        "HAILAR": "HLD",
+        "HAK": "HAK",
+        "HAMI": "HMI",
+        "HANDAN": "HDG",
+        "HANGZHOU": "HGH",
+        "HANZHONG": "HZG",
+        "HARBIN": "HRB",
+        "HBQ": "HBQ",
+        "HCJ": "HCJ",
+        "HCZ": "HCZ",
+        "HDG": "HDG",
+        "HECHI": "HCJ",
+        "HEFEI": "HFE",
+        "HEIHE": "HEK",
+        "HEJING": "HJB",
+        "HEK": "HEK",
+        "HENGYANG": "HNY",
+        "HET": "HET",
+        "HETIAN": "HTN",
+        "HEZE": "HZA",
+        "HFE": "HFE",
+        "HGH": "HGH",
+        "HIA": "HIA",
+        "HJB": "HJB",
+        "HJJ": "HJJ",
+        "HLD": "HLD",
+        "HLH": "HLH",
+        "HMI": "HMI",
+        "HNY": "HNY",
+        "HOHHOT": "HET",
+        "HOLINGOL": "HUO",
+        "HONGYUAN": "AHJ",
+        "HOTAN": "HTN",
+        "HPG": "HPG",
+        "HQL": "HQL",
+        "HQQ": "AYN",
+        "HRB": "HRB",
+        "HSC": "HSC",
+        "HSF": "HSF",
+        "HSN": "HSN",
+        "HTN": "HTN",
+        "HTT": "HTT",
+        "HUAI'AN": "HIA",
+        "HUAIAN": "HIA",
+        "HUAIHUA": "HJJ",
+        "HUANGSHAN": "TXN",
+        "HUANGSHANCITY": "TXN",
+        "HUHEHAOTE": "HET",
+        "HUIZHOU": "HUZ",
+        "HUO": "HUO",
+        "HUOLINGUOLE": "HUO",
+        "HUZ": "HUZ",
+        "HXD": "HXD",
+        "HYN": "HYN",
+        "HZA": "HZA",
+        "HZG": "HZG",
+        "HZH": "HZH",
+        "INC": "INC",
+        "IQM": "IQM",
+        "IQN": "IQN",
+        "JBK": "JBK",
+        "JDZ": "JDZ",
+        "JGD": "JGD",
+        "JGN": "JGN",
+        "JGS": "JGS",
+        "JHG": "JHG",
+        "JIAGEDAQI": "JGD",
+        "JIAMUSI": "JMU",
+        "JIANSANJIANG": "JSJ",
+        "JIAXING": "JXS",
+        "JIAYUGUAN": "JGN",
+        "JIC": "JIC",
+        "JIEYANG": "SWA",
+        "JINAN": "TNA",
+        "JINCHANG": "JIC",
+        "JINGDEZHEN": "JDZ",
+        "JINGGANGSHAN": "JGS",
+        "JINGGANGSHANCITY": "JGS",
+        "JINGZHOU": "SHS",
+        "JINING": "JNG",
+        "JINZHOU": "JNZ",
+        "JIQ": "JIQ",
+        "JIU": "JIU",
+        "JIUJIANG": "JIU",
+        "JIUZHAIGOU": "JZH",
+        "JIXI": "JXA",
+        "JJN": "JJN",
+        "JMJ": "JMJ",
+        "JMU": "JMU",
+        "JNG": "JNG",
+        "JNH": "JXS",
+        "JNZ": "JNZ",
+        "JRJ": "JRJ",
+        "JSJ": "JSJ",
+        "JUH": "JUH",
+        "JUZ": "JUZ",
+        "JXA": "JXA",
+        "JXS": "JXS",
+        "JZH": "JZH",
+        "KAILI": "KJH",
+        "KANGDING": "KGT",
+        "KARAMAY": "KRY",
+        "KASHGARCITY": "KHG",
+        "KASHI": "KHG",
+        "KCA": "KCA",
+        "KELAMAYI": "KRY",
+        "KGT": "KGT",
+        "KHG": "KHG",
+        "KHN": "KHN",
+        "KJH": "KJH",
+        "KJI": "KJI",
+        "KMG": "KMG",
+        "KORLA": "KRL",
+        "KOW": "KOW",
+        "KRL": "KRL",
+        "KRY": "KRY",
+        "KUCHE": "KCA",
+        "KUERLE": "KRL",
+        "KUNMING": "KMG",
+        "KUQA": "KCA",
+        "KWE": "KWE",
+        "KWL": "KWL",
+        "LANCANG": "JMJ",
+        "LANGZHONG": "LZG",
+        "LANZHOU": "LHW",
+        "LASA": "LXA",
+        "LCX": "LCX",
+        "LDS": "LDS",
+        "LFQ": "LFQ",
+        "LGZ": "LGZ",
+        "LHASA": "LXA",
+        "LHW": "LHW",
+        "LIANYUNGANG": "LYG",
+        "LIBO": "LLB",
+        "LIJ": "LIJ",
+        "LIJIANG": "LJG",
+        "LINCANG": "LNJ",
+        "LINFEN": "LFQ",
+        "LINYI": "LYI",
+        "LINZHI": "LZY",
+        "LIPING": "HZH",
+        "LISHUI": "LIJ",
+        "LIUPANSHUI": "LPF",
+        "LIUZHOU": "LZH",
+        "LJG": "LJG",
+        "LLB": "LLB",
+        "LLF": "LLF",
+        "LLV": "LLV",
+        "LNJ": "LNJ",
+        "LNL": "LNL",
+        "LONGNAN": "LNL",
+        "LONGYAN": "LCX",
+        "LPF": "LPF",
+        "LTJ": "LTJ",
+        "LUM": "LUM",
+        "LUNTAI": "LTJ",
+        "LUOYANG": "LYA",
+        "LUZHOU": "LZO",
+        "LVLIANG": "LLV",
+        "LXA": "LXA",
+        "LYA": "LYA",
+        "LYG": "LYG",
+        "LYI": "LYI",
+        "LZG": "LZG",
+        "LZH": "LZH",
+        "LZO": "LZO",
+        "LZY": "LZY",
+        "MANGSHI": "LUM",
+        "MANGYA": "HTT",
+        "MANZHOULI": "NZH",
+        "MAOTAI": "WMT",
+        "MDG": "MDG",
+        "MEIZHOU": "MXZ",
+        "MIANYANG": "MIG",
+        "MIG": "MIG",
+        "MOHE": "OHE",
+        "MUDANJIANG": "MDG",
+        "MXZ": "MXZ",
+        "NANCHANG": "KHN",
+        "NANCHONG": "NAO",
+        "NANJING": "NKG",
+        "NANNING": "NNG",
+        "NANTONG": "NTG",
+        "NANYANG": "NNY",
+        "NAO": "NAO",
+        "NBS": "NBS",
+        "NDG": "NDG",
+        "NGARI": "NGQ",
+        "NGB": "NGB",
+        "NGQ": "NGQ",
+        "NINGBO": "NGB",
+        "NINGLANG": "NLH",
+        "NKG": "NKG",
+        "NLH": "NLH",
+        "NLT": "NLT",
+        "NNG": "NNG",
+        "NNY": "NNY",
+        "NTG": "NTG",
+        "NYINGCHI": "LZY",
+        "NZH": "NZH",
+        "NZL": "NZL",
+        "OHE": "OHE",
+        "ORDOS": "DSN",
+        "PANZHIHUA": "PZI",
+        "PEK": "BJS",
+        "PKX": "BJS",
+        "PU'ER": "SYM",
+        "PUER": "SYM",
+        "PULAN": "APJ",
+        "PURANG": "APJ",
+        "PVG": "SHA",
+        "PZI": "PZI",
+        "QAMDO": "BPX",
+        "QIANJIANG": "JIQ",
+        "QIEMO": "IQM",
+        "QILIAN": "HBQ",
+        "QINGDAO": "TAO",
+        "QINGYANG": "IQN",
+        "QINHUANGDAO": "BPE",
+        "QIONGHAI": "BAR",
+        "QIQIHAER": "NDG",
+        "QIQIHAR": "NDG",
+        "QITAI": "JBK",
+        "QSZ": "QSZ",
+        "QUANZHOU": "JJN",
+        "QUZHOU": "JUZ",
+        "RHT": "RHT",
+        "RIKAZE": "RKZ",
+        "RIZ": "RIZ",
+        "RIZHAO": "RIZ",
+        "RKZ": "RKZ",
+        "RLK": "RLK",
+        "RQA": "RQA",
+        "RUIJIN": "JRJ",
+        "RUOQIANG": "RQA",
+        "SANMING": "SQJ",
+        "SANSHA": "XYI",
+        "SANYA": "SYX",
+        "SHA": "SHA",
+        "SHACHE": "QSZ",
+        "SHANGHAI": "SHA",
+        "SHANGRAO": "SQD",
+        "SHANNAN": "LGZ",
+        "SHAOGUAN": "HSC",
+        "SHAOYANG": "WGN",
+        "SHE": "SHE",
+        "SHENNONGJIA": "HPG",
+        "SHENYANG": "SHE",
+        "SHENZHEN": "SZX",
+        "SHF": "SHF",
+        "SHIGATSE": "RKZ",
+        "SHIHEZI": "SHF",
+        "SHIJIAZHUANG": "SJW",
+        "SHIYAN": "WDS",
+        "SHS": "SHS",
+        "SHUOZHOU": "SZH",
+        "SIA": "SIA",
+        "SJW": "SJW",
+        "SONGYUAN": "YSQ",
+        "SQD": "SQD",
+        "SQJ": "SQJ",
+        "SUIFENHE": "HSF",
+        "SWA": "SWA",
+        "SYM": "SYM",
+        "SYX": "SYX",
+        "SZH": "SZH",
+        "SZX": "SZX",
+        "TACHENG": "TCG",
+        "TAIYUAN": "TYN",
+        "TAIZHOU": "HYN",
+        "TANGSHAN": "TVS",
+        "TAO": "TAO",
+        "TASHIKUERGAN": "HQL",
+        "TASHKURGAN": "HQL",
+        "TCG": "TCG",
+        "TCZ": "TCZ",
+        "TEN": "TEN",
+        "TENGCHONG": "TCZ",
+        "TFU": "CTU",
+        "TGO": "TGO",
+        "THQ": "THQ",
+        "TIANJIN": "TSN",
+        "TIANSHUI": "THQ",
+        "TLQ": "TLQ",
+        "TNA": "TNA",
+        "TNH": "TNH",
+        "TONGHUA": "TNH",
+        "TONGLIAO": "TGO",
+        "TONGREN": "TEN",
+        "TSN": "TSN",
+        "TULUFAN": "TLQ",
+        "TUMUSHUKE": "TWC",
+        "TUMXUK": "TWC",
+        "TVS": "TVS",
+        "TWC": "TWC",
+        "TXN": "TXN",
+        "TYN": "TYN",
+        "UCB": "UCB",
+        "ULANHOT": "HLH",
+        "ULANQAB": "UCB",
+        "URADMIDDLEBANNER": "WZQ",
+        "URC": "URC",
+        "URUMQI": "URC",
+        "UYN": "UYN",
+        "WANZHOU": "WXN",
+        "WDS": "WDS",
+        "WEF": "WEF",
+        "WEH": "WEH",
+        "WEIFANG": "WEF",
+        "WEIHAI": "WEH",
+        "WENSHAN": "WNH",
+        "WENZHOU": "WNZ",
+        "WGN": "WGN",
+        "WHA": "WHU",
+        "WHU": "WHU",
+        "WMT": "WMT",
+        "WNH": "WNH",
+        "WNZ": "WNZ",
+        "WSK": "WSK",
+        "WUA": "WUA",
+        "WUDALIANCHI": "DTU",
+        "WUDALIANCHICITY": "DTU",
+        "WUH": "WUH",
+        "WUHAI": "WUA",
+        "WUHAN": "WUH",
+        "WUHU": "WHU",
+        "WULANCHABU": "UCB",
+        "WULANHAOTE": "HLH",
+        "WULATEZHONGQI": "WZQ",
+        "WULONG": "CQW",
+        "WULUMUQI": "URC",
+        "WUS": "WUS",
+        "WUSHAN": "WSK",
+        "WUSHANCOUNTY": "WSK",
+        "WUT": "WUT",
+        "WUX": "WUX",
+        "WUXI": "WUX",
+        "WUYISHAN": "WUS",
+        "WUZ": "WUZ",
+        "WUZHOU": "WUZ",
+        "WXN": "WXN",
+        "WZQ": "WZQ",
+        "XAI": "XAI",
+        "XFN": "XFN",
+        "XI'AN": "SIA",
+        "XIAHE": "GXH",
+        "XIAMEN": "XMN",
+        "XIAN": "SIA",
+        "XIANGXI": "DXJ",
+        "XIANGXIPREFECTURE": "DXJ",
+        "XIANGYANG": "XFN",
+        "XIC": "XIC",
+        "XICHANG": "XIC",
+        "XIL": "XIL",
+        "XILINHAOTE": "XIL",
+        "XILINHOT": "XIL",
+        "XINGTAI": "XNT",
+        "XINGYI": "ACX",
+        "XINING": "XNN",
+        "XINYANG": "XAI",
+        "XINYUAN": "NLT",
+        "XINZHOU": "WUT",
+        "XISHUANGBANNA": "JHG",
+        "XIY": "SIA",
+        "XMN": "XMN",
+        "XNN": "XNN",
+        "XNT": "XNT",
+        "XUZ": "XUZ",
+        "XUZHOU": "XUZ",
+        "XYI": "XYI",
+        "YAN'AN": "ENY",
+        "YANAN": "ENY",
+        "YANCHENG": "YNZ",
+        "YANGZHOU": "YTY",
+        "YANJI": "YNJ",
+        "YANTAI": "YNT",
+        "YBP": "YBP",
+        "YCU": "YCU",
+        "YIBIN": "YBP",
+        "YIC": "YIC",
+        "YICHANG": "YIH",
+        "YIE": "YIE",
+        "YIH": "YIH",
+        "YIN": "YIN",
+        "YINCHUAN": "INC",
+        "YINGKOU": "YKH",
+        "YINING": "YIN",
+        "YININGCITY": "YIN",
+        "YIW": "YIW",
+        "YIWU": "YIW",
+        "YKH": "YKH",
+        "YLX": "YLX",
+        "YNJ": "YNJ",
+        "YNT": "YNT",
+        "YNZ": "YNZ",
+        "YONGZHOU": "LLF",
+        "YSQ": "YSQ",
+        "YTW": "YTW",
+        "YTY": "YTY",
+        "YUEYANG": "YYA",
+        "YUNCHENG": "YCU",
+        "YUS": "YUS",
+        "YUSHU": "YUS",
+        "YUTIAN": "YTW",
+        "YYA": "YYA",
+        "YZY": "YZY",
+        "ZAT": "ZAT",
+        "ZFL": "ZFL",
+        "ZHA": "ZHA",
+        "ZHALANTUN": "NZL",
+        "ZHANGJIAJIE": "DYG",
+        "ZHANGJIAKOU": "ZQZ",
+        "ZHANGYE": "YZY",
+        "ZHANJIANG": "ZHA",
+        "ZHAOSU": "ZFL",
+        "ZHAOTONG": "ZAT",
+        "ZHENGZHOU": "CGO",
+        "ZHONGWEI": "ZHY",
+        "ZHOUSHAN": "HSN",
+        "ZHUHAI": "ZUH",
+        "ZHY": "ZHY",
+        "ZQZ": "ZQZ",
+        "ZUH": "ZUH",
+        "ZUNYI": "ZYI",
+        "ZUNYIXINZHOU": "ZYI",
+        "ZYI": "ZYI",
+        "万峰林": "ACX",
+        "万峰林机场": "ACX",
+        "万州": "WXN",
+        "万州五桥": "WXN",
+        "万州五桥机场": "WXN",
+        "万方": "YTW",
+        "万方机场": "YTW",
+        "三义": "LJG",
+        "三义国际机场": "LJG",
+        "三义机场": "LJG",
+        "三亚": "SYX",
+        "三亚凤凰": "SYX",
+        "三亚凤凰国际机场": "SYX",
+        "三亚凤凰机场": "SYX",
+        "三女河": "TVS",
+        "三女河机场": "TVS",
+        "三家子": "NDG",
+        "三家子机场": "NDG",
+        "三峡": "YIH",
+        "三峡国际机场": "YIH",
+        "三峡机场": "YIH",
+        "三明": "SQJ",
+        "三明沙县": "SQJ",
+        "三明沙县机场": "SQJ",
+        "三沙": "XYI",
+        "三沙永兴": "XYI",
+        "三沙永兴机场": "XYI",
+        "三清山": "SQD",
+        "三清山机场": "SQD",
+        "三源浦": "TNH",
+        "三源浦机场": "TNH",
+        "三荷": "YYA",
+        "三荷机场": "YYA",
+        "上海": "SHA",
+        "上海浦东": "SHA",
+        "上海浦东国际机场": "SHA",
+        "上海浦东机场": "SHA",
+        "上海虹桥": "SHA",
+        "上海虹桥国际机场": "SHA",
+        "上海虹桥机场": "SHA",
+        "上饶": "SQD",
+        "上饶三清山": "SQD",
+        "上饶三清山机场": "SQD",
+        "且末": "IQM",
+        "且末玉都": "IQM",
+        "且末玉都机场": "IQM",
+        "东宁": "HSF",
+        "东宁机场": "HSF",
+        "东极": "FYJ",
+        "东极机场": "FYJ",
+        "东河": "BAV",
+        "东河国际机场": "BAV",
+        "东河机场": "BAV",
+        "东营": "DOY",
+        "东营胜利": "DOY",
+        "东营胜利机场": "DOY",
+        "两江": "KWL",
+        "两江国际机场": "KWL",
+        "两江机场": "KWL",
+        "中卫": "ZHY",
+        "中卫沙坡头": "ZHY",
+        "中卫沙坡头机场": "ZHY",
+        "中川": "LHW",
+        "中川国际机场": "LHW",
+        "中川机场": "LHW",
+        "临汾": "LFQ",
+        "临汾尧都": "LFQ",
+        "临汾尧都机场": "LFQ",
+        "临沂": "LYI",
+        "临沂启阳": "LYI",
+        "临沂启阳国际机场": "LYI",
+        "临沂启阳机场": "LYI",
+        "临沧": "LNJ",
+        "临沧博尚": "LNJ",
+        "临沧博尚机场": "LNJ",
+        "丹东": "DDG",
+        "丹东浪头": "DDG",
+        "丹东浪头机场": "DDG",
+        "丹霞": "HSC",
+        "丹霞机场": "HSC",
+        "丽水": "LIJ",
+        "丽水(中国)": "LIJ",
+        "丽水机场": "LIJ",
+        "丽江": "LJG",
+        "丽江三义": "LJG",
+        "丽江三义国际机场": "LJG",
+        "丽江三义机场": "LJG",
+        "义乌": "YIW",
+        "义乌机场": "YIW",
+        "义勒力特": "HLH",
+        "义勒力特机场": "HLH",
+        "乌兰察布": "UCB",
+        "乌兰察布集宁": "UCB",
+        "乌兰察布集宁机场": "UCB",
+        "乌兰浩特": "HLH",
+        "乌兰浩特义勒力特": "HLH",
+        "乌兰浩特义勒力特机场": "HLH",
+        "乌拉特中旗": "WZQ",
+        "乌拉特中旗机场": "WZQ",
+        "乌海": "WUA",
+        "乌海机场": "WUA",
+        "乌鲁木齐": "URC",
+        "乌鲁木齐天山": "URC",
+        "乌鲁木齐天山国际机场": "URC",
+        "乌鲁木齐天山机场": "URC",
+        "九华山": "JUH",
+        "九华山机场": "JUH",
+        "九寨沟": "JZH",
+        "九寨黄龙": "JZH",
+        "九寨黄龙机场": "JZH",
+        "九江": "JIU",
+        "九江庐山": "JIU",
+        "九江庐山机场": "JIU",
+        "二连浩特": "ERL",
+        "二连浩特赛乌素": "ERL",
+        "二连浩特赛乌素国际机场": "ERL",
+        "二连浩特赛乌素机场": "ERL",
+        "于田": "YTW",
+        "于田万方": "YTW",
+        "于田万方机场": "YTW",
+        "云冈": "DAT",
+        "云冈国际机场": "DAT",
+        "云冈机场": "DAT",
+        "云瑞": "BSD",
+        "云瑞机场": "BSD",
+        "云龙": "LZO",
+        "云龙机场": "LZO",
+        "五台山": "WUT",
+        "五台山机场": "WUT",
+        "五大连池": "DTU",
+        "五大连池德都": "DTU",
+        "五大连池德都机场": "DTU",
+        "五桥": "WXN",
+        "五桥机场": "WXN",
+        "五粮液": "YBP",
+        "五粮液机场": "YBP",
+        "井冈山": "JGS",
+        "交河": "TLQ",
+        "交河机场": "TLQ",
+        "亳州": "BZJ",
+        "亳州机场": "BZJ",
+        "伊宁": "YIN",
+        "伊尔施": "YIE",
+        "伊尔施机场": "YIE",
+        "伊州": "HMI",
+        "伊州机场": "HMI",
+        "伊春": "LDS",
+        "伊春林都": "LDS",
+        "伊春林都机场": "LDS",
+        "伊犁伊宁": "YIN",
+        "伊犁伊宁国际机场": "YIN",
+        "伊犁伊宁机场": "YIN",
+        "伊金霍洛": "DSN",
+        "伊金霍洛国际机场": "DSN",
+        "伊金霍洛机场": "DSN",
+        "佛山": "FUO",
+        "佛山沙堤": "FUO",
+        "佛山沙堤机场": "FUO",
+        "佤山": "CWJ",
+        "佤山机场": "CWJ",
+        "佳木斯": "JMU",
+        "佳木斯松江": "JMU",
+        "佳木斯松江国际机场": "JMU",
+        "佳木斯松江机场": "JMU",
+        "保安营": "PZI",
+        "保安营机场": "PZI",
+        "保山": "BSD",
+        "保山云瑞": "BSD",
+        "保山云瑞机场": "BSD",
+        "信阳": "XAI",
+        "信阳明港": "XAI",
+        "信阳明港机场": "XAI",
+        "克拉玛依": "KRY",
+        "克拉玛依古海": "KRY",
+        "克拉玛依古海机场": "KRY",
+        "六盘山": "GYU",
+        "六盘山机场": "GYU",
+        "六盘水": "LPF",
+        "六盘水月照": "LPF",
+        "六盘水月照机场": "LPF",
+        "兰州": "LHW",
+        "兰州中川": "LHW",
+        "兰州中川国际机场": "LHW",
+        "兰州中川机场": "LHW",
+        "兰旗": "YKH",
+        "兰旗机场": "YKH",
+        "兴东": "NTG",
+        "兴东国际机场": "NTG",
+        "兴东机场": "NTG",
+        "兴义": "ACX",
+        "兴义万峰林": "ACX",
+        "兴义万峰林机场": "ACX",
+        "兴凯湖": "JXA",
+        "兴凯湖机场": "JXA",
+        "凤仪": "DLU",
+        "凤仪机场": "DLU",
+        "凤凰国际机场": "SYX",
+        "凯里": "KJH",
+        "凯里黄平": "KJH",
+        "凯里黄平机场": "KJH",
+        "刘集": "XFN",
+        "刘集机场": "XFN",
+        "加格达奇": "JGD",
+        "包头": "BAV",
+        "包头东河": "BAV",
+        "包头东河国际机场": "BAV",
+        "包头东河机场": "BAV",
+        "北京": "BJS",
+        "北京大兴": "BJS",
+        "北京大兴国际机场": "BJS",
+        "北京大兴机场": "BJS",
+        "北京首都": "BJS",
+        "北京首都国际机场": "BJS",
+        "北京首都机场": "BJS",
+        "北戴河": "BPE",
+        "北戴河机场": "BPE",
+        "北海": "BHY",
+        "北海(中国)": "BHY",
+        "北海福成": "BHY",
+        "北海福成机场": "BHY",
+        "北湖": "HCZ",
+        "北湖机场": "HCZ",
+        "北郊": "LYA",
+        "北郊机场": "LYA",
+        "十堰": "WDS",
+        "十堰武当山": "WDS",
+        "十堰武当山机场": "WDS",
+        "千泉": "TCG",
+        "千泉机场": "TCG",
+        "南京": "NKG",
+        "南京禄口": "NKG",
+        "南京禄口国际机场": "NKG",
+        "南京禄口机场": "NKG",
+        "南充": "NAO",
+        "南充高坪": "NAO",
+        "南充高坪机场": "NAO",
+        "南宁": "NNG",
+        "南宁吴圩": "NNG",
+        "南宁吴圩国际机场": "NNG",
+        "南宁吴圩机场": "NNG",
+        "南岳": "HNY",
+        "南岳机场": "HNY",
+        "南昌": "KHN",
+        "南昌昌北": "KHN",
+        "南昌昌北国际机场": "KHN",
+        "南昌昌北机场": "KHN",
+        "南泥湾": "ENY",
+        "南泥湾机场": "ENY",
+        "南洋": "YNZ",
+        "南洋国际机场": "YNZ",
+        "南洋机场": "YNZ",
+        "南湖": "JXS",
+        "南湖机场": "JXS",
+        "南通": "NTG",
+        "南通兴东": "NTG",
+        "南通兴东国际机场": "NTG",
+        "南通兴东机场": "NTG",
+        "南郊": "MIG",
+        "南郊机场": "MIG",
+        "南阳": "NNY",
+        "南阳姜营": "NNY",
+        "南阳姜营机场": "NNY",
+        "博乐": "BPL",
+        "博乐阿拉山口": "BPL",
+        "博乐阿拉山口机场": "BPL",
+        "博尚": "LNJ",
+        "博尚机场": "LNJ",
+        "博鳌": "BAR",
+        "博鳌国际机场": "BAR",
+        "博鳌机场": "BAR",
+        "厦门": "XMN",
+        "厦门高崎": "XMN",
+        "厦门高崎国际机场": "XMN",
+        "厦门高崎机场": "XMN",
+        "双流": "CTU",
+        "双流国际机场": "CTU",
+        "双流机场": "CTU",
+        "古城": "LZG",
+        "古城机场": "LZG",
+        "古海": "KRY",
+        "古海机场": "KRY",
+        "古莲": "OHE",
+        "古莲机场": "OHE",
+        "可可托海": "FYN",
+        "可可托海机场": "FYN",
+        "台州": "HYN",
+        "台州路桥": "HYN",
+        "台州路桥机场": "HYN",
+        "叶尔羌": "QSZ",
+        "叶尔羌机场": "QSZ",
+        "合肥": "HFE",
+        "合肥新桥": "HFE",
+        "合肥新桥国际机场": "HFE",
+        "合肥新桥机场": "HFE",
+        "吉安井冈山": "JGS",
+        "吉安井冈山机场": "JGS",
+        "吐鲁番": "TLQ",
+        "吐鲁番交河": "TLQ",
+        "吐鲁番交河机场": "TLQ",
+        "吕梁": "LLV",
+        "吕梁大武": "LLV",
+        "吕梁大武机场": "LLV",
+        "启阳": "LYI",
+        "启阳国际机场": "LYI",
+        "启阳机场": "LYI",
+        "吴圩": "NNG",
+        "吴圩国际机场": "NNG",
+        "吴圩机场": "NNG",
+        "吴川": "ZHA",
+        "吴川国际机场": "ZHA",
+        "吴川机场": "ZHA",
+        "周水子": "DLC",
+        "周水子国际机场": "DLC",
+        "周水子机场": "DLC",
+        "呼伦贝尔海拉尔": "HLD",
+        "呼伦贝尔海拉尔国际机场": "HLD",
+        "呼伦贝尔海拉尔机场": "HLD",
+        "呼和浩特": "HET",
+        "呼和浩特白塔": "HET",
+        "呼和浩特白塔国际机场": "HET",
+        "呼和浩特白塔机场": "HET",
+        "和平": "RKZ",
+        "和平机场": "RKZ",
+        "和田": "HTN",
+        "和田昆冈": "HTN",
+        "和田昆冈机场": "HTN",
+        "和静": "HJB",
+        "和静巴音布鲁克": "HJB",
+        "和静巴音布鲁克机场": "HJB",
+        "咸阳": "SIA",
+        "咸阳国际机场": "SIA",
+        "咸阳机场": "SIA",
+        "哈密": "HMI",
+        "哈密伊州": "HMI",
+        "哈密伊州机场": "HMI",
+        "哈尔滨": "HRB",
+        "哈尔滨太平": "HRB",
+        "哈尔滨太平国际机场": "HRB",
+        "哈尔滨太平机场": "HRB",
+        "唐山": "TVS",
+        "唐山三女河": "TVS",
+        "唐山三女河机场": "TVS",
+        "唐王城": "TWC",
+        "唐王城机场": "TWC",
+        "喀什": "KHG",
+        "喀什徕宁": "KHG",
+        "喀什徕宁国际机场": "KHG",
+        "喀什徕宁机场": "KHG",
+        "喀纳斯": "KJI",
+        "喀纳斯机场": "KJI",
+        "嘉兴": "JXS",
+        "嘉兴南湖": "JXS",
+        "嘉兴南湖机场": "JXS",
+        "嘉峪关": "JGN",
+        "嘉峪关酒泉": "JGN",
+        "嘉峪关酒泉机场": "JGN",
+        "嘎洒": "JHG",
+        "嘎洒国际机场": "JHG",
+        "嘎洒机场": "JHG",
+        "固原": "GYU",
+        "固原六盘山": "GYU",
+        "固原六盘山机场": "GYU",
+        "图木舒克": "TWC",
+        "图木舒克唐王城": "TWC",
+        "图木舒克唐王城机场": "TWC",
+        "城固": "HZG",
+        "城固机场": "HZG",
+        "塔什库尔干": "HQL",
+        "塔什库尔干红其拉甫": "HQL",
+        "塔什库尔干红其拉甫机场": "HQL",
+        "塔城": "TCG",
+        "塔城千泉": "TCG",
+        "塔城千泉机场": "TCG",
+        "塔里木": "ACF",
+        "塔里木机场": "ACF",
+        "夏河": "GXH",
+        "大兴": "BJS",
+        "大兴国际机场": "BJS",
+        "大兴安岭鄂伦春": "JGD",
+        "大兴安岭鄂伦春机场": "JGD",
+        "大兴机场": "BJS",
+        "大同": "DAT",
+        "大同云冈": "DAT",
+        "大同云冈国际机场": "DAT",
+        "大同云冈机场": "DAT",
+        "大安": "JNG",
+        "大安机场": "JNG",
+        "大庆": "DQA",
+        "大庆萨尔图": "DQA",
+        "大庆萨尔图机场": "DQA",
+        "大武": "LLV",
+        "大武机场": "LLV",
+        "大水泊": "WEH",
+        "大水泊国际机场": "WEH",
+        "大水泊机场": "WEH",
+        "大河": "DHH",
+        "大河机场": "DHH",
+        "大理": "DLU",
+        "大理凤仪": "DLU",
+        "大理凤仪机场": "DLU",
+        "大连": "DLC",
+        "大连周水子": "DLC",
+        "大连周水子国际机场": "DLC",
+        "大连周水子机场": "DLC",
+        "天吉泰": "RLK",
+        "天吉泰机场": "RLK",
+        "天山": "URC",
+        "天山国际机场": "URC",
+        "天山机场": "URC",
+        "天府": "CTU",
+        "天府国际机场": "CTU",
+        "天府机场": "CTU",
+        "天柱山": "AQG",
+        "天柱山机场": "AQG",
+        "天水": "THQ",
+        "天水麦积山": "THQ",
+        "天水麦积山机场": "THQ",
+        "天河": "WUH",
+        "天河国际机场": "WUH",
+        "天河机场": "WUH",
+        "天津": "TSN",
+        "天津滨海": "TSN",
+        "天津滨海国际机场": "TSN",
+        "天津滨海机场": "TSN",
+        "天马": "ZFL",
+        "天马机场": "ZFL",
+        "太原": "TYN",
+        "太原(中国)": "TYN",
+        "太原武宿": "TYN",
+        "太原武宿国际机场": "TYN",
+        "太原武宿机场": "TYN",
+        "太平": "HRB",
+        "太平国际机场": "HRB",
+        "太平机场": "HRB",
+        "奇台": "JBK",
+        "奇台江布拉克": "JBK",
+        "奇台江布拉克机场": "JBK",
+        "奔牛": "CZX",
+        "奔牛国际机场": "CZX",
+        "奔牛机场": "CZX",
+        "姜营": "NNY",
+        "姜营机场": "NNY",
+        "威海": "WEH",
+        "威海大水泊": "WEH",
+        "威海大水泊国际机场": "WEH",
+        "威海大水泊机场": "WEH",
+        "宁波": "NGB",
+        "宁波栎社": "NGB",
+        "宁波栎社国际机场": "NGB",
+        "宁波栎社机场": "NGB",
+        "宁蒗": "NLH",
+        "宁蒗泸沽湖": "NLH",
+        "宁蒗泸沽湖机场": "NLH",
+        "宁远": "ZQZ",
+        "宁远机场": "ZQZ",
+        "安庆": "AQG",
+        "安庆天柱山": "AQG",
+        "安庆天柱山机场": "AQG",
+        "安康": "AKA",
+        "安康富强": "AKA",
+        "安康富强机场": "AKA",
+        "安阳": "AYN",
+        "安阳红旗渠": "AYN",
+        "安阳红旗渠机场": "AYN",
+        "安顺": "AVA",
+        "安顺黄果树": "AVA",
+        "安顺黄果树机场": "AVA",
+        "定日": "RKZ",
+        "定日机场": "RKZ",
+        "宜宾": "YBP",
+        "宜宾五粮液": "YBP",
+        "宜宾五粮液机场": "YBP",
+        "宜昌": "YIH",
+        "宜昌三峡": "YIH",
+        "宜昌三峡国际机场": "YIH",
+        "宜昌三峡机场": "YIH",
+        "宜春": "YIC",
+        "宜春明月山": "YIC",
+        "宜春明月山机场": "YIC",
+        "宝安": "SZX",
+        "宝安国际机场": "SZX",
+        "宝安机场": "SZX",
+        "宣州": "WHU",
+        "宣州机场": "WHU",
+        "富强": "AKA",
+        "富强机场": "AKA",
+        "富蕴": "FYN",
+        "富蕴可可托海": "FYN",
+        "富蕴可可托海机场": "FYN",
+        "尧都": "LFQ",
+        "尧都机场": "LFQ",
+        "屯溪": "TXN",
+        "屯溪国际机场": "TXN",
+        "屯溪机场": "TXN",
+        "山南": "LGZ",
+        "山南隆子": "LGZ",
+        "山南隆子机场": "LGZ",
+        "山字河": "RIZ",
+        "山字河机场": "RIZ",
+        "岳阳": "YYA",
+        "岳阳三荷": "YYA",
+        "岳阳三荷机场": "YYA",
+        "巫山": "WSK",
+        "巴中": "BZX",
+        "巴中恩阳": "BZX",
+        "巴中恩阳机场": "BZX",
+        "巴丹吉林": "RHT",
+        "巴丹吉林机场": "RHT",
+        "巴塘": "YUS",
+        "巴塘机场": "YUS",
+        "巴彦浩特": "AXF",
+        "巴彦浩特机场": "AXF",
+        "巴彦淖尔": "RLK",
+        "巴彦淖尔天吉泰": "RLK",
+        "巴彦淖尔天吉泰机场": "RLK",
+        "巴里坤": "DHH",
+        "巴里坤大河": "DHH",
+        "巴里坤大河机场": "DHH",
+        "巴音布鲁克": "HJB",
+        "巴音布鲁克机场": "HJB",
+        "巴音郭楞轮台": "LTJ",
+        "巴音郭楞轮台机场": "LTJ",
+        "巴马": "AEB",
+        "巴马机场": "AEB",
+        "布尔津": "KJI",
+        "布尔津喀纳斯": "KJI",
+        "布尔津喀纳斯机场": "KJI",
+        "常州": "CZX",
+        "常州奔牛": "CZX",
+        "常州奔牛国际机场": "CZX",
+        "常州奔牛机场": "CZX",
+        "常德": "CGD",
+        "常德桃花源": "CGD",
+        "常德桃花源机场": "CGD",
+        "平潭": "HUZ",
+        "平潭机场": "HUZ",
+        "广元": "GYS",
+        "广元盘龙": "GYS",
+        "广元盘龙机场": "GYS",
+        "广州": "CAN",
+        "广州白云": "CAN",
+        "广州白云国际机场": "CAN",
+        "广州白云机场": "CAN",
+        "庆阳": "IQN",
+        "庆阳机场": "IQN",
+        "庐山": "JIU",
+        "庐山机场": "JIU",
+        "库尔勒": "KRL",
+        "库尔勒梨城": "KRL",
+        "库尔勒梨城机场": "KRL",
+        "库车": "KCA",
+        "库车龟兹": "KCA",
+        "库车龟兹机场": "KCA",
+        "康定": "KGT",
+        "延吉": "YNJ",
+        "延吉朝阳川": "YNJ",
+        "延吉朝阳川国际机场": "YNJ",
+        "延吉朝阳川机场": "YNJ",
+        "延安": "ENY",
+        "延安南泥湾": "ENY",
+        "延安南泥湾机场": "ENY",
+        "建三江": "JSJ",
+        "建三江湿地": "JSJ",
+        "建三江湿地机场": "JSJ",
+        "张家口": "ZQZ",
+        "张家口宁远": "ZQZ",
+        "张家口宁远机场": "ZQZ",
+        "张家界": "DYG",
+        "张家界荷花": "DYG",
+        "张家界荷花国际机场": "DYG",
+        "张家界荷花机场": "DYG",
+        "张掖": "YZY",
+        "张掖甘州": "YZY",
+        "张掖甘州机场": "YZY",
+        "徐州": "XUZ",
+        "徐州观音": "XUZ",
+        "徐州观音国际机场": "XUZ",
+        "徐州观音机场": "XUZ",
+        "徕宁": "KHG",
+        "徕宁国际机场": "KHG",
+        "徕宁机场": "KHG",
+        "德令哈": "HXD",
+        "德宏芒市": "LUM",
+        "德宏芒市国际机场": "LUM",
+        "德宏芒市机场": "LUM",
+        "德江": "TEN",
+        "德江机场": "TEN",
+        "德都": "DTU",
+        "德都机场": "DTU",
+        "忻州": "WUT",
+        "忻州五台山": "WUT",
+        "忻州五台山机场": "WUT",
+        "怀化": "HJJ",
+        "怀化芷江": "HJJ",
+        "怀化芷江机场": "HJJ",
+        "怀化（芷江）": "HJJ",
+        "思茅": "SYM",
+        "思茅机场": "SYM",
+        "恩施": "ENH",
+        "恩施许家坪": "ENH",
+        "恩施许家坪国际机场": "ENH",
+        "恩施许家坪机场": "ENH",
+        "恩阳": "BZX",
+        "恩阳机场": "BZX",
+        "惠州": "HUZ",
+        "惠州平潭": "HUZ",
+        "惠州平潭机场": "HUZ",
+        "成县": "LNL",
+        "成县机场": "LNL",
+        "成吉思汗": "NZL",
+        "成吉思汗机场": "NZL",
+        "成都": "CTU",
+        "成都双流": "CTU",
+        "成都双流国际机场": "CTU",
+        "成都双流机场": "CTU",
+        "成都天府": "CTU",
+        "成都天府国际机场": "CTU",
+        "成都天府机场": "CTU",
+        "扎兰屯": "NZL",
+        "扎兰屯成吉思汗": "NZL",
+        "扎兰屯成吉思汗机场": "NZL",
+        "扬州": "YTY",
+        "扬州泰州": "YTY",
+        "扬州泰州国际机场": "YTY",
+        "扬州泰州机场": "YTY",
+        "扬州（泰州）": "YTY",
+        "承德": "CDE",
+        "承德普宁": "CDE",
+        "承德普宁机场": "CDE",
+        "抚远": "FYJ",
+        "抚远东极": "FYJ",
+        "抚远东极机场": "FYJ",
+        "拉萨": "LXA",
+        "拉萨贡嘎": "LXA",
+        "拉萨贡嘎国际机场": "LXA",
+        "拉萨贡嘎机场": "LXA",
+        "揭阳": "SWA",
+        "揭阳潮汕": "SWA",
+        "揭阳潮汕国际机场": "SWA",
+        "揭阳潮汕机场": "SWA",
+        "揭阳（汕头）": "SWA",
+        "攀枝花": "PZI",
+        "攀枝花保安营": "PZI",
+        "攀枝花保安营机场": "PZI",
+        "敦煌": "DNH",
+        "敦煌莫高": "DNH",
+        "敦煌莫高国际机场": "DNH",
+        "敦煌莫高机场": "DNH",
+        "文山": "WNH",
+        "文山砚山": "WNH",
+        "文山砚山机场": "WNH",
+        "新桥": "HFE",
+        "新桥国际机场": "HFE",
+        "新桥机场": "HFE",
+        "新源": "NLT",
+        "新源那拉提": "NLT",
+        "新源那拉提机场": "NLT",
+        "新舟": "ZYI",
+        "新舟机场": "ZYI",
+        "新郑": "CGO",
+        "新郑国际机场": "CGO",
+        "新郑机场": "CGO",
+        "无锡": "WUX",
+        "无锡硕放": "WUX",
+        "无锡硕放机场": "WUX",
+        "日喀则": "RKZ",
+        "日喀则和平": "RKZ",
+        "日喀则和平机场": "RKZ",
+        "日喀则定日": "RKZ",
+        "日喀则定日机场": "RKZ",
+        "日照": "RIZ",
+        "日照山字河": "RIZ",
+        "日照山字河机场": "RIZ",
+        "昆冈": "HTN",
+        "昆冈机场": "HTN",
+        "昆明": "KMG",
+        "昆明长水": "KMG",
+        "昆明长水国际机场": "KMG",
+        "昆明长水机场": "KMG",
+        "昆莎": "NGQ",
+        "昆莎机场": "NGQ",
+        "昌北": "KHN",
+        "昌北国际机场": "KHN",
+        "昌北机场": "KHN",
+        "昌都": "BPX",
+        "昌都邦达": "BPX",
+        "昌都邦达机场": "BPX",
+        "明月山": "YIC",
+        "明月山机场": "YIC",
+        "明港": "XAI",
+        "明港机场": "XAI",
+        "昭苏": "ZFL",
+        "昭苏天马": "ZFL",
+        "昭苏天马机场": "ZFL",
+        "昭通": "ZAT",
+        "昭通机场": "ZAT",
+        "晋江": "JJN",
+        "晋江国际机场": "JJN",
+        "晋江机场": "JJN",
+        "普兰": "APJ",
+        "普宁": "CDE",
+        "普宁机场": "CDE",
+        "普洱": "SYM",
+        "普洱思茅": "SYM",
+        "普洱思茅机场": "SYM",
+        "普陀山": "HSN",
+        "普陀山国际机场": "HSN",
+        "普陀山机场": "HSN",
+        "景德镇": "JDZ",
+        "景德镇罗家": "JDZ",
+        "景德镇罗家机场": "JDZ",
+        "景迈": "JMJ",
+        "景迈机场": "JMJ",
+        "曹家堡": "XNN",
+        "曹家堡国际机场": "XNN",
+        "曹家堡机场": "XNN",
+        "月照": "LPF",
+        "月照机场": "LPF",
+        "朔州": "SZH",
+        "朔州滋润": "SZH",
+        "朔州滋润机场": "SZH",
+        "朝阳": "CHG",
+        "朝阳川": "YNJ",
+        "朝阳川国际机场": "YNJ",
+        "朝阳川机场": "YNJ",
+        "朝阳机场": "CHG",
+        "杭州": "HGH",
+        "杭州萧山": "HGH",
+        "杭州萧山国际机场": "HGH",
+        "杭州萧山机场": "HGH",
+        "松原": "YSQ",
+        "松原查干湖": "YSQ",
+        "松原查干湖机场": "YSQ",
+        "松江": "JMU",
+        "松江国际机场": "JMU",
+        "松江机场": "JMU",
+        "林芝": "LZY",
+        "林芝米林": "LZY",
+        "林芝米林机场": "LZY",
+        "林都": "LDS",
+        "林都机场": "LDS",
+        "果洛": "GMQ",
+        "果洛玛沁": "GMQ",
+        "果洛玛沁机场": "GMQ",
+        "查干湖": "YSQ",
+        "查干湖机场": "YSQ",
+        "柳州": "LZH",
+        "柳州白莲": "LZH",
+        "柳州白莲机场": "LZH",
+        "栎社": "NGB",
+        "栎社国际机场": "NGB",
+        "栎社机场": "NGB",
+        "格尔木": "GOQ",
+        "格尔木机场": "GOQ",
+        "格萨尔": "GZG",
+        "格萨尔机场": "GZG",
+        "桂林": "KWL",
+        "桂林两江": "KWL",
+        "桂林两江国际机场": "KWL",
+        "桂林两江机场": "KWL",
+        "桃仙": "SHE",
+        "桃仙国际机场": "SHE",
+        "桃仙机场": "SHE",
+        "桃来": "EJN",
+        "桃来机场": "EJN",
+        "桃花源": "CGD",
+        "桃花源机场": "CGD",
+        "梅县": "MXZ",
+        "梅县机场": "MXZ",
+        "梅州": "MXZ",
+        "梅州梅县": "MXZ",
+        "梅州梅县机场": "MXZ",
+        "梧州": "WUZ",
+        "梧州西江": "WUZ",
+        "梧州西江机场": "WUZ",
+        "梨城": "KRL",
+        "梨城机场": "KRL",
+        "楼兰": "RQA",
+        "楼兰机场": "RQA",
+        "榆林": "UYN",
+        "榆林榆阳": "UYN",
+        "榆林榆阳机场": "UYN",
+        "榆阳": "UYN",
+        "榆阳机场": "UYN",
+        "正定": "SJW",
+        "正定国际机场": "SJW",
+        "正定机场": "SJW",
+        "武冈": "WGN",
+        "武冈机场": "WGN",
+        "武夷山": "WUS",
+        "武夷山机场": "WUS",
+        "武宿": "TYN",
+        "武宿国际机场": "TYN",
+        "武宿机场": "TYN",
+        "武当山": "WDS",
+        "武当山机场": "WDS",
+        "武汉": "WUH",
+        "武汉天河": "WUH",
+        "武汉天河国际机场": "WUH",
+        "武汉天河机场": "WUH",
+        "武陵山": "JIQ",
+        "武陵山机场": "JIQ",
+        "武隆": "CQW",
+        "毕节": "BFJ",
+        "毕节飞雄": "BFJ",
+        "毕节飞雄机场": "BFJ",
+        "永兴": "XYI",
+        "永兴机场": "XYI",
+        "永州": "LLF",
+        "永州零陵": "LLF",
+        "永州零陵机场": "LLF",
+        "汉中": "HZG",
+        "汉中城固": "HZG",
+        "汉中城固机场": "HZG",
+        "江北": "CKG",
+        "江北国际机场": "CKG",
+        "江北机场": "CKG",
+        "江布拉克": "JBK",
+        "江布拉克机场": "JBK",
+        "池州": "JUH",
+        "池州九华山": "JUH",
+        "池州九华山机场": "JUH",
+        "沈阳": "SHE",
+        "沈阳桃仙": "SHE",
+        "沈阳桃仙国际机场": "SHE",
+        "沈阳桃仙机场": "SHE",
+        "沙县": "SQJ",
+        "沙县机场": "SQJ",
+        "沙坡头": "ZHY",
+        "沙坡头机场": "ZHY",
+        "沙堤": "FUO",
+        "沙堤机场": "FUO",
+        "沙市": "SHS",
+        "沙市机场": "SHS",
+        "沧源": "CWJ",
+        "沧源佤山": "CWJ",
+        "沧源佤山机场": "CWJ",
+        "河东": "INC",
+        "河东国际机场": "INC",
+        "河东机场": "INC",
+        "河池": "HCJ",
+        "河池金城江": "HCJ",
+        "河池金城江机场": "HCJ",
+        "泉州": "JJN",
+        "泉州晋江": "JJN",
+        "泉州晋江国际机场": "JJN",
+        "泉州晋江机场": "JJN",
+        "泉州（晋江）": "JJN",
+        "泉州（石狮）": "JJN",
+        "泰州": "YTY",
+        "泰州国际机场": "YTY",
+        "泰州机场": "YTY",
+        "泸州": "LZO",
+        "泸州云龙": "LZO",
+        "泸州云龙机场": "LZO",
+        "泸沽湖": "NLH",
+        "泸沽湖机场": "NLH",
+        "洛阳": "LYA",
+        "洛阳北郊": "LYA",
+        "洛阳北郊机场": "LYA",
+        "济南": "TNA",
+        "济南遥墙": "TNA",
+        "济南遥墙国际机场": "TNA",
+        "济南遥墙机场": "TNA",
+        "济宁": "JNG",
+        "济宁大安": "JNG",
+        "济宁大安机场": "JNG",
+        "浦东": "SHA",
+        "浦东国际机场": "SHA",
+        "浦东机场": "SHA",
+        "浪头": "DDG",
+        "浪头机场": "DDG",
+        "海北祁连": "HBQ",
+        "海北祁连机场": "HBQ",
+        "海口": "HAK",
+        "海口美兰": "HAK",
+        "海口美兰国际机场": "HAK",
+        "海口美兰机场": "HAK",
+        "海拉尔": "HLD",
+        "海浪": "MDG",
+        "海浪国际机场": "MDG",
+        "海浪机场": "MDG",
+        "海西德令哈": "HXD",
+        "海西德令哈机场": "HXD",
+        "海西茫崖": "HTT",
+        "海西茫崖机场": "HTT",
+        "涟水": "HIA",
+        "涟水国际机场": "HIA",
+        "涟水机场": "HIA",
+        "淮安": "HIA",
+        "淮安涟水": "HIA",
+        "淮安涟水国际机场": "HIA",
+        "淮安涟水机场": "HIA",
+        "深圳": "SZX",
+        "深圳宝安": "SZX",
+        "深圳宝安国际机场": "SZX",
+        "深圳宝安机场": "SZX",
+        "温州": "WNZ",
+        "温州龙湾": "WNZ",
+        "温州龙湾国际机场": "WNZ",
+        "温州龙湾机场": "WNZ",
+        "湘西土家族苗族自治州": "DXJ",
+        "湘西边城": "DXJ",
+        "湘西边城机场": "DXJ",
+        "湛江": "ZHA",
+        "湛江吴川": "ZHA",
+        "湛江吴川国际机场": "ZHA",
+        "湛江吴川机场": "ZHA",
+        "湿地": "JSJ",
+        "湿地机场": "JSJ",
+        "滋润": "SZH",
+        "滋润机场": "SZH",
+        "滕湖": "BFU",
+        "滕湖机场": "BFU",
+        "满洲里": "NZH",
+        "满洲里西郊": "NZH",
+        "满洲里西郊机场": "NZH",
+        "滨海": "TSN",
+        "滨海国际机场": "TSN",
+        "滨海机场": "TSN",
+        "漠河": "OHE",
+        "漠河古莲": "OHE",
+        "漠河古莲机场": "OHE",
+        "潍坊": "WEF",
+        "潍坊机场": "WEF",
+        "潮汕": "SWA",
+        "潮汕国际机场": "SWA",
+        "潮汕机场": "SWA",
+        "澜沧": "JMJ",
+        "澜沧景迈": "JMJ",
+        "澜沧景迈机场": "JMJ",
+        "烟台": "YNT",
+        "烟台蓬莱": "YNT",
+        "烟台蓬莱国际机场": "YNT",
+        "烟台蓬莱机场": "YNT",
+        "牡丹": "HZA",
+        "牡丹机场": "HZA",
+        "牡丹江": "MDG",
+        "牡丹江海浪": "MDG",
+        "牡丹江海浪国际机场": "MDG",
+        "牡丹江海浪机场": "MDG",
+        "玉林": "YLX",
+        "玉林福绵": "YLX",
+        "玉林福绵机场": "YLX",
+        "玉树": "YUS",
+        "玉树巴塘": "YUS",
+        "玉树巴塘机场": "YUS",
+        "玉都": "IQM",
+        "玉都机场": "IQM",
+        "玉龙": "CIF",
+        "玉龙机场": "CIF",
+        "王村": "CIH",
+        "王村机场": "CIH",
+        "玛沁": "GMQ",
+        "玛沁机场": "GMQ",
+        "珠海": "ZUH",
+        "珠海金湾": "ZUH",
+        "珠海金湾机场": "ZUH",
+        "琼海": "BAR",
+        "琼海博鳌": "BAR",
+        "琼海博鳌国际机场": "BAR",
+        "琼海博鳌机场": "BAR",
+        "瑞金": "JRJ",
+        "瑷珲": "HEK",
+        "瑷珲机场": "HEK",
+        "甘南夏河": "GXH",
+        "甘南夏河机场": "GXH",
+        "甘孜": "GZG",
+        "甘孜康定": "KGT",
+        "甘孜康定机场": "KGT",
+        "甘孜格萨尔": "GZG",
+        "甘孜格萨尔机场": "GZG",
+        "甘州": "YZY",
+        "甘州机场": "YZY",
+        "白云": "CAN",
+        "白云国际机场": "CAN",
+        "白云机场": "CAN",
+        "白城": "DBC",
+        "白城长安": "DBC",
+        "白城长安机场": "DBC",
+        "白塔": "HET",
+        "白塔国际机场": "HET",
+        "白塔机场": "HET",
+        "白山": "NBS",
+        "白山(中国)": "NBS",
+        "白山长白山": "NBS",
+        "白山长白山机场": "NBS",
+        "白莲": "LZH",
+        "白莲机场": "LZH",
+        "百色": "AEB",
+        "百色巴马": "AEB",
+        "百色巴马机场": "AEB",
+        "盐城": "YNZ",
+        "盐城南洋": "YNZ",
+        "盐城南洋国际机场": "YNZ",
+        "盐城南洋机场": "YNZ",
+        "盐湖": "YCU",
+        "盐湖国际机场": "YCU",
+        "盐湖机场": "YCU",
+        "盘龙": "GYS",
+        "盘龙机场": "GYS",
+        "石家庄": "SJW",
+        "石家庄正定": "SJW",
+        "石家庄正定国际机场": "SJW",
+        "石家庄正定机场": "SJW",
+        "石河子": "SHF",
+        "石河子花园": "SHF",
+        "石河子花园机场": "SHF",
+        "砚山": "WNH",
+        "砚山机场": "WNH",
+        "硕放": "WUX",
+        "硕放机场": "WUX",
+        "祁连": "HBQ",
+        "神农架": "HPG",
+        "神农架红坪": "HPG",
+        "神农架红坪机场": "HPG",
+        "禄口": "NKG",
+        "禄口国际机场": "NKG",
+        "禄口机场": "NKG",
+        "福州": "FOC",
+        "福州长乐": "FOC",
+        "福州长乐国际机场": "FOC",
+        "福州长乐机场": "FOC",
+        "福成": "BHY",
+        "福成机场": "BHY",
+        "福绵": "YLX",
+        "福绵机场": "YLX",
+        "秦皇岛": "BPE",
+        "秦皇岛北戴河": "BPE",
+        "秦皇岛北戴河机场": "BPE",
+        "稻城亚丁": "DCY",
+        "稻城亚丁机场": "DCY",
+        "稻城县": "DCY",
+        "米林": "LZY",
+        "米林机场": "LZY",
+        "红其拉甫": "HQL",
+        "红其拉甫机场": "HQL",
+        "红原": "AHJ",
+        "红坪": "HPG",
+        "红坪机场": "HPG",
+        "红旗坡": "AKU",
+        "红旗坡机场": "AKU",
+        "红旗渠": "AYN",
+        "红旗渠机场": "AYN",
+        "绥芬河": "HSF",
+        "绥芬河东宁": "HSF",
+        "绥芬河东宁机场": "HSF",
+        "绵阳": "MIG",
+        "绵阳南郊": "MIG",
+        "绵阳南郊机场": "MIG",
+        "罗家": "JDZ",
+        "罗家机场": "JDZ",
+        "美兰": "HAK",
+        "美兰国际机场": "HAK",
+        "美兰机场": "HAK",
+        "胜利": "DOY",
+        "胜利机场": "DOY",
+        "胶东": "TAO",
+        "胶东国际机场": "TAO",
+        "胶东机场": "TAO",
+        "腾冲": "TCZ",
+        "腾冲驼峰": "TCZ",
+        "腾冲驼峰机场": "TCZ",
+        "腾鳌": "AOG",
+        "腾鳌机场": "AOG",
+        "舟山": "HSN",
+        "舟山普陀山": "HSN",
+        "舟山普陀山国际机场": "HSN",
+        "舟山普陀山机场": "HSN",
+        "芒市": "LUM",
+        "芜湖": "WHU",
+        "芜湖宣州": "WHU",
+        "芜湖宣州机场": "WHU",
+        "花园": "SHF",
+        "花园机场": "SHF",
+        "花果山": "LYG",
+        "花果山国际机场": "LYG",
+        "花果山机场": "LYG",
+        "花湖": "EHU",
+        "花湖国际机场": "EHU",
+        "花湖机场": "EHU",
+        "芷江": "HJJ",
+        "芷江机场": "HJJ",
+        "若羌": "RQA",
+        "若羌楼兰": "RQA",
+        "若羌楼兰机场": "RQA",
+        "茅台": "WMT",
+        "茫崖": "HTT",
+        "荆州": "SHS",
+        "荆州沙市": "SHS",
+        "荆州沙市机场": "SHS",
+        "荔波": "LLB",
+        "荷花": "DYG",
+        "荷花国际机场": "DYG",
+        "荷花机场": "DYG",
+        "莎车": "QSZ",
+        "莎车叶尔羌": "QSZ",
+        "莎车叶尔羌机场": "QSZ",
+        "莫高": "DNH",
+        "莫高国际机场": "DNH",
+        "莫高机场": "DNH",
+        "菏泽": "HZA",
+        "菏泽牡丹": "HZA",
+        "菏泽牡丹机场": "HZA",
+        "营口": "YKH",
+        "营口兰旗": "YKH",
+        "营口兰旗机场": "YKH",
+        "萧山": "HGH",
+        "萧山国际机场": "HGH",
+        "萧山机场": "HGH",
+        "萨尔图": "DQA",
+        "萨尔图机场": "DQA",
+        "蓬莱": "YNT",
+        "蓬莱国际机场": "YNT",
+        "蓬莱机场": "YNT",
+        "虹桥": "SHA",
+        "虹桥国际机场": "SHA",
+        "虹桥机场": "SHA",
+        "蚌埠": "BFU",
+        "蚌埠滕湖": "BFU",
+        "蚌埠滕湖机场": "BFU",
+        "衡阳": "HNY",
+        "衡阳南岳": "HNY",
+        "衡阳南岳机场": "HNY",
+        "衢州": "JUZ",
+        "衢州机场": "JUZ",
+        "褡裢": "XNT",
+        "褡裢机场": "XNT",
+        "襄阳": "XFN",
+        "襄阳(中国)": "XFN",
+        "襄阳刘集": "XFN",
+        "襄阳刘集机场": "XFN",
+        "西双版纳": "JHG",
+        "西双版纳嘎洒": "JHG",
+        "西双版纳嘎洒国际机场": "JHG",
+        "西双版纳嘎洒机场": "JHG",
+        "西宁": "XNN",
+        "西宁(中国)": "XNN",
+        "西宁曹家堡": "XNN",
+        "西宁曹家堡国际机场": "XNN",
+        "西宁曹家堡机场": "XNN",
+        "西安": "SIA",
+        "西安咸阳": "SIA",
+        "西安咸阳国际机场": "SIA",
+        "西安咸阳机场": "SIA",
+        "西安（咸阳）": "SIA",
+        "西昌": "XIC",
+        "西昌青山": "XIC",
+        "西昌青山机场": "XIC",
+        "西江": "WUZ",
+        "西江机场": "WUZ",
+        "西郊": "NZH",
+        "西郊机场": "NZH",
+        "观音": "XUZ",
+        "观音国际机场": "XUZ",
+        "观音机场": "XUZ",
+        "许家坪": "ENH",
+        "许家坪国际机场": "ENH",
+        "许家坪机场": "ENH",
+        "贡嘎": "LXA",
+        "贡嘎国际机场": "LXA",
+        "贡嘎机场": "LXA",
+        "贵阳": "KWE",
+        "贵阳龙洞堡": "KWE",
+        "贵阳龙洞堡国际机场": "KWE",
+        "贵阳龙洞堡机场": "KWE",
+        "赛乌素": "ERL",
+        "赛乌素国际机场": "ERL",
+        "赛乌素机场": "ERL",
+        "赣州": "KOW",
+        "赣州瑞金": "JRJ",
+        "赣州瑞金机场": "JRJ",
+        "赣州黄金": "KOW",
+        "赣州黄金机场": "KOW",
+        "赤峰": "CIF",
+        "赤峰玉龙": "CIF",
+        "赤峰玉龙机场": "CIF",
+        "路桥": "HYN",
+        "路桥机场": "HYN",
+        "轮台": "LTJ",
+        "达州": "DZH",
+        "达州(中国)": "DZH",
+        "达州金垭": "DZH",
+        "达州金垭机场": "DZH",
+        "运城": "YCU",
+        "运城盐湖": "YCU",
+        "运城盐湖国际机场": "YCU",
+        "运城盐湖机场": "YCU",
+        "连云港": "LYG",
+        "连云港花果山": "LYG",
+        "连云港花果山国际机场": "LYG",
+        "连云港花果山机场": "LYG",
+        "连城冠豸山": "LCX",
+        "连城冠豸山机场": "LCX",
+        "迪庆": "DIG",
+        "迪庆香格里拉": "DIG",
+        "迪庆香格里拉机场": "DIG",
+        "迪庆（香格里拉）": "DIG",
+        "通化": "TNH",
+        "通化三源浦": "TNH",
+        "通化三源浦机场": "TNH",
+        "通辽": "TGO",
+        "通辽机场": "TGO",
+        "遥墙": "TNA",
+        "遥墙国际机场": "TNA",
+        "遥墙机场": "TNA",
+        "遵义": "ZYI",
+        "遵义新舟": "ZYI",
+        "遵义新舟机场": "ZYI",
+        "遵义茅台": "WMT",
+        "遵义茅台机场": "WMT",
+        "邢台": "XNT",
+        "邢台褡裢": "XNT",
+        "邢台褡裢机场": "XNT",
+        "那拉提": "NLT",
+        "那拉提机场": "NLT",
+        "邦达": "BPX",
+        "邦达机场": "BPX",
+        "邯郸": "HDG",
+        "邯郸机场": "HDG",
+        "邵阳": "WGN",
+        "邵阳武冈": "WGN",
+        "邵阳武冈机场": "WGN",
+        "郑州": "CGO",
+        "郑州新郑": "CGO",
+        "郑州新郑国际机场": "CGO",
+        "郑州新郑机场": "CGO",
+        "郴州": "HCZ",
+        "郴州北湖": "HCZ",
+        "郴州北湖机场": "HCZ",
+        "鄂尔多斯": "DSN",
+        "鄂尔多斯伊金霍洛": "DSN",
+        "鄂尔多斯伊金霍洛国际机场": "DSN",
+        "鄂尔多斯伊金霍洛机场": "DSN",
+        "鄂州": "EHU",
+        "鄂州花湖": "EHU",
+        "鄂州花湖国际机场": "EHU",
+        "鄂州花湖机场": "EHU",
+        "酒泉": "JGN",
+        "酒泉机场": "JGN",
+        "重庆": "CKG",
+        "重庆仙女山": "CQW",
+        "重庆仙女山机场": "CQW",
+        "重庆巫山": "WSK",
+        "重庆巫山机场": "WSK",
+        "重庆江北": "CKG",
+        "重庆江北国际机场": "CKG",
+        "重庆江北机场": "CKG",
+        "金垭": "DZH",
+        "金垭机场": "DZH",
+        "金城江": "HCJ",
+        "金城江机场": "HCJ",
+        "金川": "JIC",
+        "金川机场": "JIC",
+        "金昌": "JIC",
+        "金昌金川": "JIC",
+        "金昌金川机场": "JIC",
+        "金湾": "ZUH",
+        "金湾机场": "ZUH",
+        "铜仁": "TEN",
+        "铜仁凤凰": "TEN",
+        "铜仁凤凰机场": "TEN",
+        "铜仁德江": "TEN",
+        "铜仁德江机场": "TEN",
+        "银川": "INC",
+        "银川河东": "INC",
+        "银川河东国际机场": "INC",
+        "银川河东机场": "INC",
+        "锡林浩特": "XIL",
+        "锡林浩特机场": "XIL",
+        "锦州": "JNZ",
+        "锦州湾": "JNZ",
+        "锦州湾机场": "JNZ",
+        "锦州锦州湾": "JNZ",
+        "锦州锦州湾机场": "JNZ",
+        "长乐": "FOC",
+        "长乐国际机场": "FOC",
+        "长乐机场": "FOC",
+        "长安": "DBC",
+        "长安机场": "DBC",
+        "长春": "CGQ",
+        "长春龙嘉": "CGQ",
+        "长春龙嘉国际机场": "CGQ",
+        "长春龙嘉机场": "CGQ",
+        "长水": "KMG",
+        "长水国际机场": "KMG",
+        "长水机场": "KMG",
+        "长沙": "CSX",
+        "长沙黄花": "CSX",
+        "长沙黄花国际机场": "CSX",
+        "长沙黄花机场": "CSX",
+        "长治": "CIH",
+        "长治王村": "CIH",
+        "长治王村机场": "CIH",
+        "长白山": "NBS",
+        "长白山机场": "NBS",
+        "阆中": "LZG",
+        "阆中古城": "LZG",
+        "阆中古城机场": "LZG",
+        "阜阳": "FUG",
+        "阜阳机场": "FUG",
+        "阿克苏": "AKU",
+        "阿克苏红旗坡": "AKU",
+        "阿克苏红旗坡机场": "AKU",
+        "阿勒泰": "AAT",
+        "阿勒泰雪都": "AAT",
+        "阿勒泰雪都机场": "AAT",
+        "阿坝红原": "AHJ",
+        "阿坝红原机场": "AHJ",
+        "阿尔山": "YIE",
+        "阿尔山伊尔施": "YIE",
+        "阿尔山伊尔施机场": "YIE",
+        "阿拉善右旗": "RHT",
+        "阿拉善右旗巴丹吉林": "RHT",
+        "阿拉善右旗巴丹吉林机场": "RHT",
+        "阿拉善左旗": "AXF",
+        "阿拉善左旗巴彦浩特": "AXF",
+        "阿拉善左旗巴彦浩特机场": "AXF",
+        "阿拉尔": "ACF",
+        "阿拉尔塔里木": "ACF",
+        "阿拉尔塔里木机场": "ACF",
+        "阿拉山口": "BPL",
+        "阿拉山口机场": "BPL",
+        "阿里": "NGQ",
+        "阿里昆莎": "NGQ",
+        "阿里昆莎机场": "NGQ",
+        "阿里普兰": "APJ",
+        "阿里普兰机场": "APJ",
+        "陇南": "LNL",
+        "陇南成县": "LNL",
+        "陇南成县机场": "LNL",
+        "隆子": "LGZ",
+        "隆子机场": "LGZ",
+        "集宁": "UCB",
+        "集宁机场": "UCB",
+        "雪都": "AAT",
+        "雪都机场": "AAT",
+        "零陵": "LLF",
+        "零陵机场": "LLF",
+        "霍林河": "HUO",
+        "霍林河机场": "HUO",
+        "霍林郭勒": "HUO",
+        "霍林郭勒霍林河": "HUO",
+        "霍林郭勒霍林河机场": "HUO",
+        "青山": "XIC",
+        "青山机场": "XIC",
+        "青岛": "TAO",
+        "青岛胶东": "TAO",
+        "青岛胶东国际机场": "TAO",
+        "青岛胶东机场": "TAO",
+        "鞍山": "AOG",
+        "鞍山腾鳌": "AOG",
+        "鞍山腾鳌机场": "AOG",
+        "韶关": "HSC",
+        "韶关丹霞": "HSC",
+        "韶关丹霞机场": "HSC",
+        "额济纳旗": "EJN",
+        "额济纳旗桃来": "EJN",
+        "额济纳旗桃来机场": "EJN",
+        "飞雄": "BFJ",
+        "飞雄机场": "BFJ",
+        "首都": "BJS",
+        "首都国际机场": "BJS",
+        "首都机场": "BJS",
+        "香格里拉": "DIG",
+        "香格里拉机场": "DIG",
+        "驼峰": "TCZ",
+        "驼峰机场": "TCZ",
+        "高坪": "NAO",
+        "高坪机场": "NAO",
+        "高崎": "XMN",
+        "高崎国际机场": "XMN",
+        "高崎机场": "XMN",
+        "鸡西": "JXA",
+        "鸡西兴凯湖": "JXA",
+        "鸡西兴凯湖机场": "JXA",
+        "麦积山": "THQ",
+        "麦积山机场": "THQ",
+        "黄山": "TXN",
+        "黄山屯溪": "TXN",
+        "黄山屯溪国际机场": "TXN",
+        "黄山屯溪机场": "TXN",
+        "黄平": "KJH",
+        "黄平机场": "KJH",
+        "黄果树": "AVA",
+        "黄果树机场": "AVA",
+        "黄花": "CSX",
+        "黄花国际机场": "CSX",
+        "黄花机场": "CSX",
+        "黄金": "KOW",
+        "黄金机场": "KOW",
+        "黎平": "HZH",
+        "黑河": "HEK",
+        "黑河瑷珲": "HEK",
+        "黑河瑷珲机场": "HEK",
+        "黔东南黎平": "HZH",
+        "黔东南黎平机场": "HZH",
+        "黔南荔波": "LLB",
+        "黔南荔波机场": "LLB",
+        "黔江": "JIQ",
+        "黔江武陵山": "JIQ",
+        "黔江武陵山机场": "JIQ",
+        "齐齐哈尔": "NDG",
+        "齐齐哈尔三家子": "NDG",
+        "齐齐哈尔三家子机场": "NDG",
+        "龙嘉": "CGQ",
+        "龙嘉国际机场": "CGQ",
+        "龙嘉机场": "CGQ",
+        "龙岩": "LCX",
+        "龙岩（连城）": "LCX",
+        "龙洞堡": "KWE",
+        "龙洞堡国际机场": "KWE",
+        "龙洞堡机场": "KWE",
+        "龙湾": "WNZ",
+        "龙湾国际机场": "WNZ",
+        "龙湾机场": "WNZ",
+        "龟兹": "KCA",
+        "龟兹机场": "KCA",
+    ]
+
+    // Source placeholders are missing evidence, not conflicting city names.
+    // They must not discard a complete, absolute city/date query during handoff.
+    private static func missingSourceValue(_ value: String) -> Bool {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty || text.range(of: #"^(?:(?:出发|到达|起飞|抵达)?(?:机场|城市|日期|时间)?(?:信息)?(?:待核实|待核对|待确认|未知|不详|未提供|未返回|暂无|待查)|[—–\-])$"#, options: .regularExpression) != nil
+    }
+
+    // Native results-list handoff carries city/date only; it does not select a quoted flight or fare.
+    private static func nativeListCityCode(_ value: String) -> String? {
+        let normalized = value.uppercased()
+            .replacingOccurrences(of: #"(?:航站楼)?\s*T\d{1,2}\s*$"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"[\s·]"#, with: "", options: .regularExpression)
+        if let name = match(#"^(.+)[（(]([A-Z]{3})[）)]$"#, in: normalized, group: 1),
+           let code = match(#"^(.+)[（(]([A-Z]{3})[）)]$"#, in: normalized, group: 2) {
+            guard let namedCity = nativeListCityAliases[name], nativeListCityAliases[code] == namedCity else { return nil }
+            return namedCity
+        }
+        return nativeListCityAliases[normalized]
+    }
+
+    static func nativeFlightListURL(for offer: CtripFlightOffer, scheme: String = "ctrippro") -> URL? {
+        guard ["ctrip", "ctrippro"].contains(scheme), offer.details.count <= 60_000, offer.query.count <= 4000,
+              flightNumbers(in: offer.title).count <= 1 else { return nil }
+        let query = offer.query
+        guard query.range(of: #"往返|多程|返程|再到|再飞|round\s*trip|return\s+flight"#, options: [.regularExpression, .caseInsensitive]) == nil,
+              offer.title.range(of: #"往返|多程|中转|联程"#, options: .regularExpression) == nil else { return nil }
+        var queryRoutes = Set<String>()
+        for pattern in [#"(?<![A-Z])([A-Z]{3})\s*[-→]\s*([A-Z]{3})(?![A-Z])"#, #"([\p{Han}]{2,12})(?:到|至|→|飞往)([\p{Han}]{2,12})"#] {
+            guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+            var searchStart = query.startIndex
+            while searchStart < query.endIndex,
+                  let result = expression.firstMatch(in: query, range: NSRange(searchStart..., in: query)) {
+                guard let range = Range(result.range, in: query), let destinationRange = Range(result.range(at: 2), in: query) else { return nil }
+                // Revisit the destination to recognize a real A→B→C chain.
+                searchStart = destinationRange.lowerBound
+                var candidate = String(query[range])
+                if candidate.hasPrefix("日"), range.lowerBound > query.startIndex,
+                   query[query.index(before: range.lowerBound)].isNumber { candidate.removeFirst() }
+                let endpoints = route(candidate)
+                let destination = endpoints.1.replacingOccurrences(of: #"(?:只查|仅查).*$"#, with: "", options: .regularExpression)
+                let from = nativeListCityCode(endpoints.0), to = nativeListCityCode(destination)
+                if let from, let to { queryRoutes.insert(from + ">" + to) }
+                else if from != nil || to != nil { return nil }
+                else if candidate.range(of: #"出发|到达|起飞|抵达|截至|返回|提供|排序|次数|耗时|报价|价格|来源|稳定"#, options: .regularExpression) == nil { return nil }
+            }
+        }
+        guard queryRoutes.count <= 1 else { return nil }
+        let rows = offer.details.components(separatedBy: .newlines).flatMap(fields)
+        let relevant = Set(["出发日期", "出发时间", "出发机场", "到达机场", "出发城市", "到达城市", "航程类型", "第一段", "第二段", "第三段", "中转行程"])
+        var values: [String: String] = [:]
+        for row in rows where relevant.contains(row.name) {
+            guard row.value.count <= 300 else { return nil }
+            if missingSourceValue(row.value) { continue }
+            if let old = values[row.name], old != row.value { return nil }
+            values[row.name] = row.value
+        }
+        guard ["第一段", "第二段", "第三段", "中转行程"].allSatisfy({ values[$0] == nil }),
+              (values["航程类型"] ?? "").range(of: #"中转|转机|联程|往返|多程"#, options: .regularExpression) == nil else { return nil }
+        func dates(in text: String) -> Set<String>? {
+            guard let expression = try? NSRegularExpression(pattern: #"(?<!\d)20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?(?!\d)"#) else { return nil }
+            var found = Set<String>()
+            for result in expression.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let range = Range(result.range, in: text), let date = sourceDate(String(text[range])) else { return nil }
+                found.insert(date)
+            }
+            return found
+        }
+        let departure = offer.leg(departure: true), arrival = offer.leg(departure: false)
+        guard let explicitDates = dates(in: [values["出发日期"] ?? "", values["出发时间"] ?? "", departure.date].joined(separator: "\n")),
+              let queryDates = dates(in: query), explicitDates.count <= 1, queryDates.count <= 1 else { return nil }
+        if let source = explicitDates.first, let requested = queryDates.first, source != requested { return nil }
+        guard let date = explicitDates.first ?? queryDates.first else { return nil }
+        func city(_ names: [String]) -> (valid: Bool, code: String?) {
+            var codes = Set<String>()
+            for name in names where !missingSourceValue(name) {
+                guard let code = nativeListCityCode(name) else { return (false, nil) }
+                codes.insert(code)
+            }
+            return (codes.count <= 1, codes.first)
+        }
+        let sourceOrigin = city([values["出发城市"] ?? "", values["出发机场"] ?? "", departure.airport == "出发机场待核对" ? "" : departure.airport])
+        let sourceDestination = city([values["到达城市"] ?? "", values["到达机场"] ?? "", arrival.airport == "到达机场待核对" ? "" : arrival.airport])
+        guard sourceOrigin.valid, sourceDestination.valid else { return nil }
+        for (name, expected) in [("出发时间", sourceOrigin.code), ("到达时间", sourceDestination.code)] {
+            if let raw = values[name], let airport = match(#"[（(]([^）)]+)[）)]\s*$"#, in: raw, group: 1),
+               let embeddedCity = nativeListCityCode(airport), let expected, embeddedCity != expected { return nil }
+        }
+        let endpoints = route(query.replacingOccurrences(of: #"\s"#, with: "", options: .regularExpression))
+        let queryOrigin = endpoints.0.isEmpty ? nil : nativeListCityCode(endpoints.0)
+        let queryDestination = endpoints.1.isEmpty ? nil : nativeListCityCode(endpoints.1)
+        guard endpoints.0.isEmpty || queryOrigin != nil, endpoints.1.isEmpty || queryDestination != nil else { return nil }
+        if let source = sourceOrigin.code, let requested = queryOrigin, source != requested { return nil }
+        if let source = sourceDestination.code, let requested = queryDestination, source != requested { return nil }
+        guard let origin = sourceOrigin.code ?? queryOrigin, let destination = sourceDestination.code ?? queryDestination,
+              origin != destination else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme; components.host = "wireless"; components.path = "/flight_inland_singlelist"
+        // Explicit c6=1 selects the verified ordinary list rather than a prior higher-cabin state.
+        components.queryItems = [URLQueryItem(name: "c1", value: "1"), URLQueryItem(name: "c2", value: origin),
+                                 URLQueryItem(name: "c3", value: destination), URLQueryItem(name: "c4", value: date.replacingOccurrences(of: "-", with: "")),
+                                 URLQueryItem(name: "c6", value: "1")]
+        return components.url
+    }
+    /// Reconstruct only the factual query description exercised in the isolated
+    /// official Android app. This carries no price, policy, account or token.
+    /// iPhone Lite landing remains a separate physical-device acceptance step.
+    static func reconstructedNativeFlightSelectionURL(for offer: CtripFlightOffer, scheme: String = "ctrippro") -> URL? {
+        guard !offer.isSchedule, ["ctrip", "ctrippro"].contains(scheme),
+              let list = nativeFlightListURL(for: offer, scheme: scheme),
+              let listItems = URLComponents(url: list, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
+        let route = Dictionary(uniqueKeysWithValues: listItems.map { ($0.name, $0.value ?? "") })
+        guard let origin = route["c2"], let destination = route["c3"], let compactDate = route["c4"] else { return nil }
+        let codes = flightNumbers(in: offer.title)
+        guard codes.count == 1, let flightNo = codes.first else { return nil }
+        let rows = offer.details.components(separatedBy: .newlines).flatMap(fields)
+        guard Set(rows.filter { $0.name == "航程类型" }.map(\.value)) == ["直飞"],
+              rows.filter({ $0.name == "航班号" }).allSatisfy({ flightNumbers(in: $0.value) == codes }) else { return nil }
+        let cabins = Set(rows.filter { $0.name == "舱位" }.map { $0.value.replacingOccurrences(of: #"\s"#, with: "", options: .regularExpression).uppercased() })
+        guard cabins.count == 1, let cabin = cabins.first,
+              cabin.range(of: #"^(?:经济舱|ECONOMY)(?:[（(](?:约)?\d+(?:\.\d+)?(?:折|%折扣)[）)])?$"#, options: .regularExpression) != nil else { return nil }
+        let departure = offer.leg(departure: true)
+        guard let date = sourceDate(departure.date), date.replacingOccurrences(of: "-", with: "") == compactDate,
+              departure.time != "待核对",
+              let clocks = try? NSRegularExpression(pattern: #"(?<!\d)(?:[01]\d|2[0-3]):[0-5]\d(?!\d)"#) else { return nil }
+        let departureFields = rows.filter { $0.name == "出发时间" }
+        guard !departureFields.isEmpty, departureFields.allSatisfy({ field in
+            let matches = clocks.matches(in: field.value, range: NSRange(field.value.startIndex..., in: field.value))
+            return matches.count == 1 && clock(field.value) == departure.time
+        }) else { return nil }
+        let description: [String: Any] = ["trip": 1, "flights": [[
+            "seg": 1, "fromCityCode": origin, "toCityCode": destination,
+            "departureDate": date + "T" + departure.time + ":00",
+            "subChannelId": 3, "flightNo": flightNo, "class": "Y"
+        ]]]
+        guard let bytes = try? JSONSerialization.data(withJSONObject: description, options: [.sortedKeys]),
+              let c9 = String(data: bytes, encoding: .utf8) else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme; components.host = "wireless"; components.path = "/flight_inland_singletransition"
+        components.queryItems = [URLQueryItem(name: "c2", value: "0"), URLQueryItem(name: "c3", value: origin),
+            URLQueryItem(name: "c4", value: destination), URLQueryItem(name: "c5", value: compactDate),
+            URLQueryItem(name: "c9", value: c9), URLQueryItem(name: "Channel", value: "3"),
+            URLQueryItem(name: "fromOpenUrl", value: "1"), URLQueryItem(name: "routeCardVersion", value: "G")]
+        return components.url
+    }
+
+    /// Preserve an actual provider-supplied native URL, after binding its returned
+    /// description to this offer's flight, city pair and date.
+    static func nativeFlightSelectionURL(for offer: CtripFlightOffer) -> URL? {
+        guard !offer.isSchedule, let url = offer.bookingURL,
+              url.absoluteString.utf8.count <= 24_000,
+              url.scheme?.lowercased() == "ctrippro", url.host?.lowercased() == "wireless",
+              url.path == "/flight_inland_singletransition", url.user == nil, url.password == nil,
+              url.port == nil, url.fragment == nil,
+              let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = parts.queryItems, Set(items.map(\.name)).count == items.count,
+              let list = nativeFlightListURL(for: offer),
+              let listItems = URLComponents(url: list, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
+        let values = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+        let route = Dictionary(uniqueKeysWithValues: listItems.map { ($0.name, $0.value ?? "") })
+        guard values["c3"] == route["c2"], values["c4"] == route["c3"], values["c5"] == route["c4"],
+              let context = values["c9"], (2...16_000).contains(context.utf8.count),
+              let bytes = context.data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
+              let flights = object["flights"] as? [[String: Any]], flights.count == 1 else { return nil }
+        // Validate the fields consumed by the ordinary single-flight request,
+        // rather than searching arbitrary provider metadata for a flight number.
+        // The independent reconstruction supplies only source-confirmed facts;
+        // provider policy/context extensions remain untouched after this binding.
+        guard let factualURL = reconstructedNativeFlightSelectionURL(for: offer),
+              let factualContext = URLComponents(url: factualURL, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "c9" })?.value,
+              let factualBytes = factualContext.data(using: .utf8),
+              let factual = (try? JSONSerialization.jsonObject(with: factualBytes)) as? [String: Any],
+              let expected = (factual["flights"] as? [[String: Any]])?.first else { return nil }
+        func integer(_ value: Any?, equals expected: Int) -> Bool {
+            // JSON booleans bridge to NSNumber too; they are not trip/segment IDs.
+            guard let number = value as? NSNumber, String(cString: number.objCType) != "c" else { return false }
+            return number.doubleValue == Double(expected)
+        }
+        let flight = flights[0]
+        guard integer(object["trip"], equals: 1), integer(flight["seg"], equals: 1),
+              integer(flight["subChannelId"], equals: 3),
+              ["flightNo", "fromCityCode", "toCityCode", "departureDate", "class"].allSatisfy({ key in
+                  guard let actual = flight[key] as? String, let required = expected[key] as? String else { return false }
+                  return actual == required
+              }) else { return nil }
+        return url
+    }
+
+    /// An exact card selection may fill missing facts using one existing
+    /// read-only provider query. Its identity comes from this dated source, not
+    /// from the time at which the supplemental request happens to run.
+    private static func nativeSelectionLookupRoute(for offer: CtripFlightOffer) -> [String: String]? {
+        guard offer.query.count <= 3000, flightNumbers(in: offer.title).count == 1,
+              let url = nativeFlightListURL(for: offer),
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
+        let rows = offer.details.components(separatedBy: .newlines).flatMap(fields)
+        let codes = flightNumbers(in: offer.title)
+        guard rows.filter({ $0.name == "航班号" && !missingSourceValue($0.value) }).allSatisfy({ flightNumbers(in: $0.value) == codes }),
+              rows.filter({ $0.name == "航程类型" && !missingSourceValue($0.value) }).allSatisfy({ $0.value == "直飞" }) else { return nil }
+        let cabins = Set(rows.filter { $0.name == "舱位" && !missingSourceValue($0.value) }.map { $0.value.replacingOccurrences(of: #"\s"#, with: "", options: .regularExpression).uppercased() })
+        guard cabins.count <= 1, cabins.allSatisfy({ $0.range(of: #"^(?:经济舱|ECONOMY)(?:[（(](?:约)?\d+(?:\.\d+)?(?:折|%折扣)[）)])?$"#, options: .regularExpression) != nil }) else { return nil }
+        let requestedCabin = queryPolicy(offer.query, at: offer.queriedAt).cabin
+        guard requestedCabin.isEmpty || requestedCabin == "经济舱" else { return nil }
+        return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+    }
+    static func nativeFlightSelectionLookupQuery(for offer: CtripFlightOffer) -> String? {
+        guard let route = nativeSelectionLookupRoute(for: offer), let code = flightNumbers(in: offer.title).first,
+              let origin = route["c2"], let destination = route["c3"], let compact = route["c4"],
+              compact.count == 8 else { return nil }
+        let date = String(compact.prefix(4)) + "-" + String(compact.dropFirst(4).prefix(2)) + "-" + String(compact.suffix(2))
+        return "仅补查已选择的同一班航班，不查询其他日期或替代航班。航班号：" + code + "；出发城市码：" + origin + "；到达城市码：" + destination + "；出发日期：" + date + "。\n原查询条件（其中相对日期以本次明确日期为准）：" + offer.query + "\n请逐项明确返回这班航班的航班号、绝对出发日期与时间、到达日期与时间、出发机场及航站楼、到达机场及航站楼、是否直飞、舱位、真实票价及税费口径；缺少的字段明确写未提供，不推断、不估算。只查询核对，不预订、不创建订单、不付款。"
+    }
+    static func refreshedNativeFlightSelection(_ text: String, for source: CtripFlightOffer, at date: Date = Date()) -> CtripFlightOffer? {
+        guard let route = nativeSelectionLookupRoute(for: source), let query = nativeFlightSelectionLookupQuery(for: source) else { return nil }
+        let codes = flightNumbers(in: source.title)
+        let matches = offers(text, query: query, at: date).filter { flightNumbers(in: $0.title) == codes }
+        guard matches.count == 1, let result = matches.first, !result.isSchedule,
+              result.preferredNativeFlightSelectionURL != nil,
+              let url = result.nativeFlightListURL,
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
+        let returnedRoute = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+        guard ["c2", "c3", "c4"].allSatisfy({ returnedRoute[$0] == route[$0] }) else { return nil }
+        let departure = result.leg(departure: true), arrival = result.leg(departure: false)
+        // A complete request is not evidence that the response actually supplied
+        // its endpoints. Both returned airport/city facts must be explicit.
+        guard nativeListCityCode(departure.airport) == route["c2"], nativeListCityCode(arrival.airport) == route["c3"] else { return nil }
+        let clock = DateFormatter(); clock.calendar = Calendar(identifier: .gregorian)
+        clock.locale = Locale(identifier: "en_US_POSIX"); clock.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        clock.dateFormat = "yyyy-MM-dd HH:mm"; clock.isLenient = false
+        guard let departureInstant = clock.date(from: departure.date + " " + departure.time), departureInstant > date else { return nil }
+        let originalDeparture = source.leg(departure: true), originalArrival = source.leg(departure: false)
+        for (original, refreshed) in [(originalDeparture, departure), (originalArrival, arrival)] {
+            if !missingSourceValue(original.airport), !original.airport.contains("待核"),
+               airportMatches(original.airport, refreshed.airport) != true,
+               airportMatches(refreshed.airport, original.airport) != true { return nil }
+            if original.time != "待核对", original.time != refreshed.time { return nil }
+            if let known = sourceDate(original.date), known != sourceDate(refreshed.date) { return nil }
+        }
+        return result
+    }
+
     static func offers(_ text: String, query: String, at date: Date = Date()) -> [CtripFlightOffer] {
         let lines = text.components(separatedBy: .newlines)
         let introduction = lines.prefix { !plain($0).hasPrefix("#") }.joined(separator: "\n")
         let conditions = introduction.components(separatedBy: .newlines).filter {
-            plain($0).range(of: #"^(?:已为[您你]?查询到|以下(?:为|是|方案基于)|查询条件\s*[:：]?|出行人数\s*[:：]|人数\s*[:：]|乘客\s*[:：])"#, options: .regularExpression) != nil
+            plain($0).range(of: #"^(?:已为[您你]?(?:查询到|查到)|以下(?:为|是|方案基于)|查询条件\s*[:：]?|出行人数\s*[:：]|人数\s*[:：]|乘客\s*[:：]|20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?[^。！？\n]{0,100}航班已查到)"#, options: .regularExpression) != nil
         }.joined(separator: "\n")
         let sourcePassengers = passengerCounts(conditions)
         let passengerText = ["成人", "儿童", "婴儿"].compactMap { type in sourcePassengers[type].map { "\($0)位" + type } }.joined(separator: "、")
@@ -1250,9 +3603,10 @@ enum CtripFlightParser {
         let sourceCabin = sourceCabins.count == 1 ? sourceCabins.first! : ""
         let routePattern = #"^以下方案基于(?:20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?\s*)?([\p{Han}]{2,12})出发([\p{Han}]{2,12})(?=[、，,\s]|$)"#
         let routeLine = conditions.components(separatedBy: .newlines).first { $0.range(of: routePattern, options: .regularExpression) != nil } ?? ""
-        let sourceOrigin = match(routePattern, in: routeLine, group: 1) ?? ""
-        let sourceDestination = match(routePattern, in: routeLine, group: 2) ?? ""
-        let sourceDirect = conditions.range(of: #"(?:均为|全部为|单程)直飞(?:经济舱|商务舱|航班|机票)"#, options: .regularExpression) != nil
+        let explicitRoute = conditions.components(separatedBy: .newlines).map(route).first { !$0.0.isEmpty && !$0.1.isEmpty }
+        let sourceOrigin = match(routePattern, in: routeLine, group: 1) ?? explicitRoute?.0 ?? ""
+        let sourceDestination = match(routePattern, in: routeLine, group: 2) ?? explicitRoute?.1 ?? ""
+        let sourceDirect = conditions.range(of: #"(?:均为|均系|全部为|单程)直飞(?=经济舱|商务舱|航班|机票|[，,。；;：:\s]|$)"#, options: .regularExpression) != nil
         let forceReference = text.contains("已自动重试一次，仍未取得报价")
         let parsed: [CtripFlightOffer] = sections(lines).enumerated().compactMap { index, section in
             var entries = entries(section, lines: lines)
@@ -1284,9 +3638,11 @@ enum CtripFlightParser {
             let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
             let linkText = entries.filter { $0.name == "预订链接" }.map(\.value).joined(separator: "\n")
             let links = detector?.matches(in: linkText, range: NSRange(linkText.startIndex..., in: linkText)).compactMap { $0.url }.filter { officialURL($0.absoluteString) != nil } ?? []
+            let nativeLink = match(#"ctrippro://wireless/flight_inland_singletransition\?[^\s<>\])]+"#, in: linkText)
+                .flatMap(URL.init(string:))
             // Raw title stays available to context/history; cards render cardTitle.
             return CtripFlightOffer(id: "\(index)-\(section.title)", title: section.title, details: body, price: reference ? "票价待查" : price,
-                                    bookingURL: reference ? nil : links.first, query: String(query.prefix(4000)), queriedAt: date,
+                                    bookingURL: reference ? nil : (nativeLink ?? links.first), query: String(query.prefix(4000)), queriedAt: date,
                                     referenceOnly: reference ? true : nil,
                                     sourceSupplement: section.inline != nil && section.tableHeader == nil && !section.remainder.isEmpty ? section.remainder : nil)
         }
@@ -1416,12 +3772,14 @@ enum CtripFlightParser {
     private static func route(_ query: String) -> (String, String) {
         if let from = match(#"(?<![A-Z])([A-Z]{3})\s*[-→]\s*([A-Z]{3})(?![A-Z])"#, in: query, group: 1),
            let to = match(#"(?<![A-Z])([A-Z]{3})\s*[-→]\s*([A-Z]{3})(?![A-Z])"#, in: query, group: 2) { return (from, to) }
+        let fromPattern = #"从([\p{Han}A-Z0-9]{2,18}?)出发(?:前往|飞往|到|至)([\p{Han}A-Z0-9]{2,18})"#
         let pattern = #"(?:^|查询|查找|搜索|从|日|20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\s)([\p{Han}A-Z0-9]{2,18})(?:到|至|→|飞往)([\p{Han}A-Z0-9]{2,18})"#
-        guard var origin = match(pattern, in: query, group: 1), var destination = match(pattern, in: query, group: 2) else { return ("", "") }
+        guard var origin = match(fromPattern, in: query, group: 1) ?? match(pattern, in: query, group: 1),
+              var destination = match(fromPattern, in: query, group: 2) ?? match(pattern, in: query, group: 2) else { return ("", "") }
         origin = origin.replacingOccurrences(of: #"^(?:请|帮我|查询|查一下|查|用携程|携程|今天|明天|后天|早上|上午|下午|晚上)+"#, with: "", options: .regularExpression)
         origin = origin.replacingOccurrences(of: #"^(?:20\d{2}年)?\d{1,2}月\d{1,2}日"#, with: "", options: .regularExpression)
         origin = origin.replacingOccurrences(of: #"^(?:从|早上|上午|下午|晚上)+"#, with: "", options: .regularExpression)
-        if let end = destination.range(of: #"的|单程|往返|机票|航班|明天|今天|后天|早上|上午|下午|晚上|经济舱|商务舱|头等舱|优先|只要|最晚"#, options: .regularExpression) { destination = String(destination[..<end.lowerBound]) }
+        if let end = destination.range(of: #"的|单程|往返|机票|航班|明天|今天|后天|早上|上午|下午|晚上|经济舱|商务舱|头等舱|优先|只要|最晚|直飞|[A-Z][A-Z0-9]\d{3,4}"#, options: .regularExpression) { destination = String(destination[..<end.lowerBound]) }
         guard (2...12).contains(origin.count), (2...12).contains(destination.count),
               origin.range(of: #"查询|提供|要求|条件|机场为|出发"#, options: .regularExpression) == nil else { return ("", "") }
         return (origin, destination)
@@ -1431,12 +3789,12 @@ enum CtripFlightParser {
               city.count <= 24, city.range(of: #"^[\p{L}\s]+$"#, options: .regularExpression) != nil else { return airport }
         // Only the endpoint abbreviations explicitly present in the accepted
         // Beijing-Shenzhen source format may use its global city context.
-        let names: String
-        if city == "北京" { names = "首都|大兴" }
-        else if city == "深圳" { names = "宝安" }
+        let names: String, sourceCity: String
+        if city == "北京" || nativeListCityCode(city) == "BJS" { names = "首都|大兴"; sourceCity = "北京" }
+        else if city == "深圳" || nativeListCityCode(city) == "SZX" { names = "宝安"; sourceCity = "深圳" }
         else { return airport }
         guard airport.range(of: "^(?:" + names + #")(?:(?:国际)?机场)?\s*(?:T\d{1,2})?$"#, options: .regularExpression) != nil else { return airport }
-        return city + " · " + airport
+        return sourceCity + " · " + airport
     }
     private static func airportMatches(_ requirement: String, _ airport: String) -> Bool? {
         guard !requirement.isEmpty else { return true }
@@ -1979,7 +4337,7 @@ enum ConversationTaskScope {
 
 struct ConversationRoute: Codable, Equatable, Sendable {
     // xiaohongshuQuery is decode-only compatibility for archived intent records; its connector is withdrawn.
-    enum Mode: String, Codable { case chat, task, supplement, resume, pause, stop, flightQuery, paotuiQuery, xiaohongshuQuery, clarify }
+    enum Mode: String, Codable { case chat, task, supplement, resume, pause, stop, flightQuery, flightOpen, paotuiQuery, xiaohongshuQuery, clarify }
     var mode: Mode
     var request: String
     var message: String
@@ -1998,6 +4356,8 @@ struct ConversationRoute: Codable, Equatable, Sendable {
     var originConversationID: UUID? = nil
     /// Host-only submitted task scope; excluded from Codable and archived intents.
     var authorizedTaskIDs: Set<UUID> = []
+    var flightSelection: ConversationFlightSelection? = nil
+    var flightOpenAuthorization: ConversationFlightOpenAuthorization? = nil
     var pendingTask: ConversationTaskSubmission? = nil
     var controlContext: ConversationControlContext? = nil
     // Bound by the host after routing, never supplied by model JSON or archives.
@@ -2007,7 +4367,7 @@ struct ConversationRoute: Codable, Equatable, Sendable {
     var module: String {
         switch mode {
         case .chat: "conversation"
-        case .flightQuery: "ctrip"
+        case .flightQuery, .flightOpen: "ctrip"
         case .paotuiQuery: "meituan-paotui"
         case .xiaohongshuQuery: "xiaohongshu"
         case .clarify: "clarification"
@@ -2101,9 +4461,12 @@ enum ConversationReferenceText {
 /// A single snapshot shared by memory-aware routing and downstream dispatch.
 /// History never re-uploads pixels; only this turn's explicit media is included.
 struct ConversationRoutingInput: Sendable {
+    let conversationID: UUID?
     let question: String
     let turns: [[String: String]]
     let history: [AssistantMessage]
+    /// Complete recall-eligible current-chat history for deterministic local selection only.
+    let flightSelectionHistory: [AssistantMessage]
     let taskContext: String
     let memoryContext: String
     let attachments: [ComposerAttachment]
@@ -2191,7 +4554,9 @@ struct ConversationRoutingInput: Sendable {
             if !text.isEmpty { turns.append(["role": message.role, "content": text]) }
         }
         turns.append(["role": "user", "content": question])
+        self.conversationID = conversationID
         self.question = question; self.turns = turns; self.history = eligible
+        self.flightSelectionHistory = history
         self.taskContext = taskContext; self.memoryContext = memoryContext
         self.attachments = attachments; self.visuals = visuals
         self.controlContext = ConversationTaskScope.controlContext(controlContext, taskIDs: linkedTaskIDs, pendingTaskID: pendingTask?.taskID)
@@ -2250,6 +4615,11 @@ struct ConversationRoutingInput: Sendable {
 }
 
 extension CtripFlightOffer {
+    var nativeFlightListURL: URL? { CtripFlightParser.nativeFlightListURL(for: self) }
+    var nativeFlightSelectionURL: URL? { CtripFlightParser.nativeFlightSelectionURL(for: self) }
+    var reconstructedNativeFlightSelectionURL: URL? { CtripFlightParser.reconstructedNativeFlightSelectionURL(for: self) }
+    var preferredNativeFlightSelectionURL: URL? { nativeFlightSelectionURL ?? reconstructedNativeFlightSelectionURL }
+    var nativeFlightSelectionLookupQuery: String? { CtripFlightParser.nativeFlightSelectionLookupQuery(for: self) }
     var isSchedule: Bool { referenceOnly == true }
     var cardSupplement: String { CtripFlightParser.supplement(for: self) }
     var cardSegments: [CtripFlightSegmentText] { CtripFlightParser.segmentTexts(for: self) }
@@ -2340,7 +4710,11 @@ extension CtripFlightOffer {
         airport = CtripFlightParser.airportWithSourceCity(airport, city: field(departure ? "出发城市" : "到达城市"))
         return Leg(time: time, airport: airport.isEmpty ? (departure ? "出发机场待核对" : "到达机场待核对") : airport, date: date)
     }
-    var bookingButtonTitle: String { isSchedule ? "去携程查价" : flightSpecificBookingURL == nil ? "复制并打开携程" : "去携程预订" }
+    var bookingButtonTitle: String {
+        if preferredNativeFlightSelectionURL != nil { return "打开这班航班" }
+        if nativeFlightSelectionLookupQuery != nil { return isSchedule ? "查价并打开这班航班" : "补查并打开这班航班" }
+        return "补充航班信息"
+    }
     var bookingSummary: String {
         let departure = leg(departure: true), arrival = leg(departure: false)
         return [(isSchedule ? "参考航班时刻（尚未核价）：" : "携程所选航班：") + cardTitle, departure.date + " " + departure.time + " " + departure.airport,
@@ -2362,5 +4736,92 @@ extension CtripFlightOffer {
         } ?? false
         guard page + 1 < segments.count || hasIdentifier else { return nil }
         return url
+    }
+}
+
+/// Correlation supplied by the chat host for both text and native card actions.
+/// These IDs identify the response destination; they grant no order authority.
+struct PaotuiHostContext: Equatable, Sendable {
+    let conversationID: UUID
+    let requestID: UUID
+}
+
+/// Native execution supplies this identity; it is never a model query field.
+struct PaotuiToolContext: Equatable, Sendable {
+    let taskID: UUID
+    let invocationID: UUID
+}
+
+enum PaotuiLifecycleEvent: Equatable, Sendable {
+    case cleared(UUID)
+}
+
+/// Live availability is projected by the module. Saved cards remain display
+/// evidence and cannot make an action available on their own.
+struct PaotuiCardPresentation: Equatable, Sendable {
+    let isCurrent: Bool
+    let allowedActions: [PaotuiChatSelection.Action]
+    var canCreateOrder: Bool { allows(.confirm) }
+    func allows(_ action: PaotuiChatSelection.Action) -> Bool { allowedActions.contains(action) }
+    static let displayOnly = PaotuiCardPresentation(isCurrent: false, allowedActions: [])
+}
+
+/// Inert display and routing facts. No request, credential, ticket, grant or
+/// unmasked phone is retained, and no Session can be restored from this DTO.
+struct PaotuiSessionSummary: Equatable {
+    enum Phase: String { case collecting, clarifying, readyForReview, reading, quoted, awaitingConfirmation, submitting, outcome, readFailed, closed }
+    struct Draft: Equatable {
+        var service: String? = nil
+        var goods = ""
+        var nearby = false
+        var remark = ""
+        var weight: Double? = nil
+        var category: String? = nil
+    }
+    struct Place: Equatable {
+        let id: String
+        let title: String
+        let fullAddress: String
+        let contact: String
+    }
+    struct Quote: Equatable {
+        let id: UUID
+        let senderTitle: String
+        let recipientTitle: String
+        let senderContact: String?
+        let recipientContact: String?
+        let serviceTitle: String
+        let isSend: Bool
+        let fee: Double
+        let currency: String?
+        let deliveryFeeMinorUnits: Int64?
+        let feeText: String?
+        let estimate: String
+        let distance: String
+        let goodsPaymentNote: String
+        let validUntil: Date
+        let canCreateOrder: Bool
+    }
+    let conversationID: UUID
+    var phase: Phase = .collecting
+    var draft = Draft()
+    var sender: Place? = nil
+    var recipient: Place? = nil
+    var places: [Place] = []
+    var quotes: [Quote] = []
+    var inquiryOnly = false
+    var hasUnresolvedSubmission = false
+    var missingFields: [String] = []
+    var isActivePreparation: Bool { phase != .closed && phase != .outcome }
+    var routingPayload: [String: Any] {
+        ["active": isActivePreparation, "phase": phase.rawValue,
+         "service": draft.service ?? "unknown", "goods": draft.goods,
+         "inquiryOnly": inquiryOnly, "missingFields": missingFields,
+         "quotes": quotes.map { quote -> [String: Any] in
+             ["quoteID": quote.id.uuidString,
+              "currency": quote.currency.map { $0 as Any } ?? NSNull(),
+              "deliveryFeeMinorUnits": quote.deliveryFeeMinorUnits.map { $0 as Any } ?? NSNull(),
+              "deliveryFeeText": quote.feeText.map { $0 as Any } ?? NSNull()]
+         }]
     }
 }

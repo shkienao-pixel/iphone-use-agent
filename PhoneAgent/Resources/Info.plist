@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>LSApplicationQueriesSchemes</key>
-	<array><string>ctrip</string></array>
+	<array><string>ctrip</string><string>ctrippro</string></array>
 	<key>CFBundleDisplayName</key>
 	<string>Sela</string>
 	<key>CFBundleExecutable</key>
@@ -35,10 +35,13 @@
 	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>processing</string>
 		<string>screen-capture</string>
 		<string>bluetooth-central</string>
 		<string>audio</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array><string>$(PRODUCT_BUNDLE_IDENTIFIER).continued.*</string></array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 import Security
 
-struct MeituanPaotuiAuthorization {
+@MainActor struct MeituanPaotuiAuthorization {
     static let clientID = "ac76c22d257c4c6d9164719eea64ed4b"
     struct Session {
         let code: String
@@ -10,7 +10,8 @@ struct MeituanPaotuiAuthorization {
         let link: URL
         let expires: Date
     }
-    var transport: (URLRequest) async throws -> (Data, HTTPURLResponse) = MeituanMCPClient.load
+    var transport: (URLRequest) async throws -> (Data, HTTPURLResponse) = PaotuiHTTPTransport.load
+    var clock: PaotuiClock = .system
     func get(_ path: String, parameters: [String: String]) async throws -> [String: Any] {
         var components = URLComponents(string: "https://passport.meituan.com/api/account/userauth/" + path)!
         components.queryItems = parameters.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
@@ -42,10 +43,10 @@ struct MeituanPaotuiAuthorization {
         let data = try await get("code", parameters: ["client_id": Self.clientID, "code_challenge": challenge])
         guard let code = data["authCode"] as? String, !code.isEmpty,
               let link = (data["shortLink"] as? String).flatMap(MeituanPaotuiClient.officialURL) else { throw AgentError.message("美团未返回有效授权链接") }
-        return Session(code: code, verifier: verifier, link: link, expires: Date().addingTimeInterval(600))
+        return Session(code: code, verifier: verifier, link: link, expires: clock.now().addingTimeInterval(600))
     }
     func finish(_ session: Session) async throws -> String? {
-        guard session.expires > Date() else { throw AgentError.message("授权链接已过期，请重新连接") }
+        guard session.expires > clock.now() else { throw AgentError.message("授权链接已过期，请重新连接") }
         let data = try await get("check", parameters: ["client_id": Self.clientID, "auth_code": session.code, "code_verifier": session.verifier])
         let status = (data["authStatus"] as? NSNumber)?.intValue ?? 1
         if [2, 3].contains(status) { throw AgentError.message("美团未通过本次授权，请重新连接") }

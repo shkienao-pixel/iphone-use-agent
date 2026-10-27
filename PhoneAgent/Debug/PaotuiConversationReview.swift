@@ -49,7 +49,7 @@ struct PaotuiConversationReview: View {
                             .padding(14).background(AgentPalette.surface, in: RoundedRectangle(cornerRadius: 18))
                     }
                     Text(titles[stage]).font(.body)
-                    PaotuiConversationCards(card: card, active: true) { selection in
+                    PaotuiConversationCards(card: card, active: true, allowsOrderReview: false) { selection in
                         switch selection.action {
                         case .choose, .quote: stage = min(3, stage + 1)
                         case .edit, .more: stage = 0

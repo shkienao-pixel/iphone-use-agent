@@ -98,6 +98,11 @@ final class NativePanelUITests: XCTestCase {
         case "launch_sela":
             guard (command.bundle ?? selaBundle) == selaBundle else { throw TransportError.invalid("Wrong Sela target") }
             target.launchArguments = ["--sela-device-debug", selaSession!]
+            #if targetEnvironment(simulator)
+            if ProcessInfo.processInfo.environment["SELA_SIMULATOR_ACTIVITY_FIXTURES"] == "1" {
+                target.launchArguments.append("--sela-activity-fixtures")
+            }
+            #endif
             target.launch()
             guard target.buttons["打开任务与工具侧栏"].waitForExistence(timeout: 12) else {
                 throw TransportError.invalid("Sela main UI did not become ready")
@@ -205,6 +210,19 @@ final class NativePanelUITests: XCTestCase {
             if command.operation == "long_press_screen" { point.press(forDuration: 1.2) }
             else { point.tap() }
             lastFrame = nil
+        case "notification_center":
+            #if targetEnvironment(simulator)
+            guard command.bundle == "com.apple.springboard", let frame = lastFrame,
+                  command.frameID == frame.0, frame.2 == "com.apple.springboard",
+                  Date().timeIntervalSince(frame.1) <= 60 else {
+                throw TransportError.invalid("A fresh simulator SpringBoard frame is required")
+            }
+            let top = target.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.001))
+            let lower = target.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.70))
+            top.press(forDuration: 0.1, thenDragTo: lower)
+            #else
+            throw TransportError.invalid("Notification authorization experiments are simulator-only")
+            #endif
         case "home": XCUIDevice.shared.press(.home)
         case "end_session": return ["ended": true]
         default: throw TransportError.invalid("Unknown operator operation")
