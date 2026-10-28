@@ -34,6 +34,8 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
     private var observationGeneration = UUID()
     private var workflowTitleCache: (key: HarnessObservationKey, recognized: [PhoneUIElement])?
     private var executionAccessory: String?
+    private var executionBinding: (connection: UUID, runtime: UUID)?
+    private var executionObservationLease: WorkflowObservationLease?
     private var cachedSnapshot: PhoneUISnapshot?
     private var modelSnapshot: (capture: UUID?, snapshot: PhoneUISnapshot)?
     private var pendingLearning: (String, PhoneUIElement, PhoneUISnapshot, Date)?
@@ -42,6 +44,10 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
     private var lastFallback = ""
     private var lastInputCompletedAt: Date?
     private var lastObservedFrame: ScreenFrame?
+    private var searchCheckpointFact: TaskCheckpointFact?
+    private var searchCheckpointFrame: ScreenFrame?
+    private var searchCheckpointBinding: (device: String?, connection: UUID, runtime: UUID)?
+    var checkpointRuntimeGeneration: UUID? { observationGeneration }
     private let recognize: ((ScreenFrame) async throws -> [PhoneUIElement])?
     private let recognizeWorkflowTitle: ((ScreenFrame) async throws -> [PhoneUIElement])?
     private let contextCurrent: WorkflowObservationLease.Current?
@@ -70,7 +76,7 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
         cachedFrame = nil; cachedSnapshot = nil; modelSnapshot = nil; lastFallback = ""
         observationGeneration = UUID(); workflowTitleCache = nil
         cachedObservationProof = nil; workflowTitleProof = nil
-        lastInputCompletedAt = nil; lastObservedFrame = nil
+        lastInputCompletedAt = nil; lastObservedFrame = nil; searchCheckpointFact = nil; searchCheckpointFrame = nil; searchCheckpointBinding = nil
     }
 
     func context(for frame: ScreenFrame) async throws -> String {
@@ -225,11 +231,17 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
 
     func execute(_ request: PhoneHarnessRequest, frame: ScreenFrame, mappedHome: Bool,
                  nextFrame: @escaping @MainActor (Date) async throws -> ScreenFrame) async throws -> PhoneHarnessReceipt {
-        lastInputCompletedAt = nil; lastObservedFrame = nil; allowsReceiptReuse = true
+        lastInputCompletedAt = nil; lastObservedFrame = nil; searchCheckpointFact = nil; searchCheckpointFrame = nil; allowsReceiptReuse = true
+        searchCheckpointBinding = (executor.ble.selectedID, executor.ble.pointerConnectionGeneration, observationGeneration)
         executionAccessory = executor.ble.selectedID
+        executionBinding = (executor.ble.pointerConnectionGeneration, observationGeneration)
+        executionObservationLease = nil
         executionFrameIdentity = (frame.captureID, frame.width, frame.height, frame.sourceWidth, frame.sourceHeight)
         requiresUserReview = hasPendingReview
-        defer { executionAccessory = nil; executionFrameIdentity = nil }
+        defer {
+            executionAccessory = nil; executionFrameIdentity = nil
+            executionBinding = nil; executionObservationLease = nil
+        }
         if request.operation.isSavedWorkflow {
             try request.validate()
             guard (!hasPendingReview || request.operation == .file_status), let savedWorkflow else { throw fallback("流程尚未配置或存在待核验提交，请先到记录与文件查看") }
@@ -239,7 +251,8 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
         let verified = lastObservedFrame.flatMap { observed in
             allowsReceiptReuse && lastInputCompletedAt.map { observed.confirmedAt > $0 } == true ? observed : nil
         }
-        return PhoneHarnessReceipt(summary: summary, verifiedFrame: verified, lastInputCompletedAt: lastInputCompletedAt, requiresUserReview: requiresUserReview)
+        return PhoneHarnessReceipt(summary: summary, verifiedFrame: verified, lastInputCompletedAt: lastInputCompletedAt,
+            requiresUserReview: requiresUserReview, checkpointFact: searchCheckpointFact, checkpointFrame: searchCheckpointFrame)
     }
 
     private func executeSummary(_ request: PhoneHarnessRequest, frame: ScreenFrame, mappedHome: Bool,
@@ -256,8 +269,14 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
         case .wechat_send:
             return try await sendSelfMessage(request, frame: frame, snapshot: snapshot, nextFrame: nextFrame)
         case .open_search:
-            if snapshot.scene == "search" { return "本地确认搜索页面已打开；尚未输入或提交" }
-            _ = try await openSearch(frame, snapshot: snapshot, nextFrame: nextFrame)
+            if snapshot.scene == "search" {
+                searchCheckpointFact = checkpointFact(frame, snapshot: snapshot, source: .alreadyVisible, inputCompletedAt: nil)
+                searchCheckpointFrame = frame
+                return "本地确认搜索页面已打开；尚未输入或提交"
+            }
+            let (fresh, after) = try await openSearch(frame, snapshot: snapshot, nextFrame: nextFrame)
+            searchCheckpointFact = checkpointFact(fresh, snapshot: after, source: .afterInput, inputCompletedAt: lastInputCompletedAt)
+            searchCheckpointFrame = fresh
             return "已由本地布局打开搜索，并确认进入搜索页面"
         case .open_app:
             return try await openApp(request.target!, frame: frame, snapshot: snapshot, mappedHome: mappedHome, nextFrame: nextFrame)
@@ -464,6 +483,16 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
         return String(decoding: data, as: UTF8.self)
     }
 
+    private func checkpointFact(_ frame: ScreenFrame, snapshot: PhoneUISnapshot, source: TaskCheckpointSource,
+                                inputCompletedAt: Date?) -> TaskCheckpointFact? {
+        guard let binding = searchCheckpointBinding else { return nil }
+        return TaskCheckpointFact(scene: snapshot.scene, source: source, verificationScope: .searchSceneOnly, captureID: frame.captureID,
+            capturedAt: frame.capturedAt, confirmedAt: frame.confirmedAt, inputCompletedAt: inputCompletedAt,
+            fullDisplay: frame.fullDisplay, blockingOverlay: snapshot.blockingOverlay,
+            selectedDeviceID: binding.device, connectionGeneration: binding.connection,
+            runtimeGeneration: binding.runtime)
+    }
+
     private func openSearch(_ frame: ScreenFrame, snapshot: PhoneUISnapshot,
                             nextFrame: @escaping @MainActor (Date) async throws -> ScreenFrame) async throws -> (ScreenFrame, PhoneUISnapshot) {
         guard snapshot.scene == "home" else { throw fallback("open_search 只在已识别的主屏幕使用；当前页 \(snapshot.scene)") }
@@ -505,6 +534,14 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
             throw fallback("搜索输入框焦点未由本地流程确认，请先调用 open_search 或点击搜索输入框")
         }
         try await primitive(.press_key, text: "select_all", frame: current)
+        // Selection can change the pixels (for example, highlighting an old
+        // query). Observe that completed input before authorizing text entry.
+        current = try await checkedNextFrame(after: lastInputCompletedAt!, relativeTo: current, nextFrame: nextFrame)
+        view = try await observe(current)
+        try requireUnobstructed(view)
+        guard trustedSearchFocus(current, snapshot: view) else {
+            throw fallback("选择文字后未确认搜索输入页，未继续输入应用名")
+        }
         try await primitive(.type, text: name, frame: current)
         // Only an installed-app section is accepted. A matching web/contact/
         // suggestion label alone cannot establish that this is an app result.
@@ -587,19 +624,23 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
     }
 
     private func primitive(_ kind: AgentAction.Kind, text: String, frame: ScreenFrame, mappedHome: Bool = false) async throws {
-        try Task.checkCancellation(); try requireActiveFrame(frame); _ = try executor.validateCalibration(frame: frame)
+        let frame = try confirmedInputFrame(frame)
+        _ = try executor.validateCalibration(frame: frame)
         let action = AgentAction(kind: kind, text: text, reason: "本地手机工具")
-        if let metrics { try await metrics.measureAsync(.input, label: "harness.keyboard") { try await executor.execute(action, frame: frame, mappedHomeAvailable: mappedHome) } }
-        else { try await executor.execute(action, frame: frame, mappedHomeAvailable: mappedHome) }
+        let validateInput = { @MainActor in _ = try self.confirmedInputFrame(frame) }
+        if let metrics { try await metrics.measureAsync(.input, label: "harness.keyboard") { try await executor.execute(action, frame: frame, mappedHomeAvailable: mappedHome, validateInput: validateInput) } }
+        else { try await executor.execute(action, frame: frame, mappedHomeAvailable: mappedHome, validateInput: validateInput) }
         lastInputCompletedAt = Date()
         try Task.checkCancellation()
     }
     private func tap(_ element: PhoneUIElement, frame: ScreenFrame) async throws {
         guard element.rect.valid else { throw fallback("本地控件坐标无效") }
-        try Task.checkCancellation(); try requireActiveFrame(frame); _ = try executor.validateCalibration(frame: frame)
+        let frame = try confirmedInputFrame(frame)
+        _ = try executor.validateCalibration(frame: frame)
         let action = AgentAction(kind: .tap, x: element.rect.centerX, y: element.rect.centerY, reason: "本地定位 \(element.id)")
-        if let metrics { try await metrics.measureAsync(.input, label: "harness.tap") { try await executor.execute(action, frame: frame) } }
-        else { try await executor.execute(action, frame: frame) }
+        let validateInput = { @MainActor in _ = try self.confirmedInputFrame(frame) }
+        if let metrics { try await metrics.measureAsync(.input, label: "harness.tap") { try await executor.execute(action, frame: frame, validateInput: validateInput) } }
+        else { try await executor.execute(action, frame: frame, validateInput: validateInput) }
         lastInputCompletedAt = Date()
         try Task.checkCancellation()
     }
@@ -607,6 +648,7 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
     private func observe(_ frame: ScreenFrame, lease: WorkflowObservationLease? = nil) async throws -> PhoneUISnapshot {
         try Task.checkCancellation()
         try requireActiveFrame(frame)
+        let lease = try lease ?? executionLease(for: frame)
         let generation = observationGeneration
         let identity = HarnessObservationKey(frame: frame, selectedDevice: executor.ble.selectedID)
         let proof = WorkflowObservationProof(frame: frame, runtimeGeneration: generation,
@@ -617,7 +659,13 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
         }
         lastObservedFrame = frame
         if identity.canCache, cachedFrame == identity, let cachedSnapshot,
-           lease.map({ cachedObservationProof?.matches($0.proof) == true }) ?? true { return cachedSnapshot }
+           lease.map({ cachedObservationProof?.matches($0.proof) == true }) ?? true {
+            if let lease {
+                try measureObservationBinding(frame, identity: identity, generation: generation,
+                    label: "harness.cached-frame-binding", lease: lease)
+            }
+            return cachedSnapshot
+        }
         guard frame.fullDisplay, let image = frame.image.cgImage else { throw fallback("本地布局识别需要有效整屏画面") }
         let recognized: [PhoneUIElement]
         metrics?.note(Self.recognitionTimingNote)
@@ -683,6 +731,40 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
         cachedObservationProof = identity.canCache ? proof : nil
         observationRecorder?(lease?.frame ?? frame, snapshot)
         return snapshot
+    }
+
+    /// Every semantic observation belongs to the connection and runtime that
+    /// admitted this operation. OCR may suspend while the live page changes.
+    private func executionLease(for frame: ScreenFrame) throws -> WorkflowObservationLease? {
+        guard executionFrameIdentity != nil, let contextCurrent else { return nil }
+        try requireAccessory()
+        guard let binding = executionBinding, let selected = executionAccessory, !selected.isEmpty else {
+            throw fallback("本地操作缺少可核验的输入配件，已停止")
+        }
+        if let lease = executionObservationLease, lease.proof.pixelFailures(frame).isEmpty {
+            _ = try lease.advance(runtimeGeneration: observationGeneration)
+            return lease
+        }
+        let lease = try WorkflowObservationLease.contextFrame(frame, runtimeGeneration: binding.runtime,
+            selectedDeviceID: selected, connectionGeneration: binding.connection, current: contextCurrent)
+        _ = try lease.advance(runtimeGeneration: observationGeneration)
+        executionObservationLease = lease
+        return lease
+    }
+
+    /// Recheck the exact pixels that supplied the coordinates/focus immediately
+    /// before dispatch, including cached OCR and subsequent workflow inputs.
+    private func confirmedInputFrame(_ frame: ScreenFrame) throws -> ScreenFrame {
+        try Task.checkCancellation(); try requireAccessory()
+        let current: ScreenFrame
+        if contextCurrent != nil {
+            guard let lease = executionObservationLease, lease.proof.pixelFailures(frame).isEmpty else {
+                throw fallback("输入缺少当前画面的识别凭据，未派发旧坐标")
+            }
+            current = try lease.advance(runtimeGeneration: observationGeneration)
+        } else { current = frame }
+        try requireActiveFrame(current)
+        return current
     }
 
     private func measureObservationBinding(_ frame: ScreenFrame, identity: HarnessObservationKey, generation: UUID,
@@ -799,7 +881,8 @@ final class PhoneHarnessRuntime: PhoneHarnessDriving {
         return "phone-\(phone)|accessory-\(accessory)"
     }
     private func requireAccessory() throws {
-        guard executionAccessory == executor.ble.selectedID else {
+        guard executionAccessory == executor.ble.selectedID,
+              executionBinding.map({ $0.connection == executor.ble.pointerConnectionGeneration && $0.runtime == observationGeneration }) ?? true else {
             throw fallback("本地流程期间输入配件发生变化，已停止后续操作")
         }
     }

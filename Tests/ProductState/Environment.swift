@@ -84,7 +84,9 @@ struct ScreenFrame {
         try Task.checkCancellation()
         onMove?()
     }
-    func execute(_ action: AgentAction, frame: ScreenFrame, mappedHomeAvailable: Bool = false) async throws {
+    func execute(_ action: AgentAction, frame: ScreenFrame, mappedHomeAvailable: Bool = false,
+                 validateInput: (@MainActor () throws -> Void)? = nil) async throws {
+        try validateInput?()
         actions.append(action.kind); dispatched.append(action)
         if actionDelay > 0 { try await Task.sleep(nanoseconds: actionDelay) }
     }

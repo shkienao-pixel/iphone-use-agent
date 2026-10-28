@@ -17,7 +17,7 @@ source = source.replace('var selectedID: String? = \"offline-device\"', 'var sel
 Path(sys.argv[4]).write_text(source)
 PY
 xcrun swiftc -module-cache-path "$check_dir/module-cache" -parse-as-library \
-  "$project_dir/Shared/FrameReadiness.swift" "$project_dir/Shared/RunMetrics.swift" \
+  "$project_dir/Shared/FrameReadiness.swift" "$project_dir/Shared/RunMetrics.swift" "$project_dir/Shared/TaskCheckpointPolicy.swift" \
   "$project_dir/Shared/PhonePageAdapters.swift" "$project_dir/Shared/XiaohongshuPageAdapter.swift" \
   "$project_dir/Shared/SystemToolRequest.swift" \
   "$project_dir/Shared/PhoneHarness.swift" \

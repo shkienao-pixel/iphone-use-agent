@@ -11,7 +11,7 @@ INPUTS = [
     "Tests/ProductState/Environment.swift", "Shared/FrameReadiness.swift", "Shared/RunMetrics.swift",
     "Shared/PhonePageAdapters.swift", "Shared/XiaohongshuPageAdapter.swift", "Shared/SystemToolRequest.swift",
     "Shared/PhoneHarness.swift", "Shared/AgentModels.swift", "Shared/MouseProtocol.swift",
-    "Shared/ComposerAttachment.swift", "Shared/NativeTaskResult.swift",
+    "Shared/ComposerAttachment.swift", "Shared/NativeTaskResult.swift", "Shared/TaskCheckpointPolicy.swift",
     "Shared/PhoneVisualControls.swift", "Shared/PhoneOverlayClassifier.swift",
     "Tests/ContextLease/ExtractProduction.py", "Tests/ContextLease/main.swift", "Tests/ContextLease/run.sh",
 ]

@@ -140,6 +140,147 @@ import Combine
         screenCreate.start(task: goal, settings: visualConfig); try await settled(screenCreate)
         expect(screenCreate.phase == .needsUser && screenCreate.executor.actions.isEmpty, "Observing the screen cannot prove a requested creation happened")
         let tap = AgentAction(kind: .tap, x: 0.5, y: 0.5, reason: "离线点击")
+        let batchGoal = "创建三个提醒：明天上午9点提交周报，10点给客户回电，11点领取快递"
+        let batchTitles = ["提交周报", "给客户回电", "领取快递"]
+        let batchReference = Date()
+        var batchCalendar = Calendar(identifier: .gregorian); batchCalendar.timeZone = .current
+        let tomorrow = batchCalendar.date(byAdding: .day, value: 1, to: batchReference)!
+        let batchFormatter = ISO8601DateFormatter(); batchFormatter.timeZone = .current
+        let batchRequests = batchTitles.enumerated().map { index, title in
+            SystemToolRequest(operation: .reminder_create, title: title,
+                start: batchFormatter.string(from: batchCalendar.date(bySettingHour: 9 + index, minute: 0, second: 0, of: tomorrow)!))
+        }
+        let batchFirstReceipt = try receipt(batchTitles[0], due: batchRequests[0].start)
+        let partialBatch = engine(script: [try tool(batchRequests[0]), finish], result: batchFirstReceipt)
+        partialBatch.start(task: batchGoal, settings: config); try await settled(partialBatch)
+        expect(partialBatch.phase == .needsUser && toolCalls == 1 && partialBatch.state.contains("1/3") && partialBatch.canResume,
+            "The original three-reminder goal cannot complete after one actual reminder; partial work remains resumable")
+        expect(partialBatch.currentRecord?.completionEvidence?.tools.first?.systemObjectID == "synthetic-system-id",
+            "Native write proof retains the actual system object identity, not merely a receipt event")
+
+        let completeBatch = engine(script: try batchRequests.map(tool) + [finish])
+        completeBatch.systemTool = { _, request in
+            toolCalls += 1
+            return try NativeEventWriteReceipt(operation: .reminder, receiptID: UUID(), systemItemID: "system-" + request.title!,
+                collectionID: "list", title: request.title!, collectionName: "离线列表", due: request.start).serialized()
+        }
+        completeBatch.start(task: batchGoal, settings: config); try await settled(completeBatch)
+        expect(completeBatch.phase == .completed && toolCalls == 3,
+            "All three distinct requested titles with actual separate objects can complete the batch")
+        var savedBatch = completeBatch.currentRecord!; savedBatch.outcome = .paused
+        let restoredBatch = engine(script: [finish])
+        try restoredBatch.recover(record: savedBatch, settings: config, mode: .continueTask); try await settled(restoredBatch)
+        expect(restoredBatch.phase == .completed && toolCalls == 0,
+            "Persisted per-object coverage survives recovery without creating duplicate reminders")
+
+        let aliasedBatch = engine(script: try batchRequests.map(tool) + [finish])
+        aliasedBatch.systemTool = { _, request in
+            toolCalls += 1
+            return try NativeEventWriteReceipt(operation: .reminder, receiptID: UUID(), systemItemID: "same-system-object",
+                collectionID: "list", title: request.title!, collectionName: "离线列表", due: request.start).serialized()
+        }
+        aliasedBatch.start(task: batchGoal, settings: config); try await settled(aliasedBatch)
+        expect(aliasedBatch.phase == .needsUser && toolCalls == 3,
+            "Three receipt UUIDs referring to the same actual object cannot satisfy three requested objects")
+
+        let visualBatch = engine(script: [tap, try tool(batchRequests[0]), finish], result: batchFirstReceipt, visual: true)
+        visualBatch.start(task: batchGoal, settings: visualConfig); try await settled(visualBatch)
+        expect(visualBatch.phase == .needsUser && toolCalls == 1,
+            "An additional GUI action and observed frame cannot bypass incomplete native batch coverage")
+
+        func batchEvidence(_ task: String, titles: [String], operation: String = "reminder_create") -> TaskCompletionEvidence {
+            var proof = TaskCompletionEvidence(goal: task)
+            for (index, title) in titles.enumerated() {
+                proof.add(.init(operation: operation, receiptID: "receipt-\(index)", title: title, start: nil, end: nil,
+                    resultSHA256: String(repeating: "b", count: 64), systemObjectID: "object-\(index)"))
+            }
+            return proof
+        }
+        for ambiguous in ["创建三个提醒", "create three reminders", "create fifteen reminders", "创建一百个提醒", "创建多个提醒", "创建三个提醒：交周报，打电话",
+                          "创建两条提醒：明天9点吃药，10点吃药"] {
+            if case .needsUser = TaskCompletionPolicy.decide(goal: ambiguous, toolsOnly: true,
+                evidence: batchEvidence(ambiguous, titles: ["交周报", "打电话", "吃药"])) { checks += 1 }
+            else { preconditionFailure("Ambiguous or incomplete object lists must not be guessed from receipt counts: " + ambiguous) }
+        }
+        for (task, expectedTitles, operation) in [
+            ("创建提醒：提交周报，给客户回电，领取快递", batchTitles, "reminder_create"),
+            ("创建3条提醒：1. 提交周报\n2. 给客户回电\n3. 领取快递", batchTitles, "reminder_create"),
+            ("create three reminders: Submit report; Call customer; Pick up parcel", ["Submit report", "Call customer", "Pick up parcel"], "reminder_create"),
+            ("创建两个日程：项目会议，产品评审", ["项目会议", "产品评审"], "calendar_create"),
+            ("创建两份备忘录：购物清单，会议记录", ["购物清单", "会议记录"], "notes_create")
+            , ("create two notes: groceries; meeting notes", ["groceries", "meeting notes"], "notes_create")
+        ] {
+            expect(TaskCompletionPolicy.decide(goal: task, toolsOnly: true,
+                evidence: batchEvidence(task, titles: expectedTitles, operation: operation)) == .tools,
+                "Literal named batches have complete object coverage: " + task)
+            if case .needsUser = TaskCompletionPolicy.decide(goal: task, toolsOnly: true,
+                evidence: batchEvidence(task, titles: Array(expectedTitles.dropLast()) + ["无关对象"], operation: operation)) { checks += 1 }
+            else { preconditionFailure("Equal receipt count with a different object cannot satisfy the batch: " + task) }
+        }
+        let singleWithComma = "创建一个提醒：买牛奶，鸡蛋和面包"
+        expect(TaskCompletionPolicy.decide(goal: singleWithComma, toolsOnly: true,
+            evidence: batchEvidence(singleWithComma, titles: ["买牛奶，鸡蛋和面包"])) == .tools,
+            "An explicit single reminder keeps comma/conjunction content inside that one item")
+        for task in ["创建两条新的提醒，交周报和打电话", "分别创建提醒：交周报和打电话"] {
+            if case .needsUser = TaskCompletionPolicy.decide(goal: task, toolsOnly: true,
+                evidence: batchEvidence(task, titles: ["交周报"])) { checks += 1 }
+            else { preconditionFailure("Modifiers and conjunctions cannot hide an incomplete batch: " + task) }
+            expect(TaskCompletionPolicy.decide(goal: task, toolsOnly: true,
+                evidence: batchEvidence(task, titles: ["交周报", "打电话"])) == .tools,
+                "A complete two-item conjunction list is checked against both objects")
+        }
+        let scheduled = "创建两个提醒：9点交周报，10点打电话"
+        var wrongSchedule = batchEvidence(scheduled, titles: ["交周报", "打电话"])
+        for index in wrongSchedule.tools.indices {
+            wrongSchedule.tools[index].start = batchFormatter.string(from: batchCalendar.date(bySettingHour: 19 + index, minute: 0, second: 0, of: tomorrow)!)
+        }
+        if case .needsUser = TaskCompletionPolicy.decide(goal: scheduled, toolsOnly: true, evidence: wrongSchedule) { checks += 1 }
+        else { preconditionFailure("Matching tool requests cannot override the user's explicit batch clock times") }
+        var wrongDay = completeBatch.currentRecord!.completionEvidence!
+        for index in wrongDay.tools.indices {
+            let actual = NativeTaskResult.parseDate(wrongDay.tools[index].start!)!
+            wrongDay.tools[index].start = batchFormatter.string(from: batchCalendar.date(byAdding: .day, value: 1, to: actual)!)
+        }
+        if case .needsUser = TaskCompletionPolicy.decide(goal: batchGoal, toolsOnly: true, evidence: wrongDay) { checks += 1 }
+        else { preconditionFailure("Relative dates stay bound to the original request day and propagate to remaining list items") }
+        let repeatTitleGoal = "创建两个提醒：明天晚上9点吃药，10点吃药"
+        var repeatTitleProof = batchEvidence(repeatTitleGoal, titles: ["吃药", "吃药"])
+        for index in repeatTitleProof.tools.indices {
+            repeatTitleProof.tools[index].start = batchFormatter.string(from: batchCalendar.date(bySettingHour: 21 + index, minute: 0, second: 0, of: tomorrow)!)
+        }
+        expect(TaskCompletionPolicy.decide(goal: repeatTitleGoal, toolsOnly: true, evidence: repeatTitleProof) == .tools,
+            "Repeated titles with different specified times are distinct items; the evening period propagates")
+        var reissuedReceipt = repeatTitleProof
+        reissuedReceipt.tools[1].receiptID = reissuedReceipt.tools[0].receiptID
+        if case .needsUser = TaskCompletionPolicy.decide(goal: repeatTitleGoal, toolsOnly: true, evidence: reissuedReceipt) { checks += 1 }
+        else { preconditionFailure("The same receipt cannot be used for two expected items even with different object IDs") }
+        let midnightGoal = "创建两个提醒：晚上12点交周报，晚上11点打电话"
+        var midnightProof = batchEvidence(midnightGoal, titles: ["交周报", "打电话"])
+        for index in midnightProof.tools.indices {
+            midnightProof.tools[index].start = batchFormatter.string(from: batchCalendar.date(bySettingHour: index == 0 ? 12 : 23, minute: 0, second: 0, of: tomorrow)!)
+        }
+        if case .needsUser = TaskCompletionPolicy.decide(goal: midnightGoal, toolsOnly: true, evidence: midnightProof) { checks += 1 }
+        else { preconditionFailure("An ambiguous evening-midnight request must never be silently certified as midday") }
+        var duplicatedProof = batchEvidence(batchGoal, titles: batchTitles)
+        for index in duplicatedProof.tools.indices { duplicatedProof.tools[index].systemObjectID = nil; duplicatedProof.tools[index].receiptID = "same-receipt" }
+        if case .needsUser = TaskCompletionPolicy.decide(goal: batchGoal, toolsOnly: true, evidence: duplicatedProof) { checks += 1 }
+        else { preconditionFailure("Legacy duplicate receipt identity must not be counted more than once") }
+        var legacyJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(batchEvidence(batchGoal, titles: batchTitles))) as! [String: Any]
+        legacyJSON["tools"] = (legacyJSON["tools"] as! [[String: Any]]).map { value -> [String: Any] in var old = value; old.removeValue(forKey: "systemObjectID"); return old }
+        legacyJSON.removeValue(forKey: "referenceDate"); legacyJSON.removeValue(forKey: "referenceTimeZone")
+        let decodedLegacy = try JSONDecoder().decode(TaskCompletionEvidence.self, from: JSONSerialization.data(withJSONObject: legacyJSON))
+        expect(decodedLegacy.tools.allSatisfy { $0.systemObjectID == nil }, "Adding actual object identity preserves decoding of pre-fix records")
+        expect(decodedLegacy.referenceDate == nil && decodedLegacy.referenceTimeZone == nil,
+            "Older archives without task clock metadata decode without inventing a new reference day")
+        if case .needsUser = TaskCompletionPolicy.decide(goal: batchGoal, toolsOnly: true, evidence: decodedLegacy) { checks += 1 }
+        else { preconditionFailure("Old evidence without actual object identities does not prove distinct batch objects") }
+        var oldSavedBatch = completeBatch.currentRecord!.completionEvidence!
+        for index in oldSavedBatch.tools.indices { oldSavedBatch.tools[index].systemObjectID = nil }
+        let recoveredIdentity = TaskCompletionEvidence.restore(goal: batchGoal, persisted: oldSavedBatch,
+            legacyResults: completeBatch.currentRecord!.nativeResults!, receipts: [])
+        expect(TaskCompletionPolicy.decide(goal: batchGoal, toolsOnly: true, evidence: recoveredIdentity) == .tools,
+            "Old receipts can recover actual identities from matching host-owned result cards without model claims")
+
         let visualSuccess = engine(script: [tap, finish], visual: true)
         visualSuccess.start(task: "点击当前按钮", settings: visualConfig); try await settled(visualSuccess)
         expect(visualSuccess.phase == .completed && visualSuccess.state.contains("尚未独立核验") && visualSuccess.currentRecord?.completionEvidence?.postInputObservations == 1,

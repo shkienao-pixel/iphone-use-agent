@@ -25,10 +25,14 @@ for before, after in replacements.items():
     source = source.replace(before, after)
 assert source.count('var selectedID: String? = \"offline-device\"') == 1
 source = source.replace('var selectedID: String? = \"offline-device\"', 'var selectedID: String? = \"offline-device\"\n    var pointerConnectionGeneration = UUID()')
+assert source.count('var actions: [AgentAction.Kind] = []') == 1
+source = source.replace('var actions: [AgentAction.Kind] = []', 'var actions: [AgentAction.Kind] = []\n    var onAction: ((AgentAction) -> Void)?')
+assert source.count('actions.append(action.kind); dispatched.append(action)') == 1
+source = source.replace('actions.append(action.kind); dispatched.append(action)', 'actions.append(action.kind); dispatched.append(action); onAction?(action)')
 Path(sys.argv[4]).write_text(source)
 PY
 xcrun swiftc -module-cache-path "$check_dir/module-cache" -parse-as-library \
-  "$project_dir/Shared/FrameReadiness.swift" "$project_dir/Shared/RunMetrics.swift" \
+  "$project_dir/Shared/FrameReadiness.swift" "$project_dir/Shared/RunMetrics.swift" "$project_dir/Shared/TaskCheckpointPolicy.swift" \
   "$project_dir/Shared/PhonePageAdapters.swift" "$project_dir/Shared/XiaohongshuPageAdapter.swift" \
   "$project_dir/Shared/SystemToolRequest.swift" \
   "$project_dir/Shared/PhoneHarness.swift" \
@@ -46,6 +50,7 @@ xcrun swiftc -module-cache-path "$check_dir/module-cache" -parse-as-library \
   "$project_dir/PhoneAgent/Services/PhoneHarnessRuntime.swift" \
   "$project_dir/Tests/HarnessRuntime/RuntimeCacheChecks.swift" \
   "$project_dir/Tests/HarnessRuntime/RuntimeMetricsChecks.swift" \
+  "$project_dir/Tests/HarnessRuntime/PilotReplayChecks.swift" \
   "$project_dir/Tests/HarnessRuntime/main.swift" \
   -o "$check_dir/phone-harness-runtime-checks"
 "$check_dir/phone-harness-runtime-checks"

@@ -52,8 +52,17 @@ python3 - "$project_dir/PhoneAgent/Services/WorkflowObservationLease.swift" "$ch
 from pathlib import Path
 import sys
 s=Path(sys.argv[1]).read_text(); start=s.index('struct WorkflowLeaseFailure:'); end=s.index('/// Pixel recognition reuse only.')
-Path(sys.argv[2]).write_text('import Foundation\n'+s[start:end])
+Path(sys.argv[2]).write_text('import Foundation\n'+s)
 PYLEASE
+python3 - "$project_dir/Tests/ProductState/Environment.swift" "$check_dir/CheckpointEnvironment.swift" <<'PYCHECKPOINT'
+from pathlib import Path
+import sys
+s = Path(sys.argv[1]).read_text()
+needle = 'var selectedID: String? = "offline-device"'
+assert s.count(needle) == 1
+s = s.replace(needle, needle + "\n    var pointerConnectionGeneration = UUID()")
+Path(sys.argv[2]).write_text(s)
+PYCHECKPOINT
 xcrun swiftc -parse-as-library -module-cache-path "$check_dir/module-cache" \
   "$project_dir/Shared/ComposerAttachment.swift" "$project_dir/Shared/AssistantConversationContext.swift" "$project_dir/Shared/ConversationUnderstanding.swift" \
   "$project_dir/Shared/FrameReadiness.swift" "$project_dir/Shared/RunMetrics.swift" \
@@ -61,9 +70,9 @@ xcrun swiftc -parse-as-library -module-cache-path "$check_dir/module-cache" \
   "$project_dir/Shared/SystemToolRequest.swift" "$project_dir/Shared/PhoneHarness.swift" \
   "$project_dir/Shared/AgentModels.swift" "$project_dir/Shared/MouseProtocol.swift" \
   "$project_dir/Shared/VoiceCommand.swift" "$project_dir/Shared/ModelHistoryContext.swift" \
-  "$project_dir/Shared/NativeTaskResult.swift" "$project_dir/Shared/NativePlanningRecovery.swift" "$project_dir/PhoneAgent/Stores/TaskHistoryStore.swift" "$project_dir/PhoneAgent/Stores/TaskQueueStore.swift" \
+  "$project_dir/Shared/TaskCheckpointPolicy.swift" "$project_dir/Shared/NativeTaskResult.swift" "$project_dir/Shared/NativePlanningRecovery.swift" "$project_dir/PhoneAgent/Stores/TaskHistoryStore.swift" "$project_dir/PhoneAgent/Stores/TaskQueueStore.swift" \
   "$project_dir/PhoneAgent/Services/PrivacyConsent.swift" \
-  "$project_dir/Tests/ProductState/Environment.swift" "$check_dir/LeaseFailure.swift" "$check_dir/Engine.swift" \
+  "$check_dir/CheckpointEnvironment.swift" "$check_dir/LeaseFailure.swift" "$check_dir/Engine.swift" \
   "$project_dir/Tests/ComposerAttachments/LifecycleChecks.swift" \
   -o "$check_dir/lifecycle-checks"
 "$check_dir/lifecycle-checks"

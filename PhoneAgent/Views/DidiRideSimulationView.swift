@@ -85,11 +85,12 @@ struct DidiRideSimulationView: View {
         }
         .sheet(isPresented: $showConnection) { DidiSimulationConnectionView(service: service) }
         .onAppear { publishSummary() }
+        .task { await service.restoreSavedConnection() }
         .onChange(of: stage) { _, _ in publishSummary() }
         .onChange(of: initialRequest) { _, _ in
             clearSelections(); invalidateRoute(); service.resetTripData()
         }
-        .onDisappear { cancelTasks(); clearSelections(); service.disconnect() }
+        .onDisappear { cancelTasks(); clearSelections(); service.suspend() }
         .tint(SelaHomePalette.accent)
     }
 
@@ -120,11 +121,7 @@ struct DidiRideSimulationView: View {
             HStack {
                 Text(stage.title).font(.subheadline.weight(.semibold))
                 Spacer(minLength: 4)
-                Button(service.isConfigured ? "断开滴滴" : "连接滴滴") {
-                    if service.isConfigured {
-                        service.disconnect(); pickup = nil; destination = nil; stops = []; invalidateRoute()
-                    } else { showConnection = true }
-                }.font(.caption)
+                connectionControl
             }
             if let banner {
                 DidiSimulationBannerView(banner: banner)
@@ -144,6 +141,7 @@ struct DidiRideSimulationView: View {
                 Text(error).font(.caption).foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            connectionStatus
             VStack(spacing: 8) {
                 stageActions
                 Button { closeSimulation() } label: {
@@ -222,9 +220,7 @@ struct DidiRideSimulationView: View {
                         HStack {
                             Text(stage.title).font(.subheadline.weight(.semibold))
                             Spacer()
-                            if !service.isConfigured {
-                                Button("连接滴滴") { showConnection = true }.font(.caption)
-                            }
+                            connectionControl
                         }.id("stage")
                         DidiSimulationRouteMap(pickup: pickup, destination: destination, stops: stops,
                             nearby: service.nearbyPlaces.first)
@@ -237,6 +233,7 @@ struct DidiRideSimulationView: View {
                             Text(error).font(.caption).foregroundStyle(.orange)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        connectionStatus
                     }
                     .padding(20).frame(maxWidth: 560).frame(maxWidth: .infinity)
                 }
@@ -474,6 +471,26 @@ struct DidiRideSimulationView: View {
             .overlay(alignment: .top) { SelaHomePalette.line.frame(height: 0.7) }
     }
 
+    private var connectionControl: some View {
+        Button(service.isConnecting ? "连接中…" : (service.isConfigured ? "断开滴滴" : "连接滴滴")) {
+            if service.isConfigured {
+                service.disconnect(); clearSelections(); invalidateRoute()
+            } else { showConnection = true }
+        }.font(.caption).disabled(service.isConnecting)
+            .accessibilityIdentifier("didi.connection.control")
+    }
+
+    @ViewBuilder private var connectionStatus: some View {
+        if !service.connectionError.isEmpty {
+            Text(service.connectionError).font(.caption).foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if service.isConfigured && service.hasSavedConnection {
+            Text("滴滴连接已保存，下次会自动连接。")
+                .font(.caption).foregroundStyle(SelaHomePalette.secondary)
+                .accessibilityIdentifier("didi.connection.saved")
+        }
+    }
+
     private func primaryButton(_ title: String, identifier: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).frame(minHeight: 48)
@@ -580,7 +597,7 @@ struct DidiRideSimulationView: View {
     }
 
     private func closeSimulation() {
-        cancelTasks(); banner = nil; clearSelections(); service.disconnect()
+        cancelTasks(); banner = nil; clearSelections(); service.suspend()
         if let onEnd { onEnd() }
         else { dismiss() }
     }
@@ -912,14 +929,29 @@ private struct DidiSimulationConnectionView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if service.hasSavedConnection || service.removalNeedsRetry {
+                    Section {
+                        if service.hasSavedConnection {
+                            Text("已有安全保存的滴滴连接。")
+                                .accessibilityIdentifier("didi.connection.saved")
+                            Button("重试已保存的连接") { restore() }.disabled(connecting || service.isConnecting)
+                        }
+                        Button("删除已保存连接", role: .destructive) {
+                            connectionTask?.cancel(); connecting = false
+                            service.disconnect(); error = service.connectionError
+                        }.accessibilityIdentifier("didi.connection.remove")
+                    }
+                }
                 SecureField("滴滴 MCP Key", text: $credential).textContentType(.password).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Text("连接成功后会安全保存在这台 iPhone，下次自动连接。断开滴滴会移除已保存连接。")
+                    .font(.caption).foregroundStyle(.secondary)
                 if !error.isEmpty { Text(error).font(.caption).foregroundStyle(.orange) }
-                Button(connecting ? "连接中…" : "连接") { connect() }.disabled(connecting || credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(connecting ? "连接中…" : "保存并连接") { connect() }.disabled(connecting || service.isConnecting || credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.navigationTitle("连接滴滴").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarLeading) { Button("返回") { credential = ""; dismiss() } } }
                 .onDisappear {
                     credential = ""
-                    if connecting { connectionTask?.cancel(); service.disconnect(); connecting = false }
+                    if connecting { connectionTask?.cancel(); service.suspend(); connecting = false }
                 }
         }.tint(SelaHomePalette.accent)
     }
@@ -936,6 +968,17 @@ private struct DidiSimulationConnectionView: View {
                 guard !Task.isCancelled else { return }
                 self.error = error.localizedDescription.replacingOccurrences(of: value, with: "[隐藏]"); connecting = false
             }
+        }
+    }
+
+    private func restore() {
+        connecting = true; error = ""
+        connectionTask = Task { @MainActor in
+            await service.restoreSavedConnection()
+            guard !Task.isCancelled else { return }
+            connecting = false
+            if service.isConfigured { dismiss() }
+            else { error = service.connectionError }
         }
     }
 }

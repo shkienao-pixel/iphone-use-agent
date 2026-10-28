@@ -15,5 +15,5 @@ if source.count(marker) != 1:
     raise SystemExit('Production domain extraction anchor changed')
 (out/'Domain.swift').write_text(source.split(marker, 1)[0])
 PYEXTRACT
-xcrun swiftc -parse-as-library "$project_dir/PhoneAgent/Services/DidiSimulationService.swift" "$project_dir/PhoneAgent/Services/DidiChatSimulationRegistry.swift" "$check_dir/Domain.swift" "$project_dir/Tests/DidiSimulation/main.swift" -o "$check_dir/checks"
+xcrun swiftc -parse-as-library "$project_dir/PhoneAgent/Stores/DidiConnectionStore.swift" "$project_dir/PhoneAgent/Services/DidiSimulationService.swift" "$project_dir/PhoneAgent/Services/DidiChatSimulationRegistry.swift" "$check_dir/Domain.swift" "$project_dir/Tests/DidiSimulation/main.swift" -o "$check_dir/checks"
 "$check_dir/checks"

@@ -32,6 +32,9 @@ private final class OfflineMetrics {
     @discardableResult private func transition(_ phase: Phase, _ state: String) -> Bool { self.phase = phase; self.state = state; return true }
     private func log(_ title: String, _ detail: String) { logs.append(AgentLogEntry(step: currentStep, title: title, detail: detail)) }
     private func finishAllowed() throws {}
+    // This native read-only fixture has no screen checkpoint pilot. The real
+    // finish method still calls its lifecycle boundary before completion policy.
+    private func diagnoseCheckpoint() {}
     private func completeSubtask(_ action: AgentAction, token: UUID, requiresConfirmation: Bool) async throws { try stillCurrent(token); ledgerProgress += 1 }
     private func measuredWait(nanoseconds: UInt64) async throws { try Task.checkCancellation() }
     private func finishRunMetrics(_ metrics: OfflineMetrics?) {}

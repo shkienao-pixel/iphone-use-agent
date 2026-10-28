@@ -20,6 +20,129 @@ import ActivityKit
     static var flightAttempts = 0
     static var flightRealtimeUnavailable = false
     static var notificationChecks: [String: Any] = [:]
+    // DEBUG-only, cable-session acceptance for the bounded stage 0–2 pilot.
+    // This never changes settings, queue entries, the draft, or completion policy.
+    private static let checkpointGoal = "调用一次 open_search 打开系统搜索页并停在该页面。若已经在搜索页也调用 open_search 核对。不要使用其他点击、滑动、输入、发送或工具操作来替代；完成该调用后根据已有画面结束任务。"
+    private static var checkpointTrial: (id: UUID, mode: String, startedAt: Date)?
+
+    private static func checkpointSummary(model: PhoneAgentViewModel, root: URL) -> [String: Any] {
+        let frame = model.capture.frame
+        var value: [String: Any] = [
+            "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            "app_build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+            "source_revision": Bundle.main.object(forInfoDictionaryKey: "PhoneAgentSourceRevision") as? String ?? "unknown",
+            "engine_running": model.engine.running, "engine_releasing": model.engine.releasing,
+            "engine_settled": model.engine.executionSettled, "engine_has_current_task": model.engine.hasCurrentTask,
+            "phase": model.engine.phase.rawValue, "step": model.engine.currentStep,
+            "queue_running": model.queueRunning, "queue_switching": model.queueSwitching,
+            "queue_count": model.taskQueue.items.count, "screen_queue_waiting": model.screenQueueWaiting.count,
+            "screen_queue_current_present": model.screenQueueCurrent != nil,
+            "history_count": model.history.records.count,
+            "interaction_busy": model.interactionBusy, "task_recovery_busy": model.taskRecoveryBusy,
+            "background_unsettled": model.backgroundTasks.hasUnsettledExecution,
+            "conversation_requests": model.conversation.processingConversationIDs.count,
+            "tool_pending": model.tools.pending != nil,
+            "harness_pending": model.engine.phoneHarness?.hasPendingReview ?? true,
+            "workflow_blocks_gui": model.workflowServices.blocksGUI,
+            "model_ready": model.modelReady, "consent_ready": model.consentReady,
+            "preparation_ready": model.preparationReady, "calibration_ready": model.calibrationReady,
+            "capture_running": model.capture.running, "frame_present": frame != nil,
+            "frame_full_display": frame?.fullDisplay ?? false,
+            "ble_ready": model.ble.ready, "connection_generation": model.ble.pointerConnectionGeneration.uuidString,
+            "date": Date().timeIntervalSince1970
+        ]
+        if let frame {
+            value["frame_width"] = frame.width; value["frame_height"] = frame.height
+            value["frame_source_width"] = frame.sourceWidth; value["frame_source_height"] = frame.sourceHeight
+            value["frame_capture_id"] = frame.captureID?.uuidString ?? "missing"
+            value["frame_captured_at"] = frame.capturedAt.timeIntervalSince1970
+            value["frame_confirmed_at"] = frame.confirmedAt.timeIntervalSince1970
+        }
+        if let trial = checkpointTrial {
+            let prefix = "checkpoint-" + trial.id.uuidString
+            value["trial_task_id"] = trial.id.uuidString; value["trial_mode"] = trial.mode
+            value["trial_started_at"] = trial.startedAt.timeIntervalSince1970
+            value["trial_is_current"] = model.engine.currentRecord?.id == trial.id
+            value["diagnostic_present"] = FileManager.default.fileExists(atPath: root.appendingPathComponent(prefix + ".json").path)
+            value["sink_failure_present"] = FileManager.default.fileExists(atPath: root.appendingPathComponent(prefix + "-sink-error.json").path)
+            if model.engine.currentRecord?.id == trial.id {
+                value["trial_outcome"] = model.engine.currentRecord?.outcome.rawValue ?? "missing"
+            }
+            if let metrics = model.engine.runMetrics?.snapshot, metrics.taskID == trial.id {
+                value["metrics_id"] = metrics.id.uuidString; value["model_requests"] = metrics.modelRequests
+                value["timing_span_counts"] = Dictionary(grouping: metrics.spans, by: { $0.category.rawValue }).mapValues(\.count)
+                value["discarded_timing_spans"] = metrics.discardedTimingSpans ?? 0
+                value["elapsed_seconds"] = metrics.elapsedSeconds
+            }
+        }
+        return value
+    }
+
+    private static func startCheckpoint(_ command: Command, model: PhoneAgentViewModel, root: URL) throws {
+        guard let taskID = UUID(uuidString: command.id), let mode = command.value,
+              ["off", "on", "failing_sink"].contains(mode) else { throw AgentError.message("试点需要明确 UUID 和 off/on/failing_sink 模式") }
+        // Waiting tasks remain untouched. No queued worker or other owner may
+        // be active; this independent trial uses the existing sole screen Engine.
+        guard model.engine.executionSettled, !model.engine.hasCurrentTask,
+              model.screenQueueCurrent == nil, !model.queueRunning, !model.queueSwitching,
+              !model.taskQueue.items.contains(where: { $0.state == .running }),
+              !model.interactionBusy, !model.taskRecoveryBusy,
+              !model.backgroundTasks.hasUnsettledExecution,
+              model.conversation.processingConversationIDs.isEmpty,
+              !model.camera.running, !model.camera.preparing, !model.liveCamera.running, !model.liveCamera.loading,
+              model.tools.pending == nil, !model.workflowServices.blocksGUI,
+              model.engine.phoneHarness?.hasPendingReview == false else {
+            throw AgentError.message("试点未启动：既有任务、队列执行、媒体或操作仍占用；等待队列已保留")
+        }
+        guard model.history.error.isEmpty, model.taskQueue.error.isEmpty,
+              !model.history.records.contains(where: { $0.id == taskID }),
+              !model.taskQueue.items.contains(where: { $0.id == taskID }) else {
+            throw AgentError.message("试点未启动：记录存储不可用或 UUID 已存在")
+        }
+        guard model.settings.toolsOnly != true, !model.settings.previewOnly,
+              model.preparationReady, model.modelReady, model.consentReady,
+              model.capture.running, let frame = model.capture.frame, frame.fullDisplay,
+              (0..<1.5).contains(Date().timeIntervalSince(frame.confirmedAt)),
+              model.ble.ready, model.calibrationReady else {
+            throw AgentError.message("试点未启动：请先完成原有模型授权、整屏共享、配件和校准准备")
+        }
+        _ = try model.executor.validateCalibration(frame: frame)
+        var settings = model.settings
+        settings.maxSteps = 4; settings.continuousExecution = false
+        settings.startDelay = 5; settings.confirmEachStep = false
+        let prefix = "checkpoint-" + taskID.uuidString
+        let diagnostic = root.appendingPathComponent(prefix + ".json")
+        let failure = root.appendingPathComponent(prefix + "-sink-error.json")
+        let blocker = root.appendingPathComponent(prefix + "-unwritable")
+        if mode == "failing_sink" { try Data("regular file: child writes must fail".utf8).write(to: blocker, options: .atomic) }
+        model.engine.disableCheckpointPilot()
+        if mode != "off" {
+            model.engine.configureCheckpointPilot(taskID: taskID, goal: checkpointGoal) { decision in
+                let result: [String: Any] = ["task_id": taskID.uuidString, "mode": mode,
+                    "condition": "system_search_visible", "verdict": decision.verdict.rawValue,
+                    "reason": decision.reason, "evidence_reference": decision.evidenceReference ?? "",
+                    "date": Date().timeIntervalSince1970]
+                let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+                do {
+                    try data.write(to: mode == "failing_sink" ? blocker.appendingPathComponent("result.json") : diagnostic,
+                        options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                } catch {
+                    // An isolated test receipt records only the controlled sink's
+                    // error code; the original error still reaches Engine's drop path.
+                    let errorValue = error as NSError
+                    let summary: [String: Any] = ["task_id": taskID.uuidString, "mode": mode,
+                        "sink_write_failed": true, "domain": errorValue.domain, "code": errorValue.code]
+                    if let receipt = try? JSONSerialization.data(withJSONObject: summary, options: [.sortedKeys]) {
+                        try? receipt.write(to: failure, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                    }
+                    throw error
+                }
+            }
+        }
+        checkpointTrial = (taskID, mode, Date())
+        model.engine.start(task: checkpointGoal, settings: settings, taskID: taskID)
+        if !model.engine.running { model.engine.disableCheckpointPilot() }
+    }
     static func run(model: PhoneAgentViewModel) async {
         let arguments = ProcessInfo.processInfo.arguments
         guard let index = arguments.firstIndex(of: "--sela-device-debug"), arguments.indices.contains(index + 1),
@@ -40,6 +163,13 @@ import ActivityKit
                           command.expiresAt - Date().timeIntervalSince1970 <= 15 else { throw AgentError.message("调试指令过期或会话不匹配") }
                     lastID = command.id; lastOperation = command.operation; lastError = ""
                     switch command.operation {
+                    case "checkpoint_status":
+                        let data = try JSONSerialization.data(withJSONObject: checkpointSummary(model: model, root: root), options: [.sortedKeys])
+                        try data.write(to: root.appendingPathComponent("checkpoint-status.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                    case "checkpoint_start":
+                        try startCheckpoint(command, model: model, root: root)
+                    case "checkpoint_disable":
+                        model.engine.disableCheckpointPilot()
                     case "intent_evaluate":
                         Task {
                             try? await IntentEvaluationRunner.run(model: model,

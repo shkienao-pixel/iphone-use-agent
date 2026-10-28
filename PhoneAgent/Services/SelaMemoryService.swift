@@ -159,7 +159,14 @@ final class SelaMemoryService: ObservableObject {
         for message in messages where ["user", "assistant"].contains(message.role) {
             try Task.checkCancellation()
             if let saved = known[message.id] {
-                guard saved.text == message.text, saved.role.rawValue == message.role else { throw AgentError.message("对话原文已改变，请重新核对记录。") }
+                guard saved.role.rawValue == message.role else { throw AgentError.message("对话原文已改变，请重新核对记录。") }
+                // Host-owned cards/receipts update their display in place. The
+                // memory source remains the first captured text, including for
+                // legacy cards; never overwrite a source already cited by learning.
+                let mutablePresentation = message.role == "assistant" &&
+                    (message.didiSimulationID != nil || message.taskID != nil ||
+                     message.intent.map { [.task, .flightOpen, .supplement, .resume, .pause, .stop].contains($0.mode) } == true)
+                guard saved.text == message.text || mutablePresentation else { throw AgentError.message("对话原文已改变，请重新核对记录。") }
                 continue
             }
             try await workspace.appendMessage(MemoryMessage(id: message.id, role: message.role == "user" ? .user : .assistant,

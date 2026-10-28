@@ -24,5 +24,5 @@ driver=(root/'PhoneAgent/Services/PhoneWorkflowCaptureDriver.swift').read_text()
 start=capture.index('            let frame = ScreenFrame(image: previous.image, jpeg: previous.jpeg, capturedAt: previous.capturedAt,')
 end=capture.index('\n            lastFrame = frame;',start)
 (out/'IdleConstructor.swift').write_text('import Foundation\nfunc workflowLeaseIdleFrame(previous:ScreenFrame,now:Date,captureID:UUID,isFullDisplay:Bool)->ScreenFrame {\n'+capture[start:end]+'\n return frame\n}\n')
-paths=['PhoneAgent/Services/CaptureService.swift','PhoneAgent/Services/PhoneHarnessRuntime.swift','PhoneAgent/Services/PhoneWorkflowCaptureDriver.swift','PhoneAgent/Services/WorkflowObservationLease.swift','Tests/ProductState/Environment.swift','PhoneAgent/Services/AgentEngine.swift','Shared/ComposerAttachment.swift']
+paths=['PhoneAgent/Services/CaptureService.swift','PhoneAgent/Services/PhoneHarnessRuntime.swift','PhoneAgent/Services/PhoneWorkflowCaptureDriver.swift','PhoneAgent/Services/WorkflowObservationLease.swift','Tests/ProductState/Environment.swift','PhoneAgent/Services/AgentEngine.swift','Shared/ComposerAttachment.swift','Shared/TaskCheckpointPolicy.swift']
 (out/'extracted-source-sha256.json').write_text(json.dumps({p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths},indent=2)+'\n')

@@ -266,6 +266,9 @@ struct TaskCompletionEvidence: Codable, Equatable, Sendable {
         var start: String?
         var end: String?
         var resultSHA256: String
+        // Optional for old persisted evidence; new writes retain the actual
+        // object identity so repeated receipts cannot inflate batch coverage.
+        var systemObjectID: String? = nil
     }
     var version = 1
     var goalSHA256: String
@@ -277,8 +280,13 @@ struct TaskCompletionEvidence: Codable, Equatable, Sendable {
     var allowsReceiptRecovery = true
     var subtaskReceiptIDs: [String] = []
     var subtaskObservationBoundary = 0
+    var referenceDate: Date? = nil
+    var referenceTimeZone: String? = nil
 
-    init(goal: String) { goalSHA256 = Self.digest(goal) }
+    init(goal: String) {
+        goalSHA256 = Self.digest(goal)
+        referenceDate = Date(); referenceTimeZone = TimeZone.current.identifier
+    }
     static func digest(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
@@ -300,11 +308,22 @@ struct TaskCompletionEvidence: Codable, Equatable, Sendable {
         if let persisted {
             guard persisted.version == 1, persisted.goalSHA256 == digest(goal), persisted.tools.count <= 2_000,
                   persisted.observations >= 0, persisted.inputs >= 0, persisted.postInputObservations >= 0 else {
-                var replacement = Self(goal: goal); replacement.allowsReceiptRecovery = false; return replacement
+                var replacement = Self(goal: goal); replacement.allowsReceiptRecovery = false
+                replacement.referenceDate = nil; replacement.referenceTimeZone = nil
+                return replacement
             }
             evidence = persisted
+            for index in evidence.tools.indices where evidence.tools[index].systemObjectID == nil {
+                let tool = evidence.tools[index]
+                if let card = legacyResults.first(where: { $0.id == tool.receiptID && $0.operation == tool.operation && $0.title == tool.title }) {
+                    evidence.tools[index].systemObjectID = card.systemObjectID
+                }
+            }
         } else {
             evidence = Self(goal: goal)
+            // A recovery timestamp cannot stand in for the original request's
+            // date when interpreting a historical relative-date batch.
+            evidence.referenceDate = nil; evidence.referenceTimeZone = nil
             // Legacy cards are host-built and task-bound, but not a full audit.
             // Only writes with a real system identifier and an explicit title in
             // this unchanged task can establish legacy completion evidence.
@@ -313,7 +332,8 @@ struct TaskCompletionEvidence: Codable, Equatable, Sendable {
                       !card.title.isEmpty, goal.contains(card.title), UUID(uuidString: card.id) != nil else { continue }
                 evidence.add(Tool(operation: card.operation, receiptID: card.id, title: card.title,
                     start: card.date.map { ISO8601DateFormatter().string(from: $0) },
-                    end: card.endDate.map { ISO8601DateFormatter().string(from: $0) }, resultSHA256: digest(card.id + card.operation)))
+                    end: card.endDate.map { ISO8601DateFormatter().string(from: $0) }, resultSHA256: digest(card.id + card.operation),
+                    systemObjectID: card.systemObjectID))
             }
         }
         for raw in receipts where evidence.allowsReceiptRecovery {
@@ -348,7 +368,8 @@ struct TaskCompletionEvidence: Codable, Equatable, Sendable {
             if operation == "content_prepare_clipboard" {
                 guard let object = json(raw), object["artifact_ref"] as? String == artifactReference else { return nil }
             }
-            return Tool(operation: operation, receiptID: card.id, title: title, start: start, end: end, resultSHA256: digest(raw))
+            return Tool(operation: operation, receiptID: card.id, title: title, start: start, end: end, resultSHA256: digest(raw),
+                systemObjectID: card.systemObjectID)
         }
         if ["music_play", "music_pause", "music_resume"].contains(operation) {
             guard let object = json(raw), object["confirmed"] as? Bool == true,
@@ -368,7 +389,7 @@ struct TaskCompletionEvidence: Codable, Equatable, Sendable {
     private static func recoveredWrite(operation: String, result: String) -> Tool? {
         if let receipt = NativeEventWriteReceipt.decode(result, operation: operation) {
             return Tool(operation: operation, receiptID: receipt.local_receipt_id.uuidString, title: receipt.title,
-                start: receipt.start ?? receipt.due, end: receipt.end, resultSHA256: digest(result))
+                start: receipt.start ?? receipt.due, end: receipt.end, resultSHA256: digest(result), systemObjectID: receipt.system_item_id)
         }
         // Alarm text includes the actual scheduled time and host receipt UUID.
         if operation == "alarm_create", let card = NativeTaskResult.completed(operation: operation, result: result,
@@ -394,6 +415,7 @@ enum TaskCompletionPolicy {
         guard evidence.goalSHA256 == TaskCompletionEvidence.digest(goal) else { return .needsUser("任务要求已经改变，原完成依据不能用于当前要求。") }
         let text = effectiveIntentText(goal.lowercased())
         let required = requiredOperations(text)
+        if let issue = batchWriteIssue(text: text, required: required, evidence: evidence) { return .needsUser(issue) }
         let completed = Set(evidence.tools.map(\.operation))
         let missing = required.subtracting(completed)
         let visualMutation = requiresVisualMutation(text)
@@ -414,6 +436,151 @@ enum TaskCompletionPolicy {
         }
         return .needsUser("模型已声明结束，但尚无匹配的实际执行依据，请先核对结果；任务没有记为已完成。")
     }
+    /// A bounded literal-list check, not a natural-language planner. Ambiguous
+    /// batches remain partial instead of accepting a model's finish as proof.
+    private static func batchWriteIssue(text: String, required: Set<String>, evidence: TaskCompletionEvidence) -> String? {
+        let families = [
+            ("reminder_create", "提醒|reminders?"), ("calendar_create", "日历事件|日程|events?"),
+            ("alarm_create", "闹钟|alarms?"), ("notes_create", "备忘录|notes?"),
+            ("content_create", "本机正文|本机内容|sela文件|sela 文件|local content")
+        ].filter { required.contains($0.0) }
+        for (operation, nouns) in families {
+            let number = "[0-9]{1,4}|[一二两三四五六七八九十百千万]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|hundred"
+            let rawCounts = captures("(" + number + ")\\s*(?:个|条|项|份|本)?\\s*(?:(?:新的?|不同的?|独立的?|单独的?|重要的?|紧急的?)|(?:new|different|separate|calendar)\\s+)*\\s*(?:" + nouns + ")", in: text)
+            let counts = rawCounts.compactMap(quantity)
+            let count = counts.reduce(0, +)
+            let matchingClauses = clauses(text).filter { requiredOperations($0).contains(operation) }
+            let headerEnd = text.firstIndex(where: { ":：\n，,".contains($0) })
+            let body = headerEnd.flatMap { boundary -> String? in
+                let header = String(text[...boundary])
+                return matches("(?:" + nouns + ")", in: header) ? String(text[text.index(after: boundary)...]) : nil
+            }
+            let pieces = body.map { listItems($0) } ?? []
+            let plural = matches("(?:多个|几个|若干|每个|每条|各个|several |multiple |each |all )(?:" + nouns + ")", in: text)
+                || matches("(?:create|add|set|schedule|save)\\s+(?:reminders|events|alarms|notes)\\b", in: text)
+                || text.contains("分别")
+            // Two explicit clock-bearing clauses also imply separate items,
+            // unless the user expressly requested one reminder with such text.
+            let timedParts = listItems(text).filter { matches("[0-9]{1,2}(?:点|时|:[0-9]{2})", in: $0) }.count
+            let explicitSingle = count == 1 && rawCounts.count == 1 && matchingClauses.count <= 1 && !plural
+            let batch = !explicitSingle && (count > 1 || counts.count != rawCounts.count || matchingClauses.count > 1 || plural || pieces.count > 1 || timedParts > 1)
+            guard batch else { continue }
+            let unknown = "批量任务还缺少可逐项核对的完整清单或回执，请核对每一项；已完成的操作已保留，没有把部分结果记为全部完成。"
+            // Mixed families or prose without an unambiguous literal list are
+            // deliberately not guessed from receipt count alone.
+            guard families.count == 1, counts.count == rawCounts.count else { return unknown }
+            let items = body != nil ? pieces : matchingClauses
+            guard items.count > 1, items.count <= 100, count == 0 || count == items.count else { return unknown }
+            var inheritedDay: String?, inheritedPeriod: String?
+            var requirements: [BatchItem] = []
+            for item in items {
+                guard var parsed = batchItem(item, nouns: nouns) else { return unknown }
+                if let day = parsed.day { inheritedDay = day } else { parsed.day = inheritedDay }
+                if let period = parsed.period { inheritedPeriod = period } else { parsed.period = inheritedPeriod }
+                requirements.append(parsed)
+            }
+            guard Set(requirements.map(\.identity)).count == requirements.count else { return unknown }
+            var usedObjects = Set<String>()
+            var usedReceipts = Set<String>()
+            var covered = 0
+            for requirement in requirements {
+                guard let receipt = evidence.tools.first(where: { tool in
+                    if ["reminder_create", "calendar_create"].contains(operation), tool.systemObjectID?.isEmpty != false { return false }
+                    let identity = tool.systemObjectID ?? tool.receiptID
+                    return tool.operation == operation && !identity.isEmpty && !usedObjects.contains(identity)
+                        && !usedReceipts.contains(tool.receiptID) && tool.title.map(normalizedTitle) == requirement.title
+                        && requirement.matchesSchedule(tool.start, evidence: evidence)
+                }) else { continue }
+                usedObjects.insert(receipt.systemObjectID ?? receipt.receiptID); usedReceipts.insert(receipt.receiptID); covered += 1
+            }
+            if covered != requirements.count {
+                return "批量任务仅核对到 \(covered)/\(requirements.count) 项匹配的实际工具回执；其余项目尚未确认，没有把部分结果记为全部完成。"
+            }
+        }
+        return nil
+    }
+    private static func listItems(_ text: String) -> [String] {
+        text.replacingOccurrences(of: "(?:然后|随后|并且|以及|和|及| and then | and )", with: ";", options: .regularExpression)
+            .components(separatedBy: CharacterSet(charactersIn: "，,；;、\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+    private struct BatchItem {
+        var title: String
+        var day: String?
+        var period: String?
+        var hour: Int?
+        var minute: Int?
+        var identity: String { [title, day ?? "", period ?? "", hour.map(String.init) ?? "", minute.map(String.init) ?? ""].joined(separator: "|") }
+        func matchesSchedule(_ start: String?, evidence: TaskCompletionEvidence) -> Bool {
+            guard let hour else { return day == nil }
+            guard let start, let actual = NativeTaskResult.parseDate(start),
+                  let zoneID = evidence.referenceTimeZone, let zone = TimeZone(identifier: zoneID) else { return false }
+            var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
+            var expectedHour = hour
+            if let period {
+                // "Evening 12" crosses a day boundary; "morning 12" is also
+                // ambiguous. Never silently certify either as midday/midnight.
+                if hour == 12 && ["晚上", "上午", "早上"].contains(period) { return false }
+                if ["下午", "晚上", "中午"].contains(period), hour < 12 { expectedHour += 12 }
+                else if ["凌晨", "上午", "早上"].contains(period), hour == 12 { expectedHour = 0 }
+            }
+            guard (0...23).contains(expectedHour), (0...59).contains(minute ?? 0),
+                  calendar.component(.hour, from: actual) == expectedHour,
+                  calendar.component(.minute, from: actual) == (minute ?? 0) else { return false }
+            guard let day else { return true }
+            if let offset = ["今天": 0, "今日": 0, "明天": 1, "明日": 1, "后天": 2][day] {
+                guard let reference = evidence.referenceDate, reference.timeIntervalSince1970.isFinite,
+                      let expected = calendar.date(byAdding: .day, value: offset, to: reference) else { return false }
+                return calendar.isDate(expected, inSameDayAs: actual)
+            }
+            let parts = day.split(separator: "-").compactMap { Int($0) }
+            return parts.count == 3 && calendar.component(.year, from: actual) == parts[0]
+                && calendar.component(.month, from: actual) == parts[1] && calendar.component(.day, from: actual) == parts[2]
+        }
+    }
+    private static func batchItem(_ item: String, nouns: String) -> BatchItem? {
+        var title = item.trimmingCharacters(in: .whitespacesAndNewlines)
+        title = title.replacingOccurrences(of: "^(?:[-*•]|[0-9]+[.)．])\\s*", with: "", options: .regularExpression)
+        title = title.replacingOccurrences(of: "^(?:请|帮我)?(?:创建|新建|添加|设置|设定|安排|保存|create|add|set|schedule|save)\\s*(?:一个|一条|an? )?(?:" + nouns + ")\\s*[:：]?\\s*", with: "", options: .regularExpression)
+        // Strip only a supported leading schedule. Unparsed timing elsewhere
+        // remains part of the title and cannot silently match a shorter one.
+        var result = BatchItem(title: "")
+        let pattern = "^(今天|明天|后天|今日|明日|[0-9]{4}-[0-9]{2}-[0-9]{2})?\\s*(早上|上午|中午|下午|晚上|凌晨)?\\s*([0-9]{1,2})(?:点|时|:)(半|[0-9]{1,2}分?)?\\s*"
+        if let expression = try? NSRegularExpression(pattern: pattern),
+           let match = expression.firstMatch(in: title, range: NSRange(title.startIndex..., in: title)),
+           let entire = Range(match.range, in: title) {
+            func group(_ index: Int) -> String? { Range(match.range(at: index), in: title).map { String(title[$0]) } }
+            result.day = group(1); result.period = group(2); result.hour = group(3).flatMap(Int.init)
+            result.minute = group(4).map { $0 == "半" ? 30 : Int($0.replacingOccurrences(of: "分", with: "")) ?? -1 } ?? 0
+            title = String(title[entire.upperBound...])
+        }
+        title = title.replacingOccurrences(of: "^(?:提醒我|内容是|内容为|标题是|标题为|标题|提醒)\\s*[:：]?\\s*", with: "", options: .regularExpression)
+        title = normalizedTitle(title)
+        guard !title.isEmpty, title.count <= 160 else { return nil }
+        result.title = title; return result
+    }
+    private static func normalizedTitle(_ title: String) -> String {
+        title.precomposedStringWithCanonicalMapping.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "。.!！\"'“”‘’「」")))
+    }
+    private static func matches(_ pattern: String, in text: String) -> Bool {
+        text.range(of: pattern, options: .regularExpression) != nil
+    }
+    private static func captures(_ pattern: String, in text: String) -> [String] {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in
+            Range(match.range(at: 1), in: text).map { String(text[$0]) }
+        }
+    }
+    private static func quantity(_ text: String) -> Int? {
+        if let count = Int(text) { return count }
+        let simple = ["一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+                      "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10]
+        if let count = simple[text] { return count }
+        let tens = text.components(separatedBy: "十")
+        if tens.count == 2, let first = tens[0].isEmpty ? 1 : simple[tens[0]], let last = tens[1].isEmpty ? 0 : simple[tens[1]] { return first * 10 + last }
+        return nil
+    }
     private static func requiredOperations(_ text: String) -> Set<String> {
         var required = Set<String>()
         let operations = ["calendar_create", "calendar_search", "reminder_create", "reminder_search", "alarm_create", "alarm_list", "notes_create", "content_create", "health_query", "contact_search", "photo_search", "music_search", "music_play", "music_pause", "music_resume", "music_status", "location_current", "ctrip_query", "meituan_query", "meituan_paotui"]
@@ -431,7 +598,7 @@ enum TaskCompletionPolicy {
             if ["闹钟", "alarm"].contains(where: clause.contains) {
                 if create { required.insert("alarm_create") } else if read { required.insert("alarm_list") }
             }
-            if ["备忘录", "apple notes"].contains(where: clause.contains), create { required.insert("notes_create") }
+            if ["备忘录", "apple notes"].contains(where: clause.contains) || matches("\\bnotes?\\b", in: clause), create { required.insert("notes_create") }
             if ["本机内容", "本机正文", "sela文件", "sela 文件", "local content"].contains(where: clause.contains), create { required.insert("content_create") }
             if ["步数", "睡眠", "运动记录", "health", "steps", "sleep", "workout"].contains(where: clause.contains), read { required.insert("health_query") }
             if ["联系人", "通讯录", "contact"].contains(where: clause.contains), read { required.insert("contact_search") }

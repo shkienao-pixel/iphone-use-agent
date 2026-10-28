@@ -1234,10 +1234,9 @@ struct ContentView: View {
         model.unifiedFocusedTaskID = displayedRecord?.id
         model.conversation.draft = draft
         if model.conversation.send(settings: model.settings, apiKey: SettingsStore.apiKey(for: model.settings.endpoint), memories: model.memories,
-                                   taskRecords: model.history.records, attachments: attachmentDraft.items) {
+                                   taskRecords: model.history.records, attachments: attachmentDraft.items, beforeSnapshot: { self.navigate(.assistant) }) {
             if composingSupplement, let id = displayedRecord?.id { amendmentDrafts[id] = nil } else { model.goal = "" }
             attachmentDraft.clear()
-            navigate(.assistant)
         }
     }
 

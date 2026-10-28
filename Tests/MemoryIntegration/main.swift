@@ -102,6 +102,7 @@ import SelaMemoryCore
             }
             guard failed.error == "Offline learning failure must be visible" else { throw AgentError.message("Learning failure was silently discarded") }
             print("PASS: short-conversation learning failures reach the native memory UI")
+            try await PresentationChecks.run(root: root, settings: configuration.settings)
             try await checkAutomaticScopeAdmission(root: root, configuration: configuration)
             try await checkUnavailableExclusions(root: root, configuration: configuration)
         }

@@ -3,7 +3,8 @@ import Combine
 import CoreLocation
 
 /// Location, place lookup, and read-only estimates for the ride simulation.
-/// Credentials and precise coordinates remain in memory; this client has no order API.
+/// Credentials are saved only in this iPhone's Keychain after validation.
+/// Precise coordinates remain temporary; this client has no order API.
 enum DidiSimulationLocationState: Equatable {
     case idle, locating, ready, failed
 }
@@ -18,6 +19,10 @@ final class DidiSimulationService: NSObject, ObservableObject, @preconcurrency C
     @Published private(set) var locationError = ""
     @Published private(set) var nearbyPlaces: [DidiSimulationPlace] = []
     @Published private(set) var isConfigured = false
+    @Published private(set) var isConnecting = false
+    @Published private(set) var connectionError = ""
+    @Published private(set) var removalNeedsRetry = false
+    var hasSavedConnection: Bool { credentialStore.canRestore }
 
     private static let permittedTools: Set<String> = [
         "maps_textsearch", "maps_regeocode", "maps_place_around", "taxi_estimate"
@@ -27,8 +32,11 @@ final class DidiSimulationService: NSObject, ObservableObject, @preconcurrency C
     private var availableTools: Set<String> = []
     private var sessionID: String?
     private var connectionID = UUID()
+    private var credentialRevision: UUID?
     private var tripID = UUID()
     private let transport: Transport?
+    private let credentialStore: any DidiCredentialStoring
+    private var credentialChanges: AnyCancellable?
     private var rpcID = 0
     private var searchCache: [String: (place: DidiSimulationPlace, date: Date)] = [:]
     private var locationToken: UUID?
@@ -42,17 +50,56 @@ final class DidiSimulationService: NSObject, ObservableObject, @preconcurrency C
         return manager
     }()
 
-    override init() { transport = nil; super.init() }
-    init(transport: @escaping Transport) { self.transport = transport; super.init() }
+    override init() {
+        transport = nil; credentialStore = DidiConnectionStore.shared; super.init(); observeCredentialChanges()
+    }
+    init(transport: @escaping Transport, credentialStore: any DidiCredentialStoring) {
+        self.transport = transport; self.credentialStore = credentialStore; super.init(); observeCredentialChanges()
+    }
+
+    private func observeCredentialChanges() {
+        removalNeedsRetry = credentialStore.hasPendingRemoval
+        credentialChanges = credentialStore.revisions.sink { [weak self] revision in
+            guard let self, let active = self.credentialRevision, active != revision else { return }
+            self.suspend()
+            self.removalNeedsRetry = self.credentialStore.hasPendingRemoval
+            self.connectionError = self.credentialStore.canRestore ? "滴滴连接已更新，请重新连接。" : "滴滴连接已断开。"
+        }
+    }
 
     /// Accepts an existing personal MCP key or its official production URL.
-    /// The value is never written to preferences, Keychain, logs, or files.
+    /// Save only the normalized key, after the service and attempt are verified.
     func configure(credential value: String) async throws {
+        try await connect(credential: value, restoring: false)
+    }
+
+    /// Called on an active card, never from init or a background scheduler.
+    /// A temporary failure keeps the saved connection available for retry.
+    func restoreSavedConnection() async {
+        guard !isConfigured, !isConnecting else { return }
+        do {
+            try Task.checkCancellation()
+            if credentialStore.hasPendingRemoval {
+                removalNeedsRetry = true; connectionError = DidiCredentialStoreError.remove.localizedDescription
+                return
+            }
+            guard let value = try credentialStore.load() else { return }
+            try Task.checkCancellation()
+            try await connect(credential: value, restoring: true)
+        } catch is CancellationError { }
+        catch { connectionError = safe(error).localizedDescription }
+    }
+
+    private func connect(credential value: String, restoring: Bool) async throws {
+        try Task.checkCancellation()
         let parsed = try Self.connection(value)
+        let revision = restoring ? credentialStore.revision : credentialStore.beginConnectionAttempt()
         resetTripData()
         let attempt = UUID()
         connectionID = attempt
+        credentialRevision = revision
         isConfigured = false
+        isConnecting = true; connectionError = ""
         credential = parsed.key
         endpoint = parsed.url
         sessionID = nil
@@ -67,30 +114,40 @@ final class DidiSimulationService: NSObject, ObservableObject, @preconcurrency C
             guard required.isSubset(of: names) else {
                 throw Failure.message("当前滴滴连接未开放地点搜索、地址解析或真实询价，请核对 MCP 权益。")
             }
-            guard connectionID == attempt else { throw CancellationError() }
+            try Task.checkCancellation()
+            guard connectionID == attempt, credentialStore.revision == revision else { throw CancellationError() }
+            if !restoring { try credentialStore.save(parsed.key, revision: revision) }
             availableTools = names.intersection(Self.permittedTools)
-            isConfigured = true
+            isConfigured = true; isConnecting = false; removalNeedsRetry = false
         } catch {
             if connectionID == attempt {
                 credential = ""; endpoint = nil; sessionID = nil
-                availableTools = []; searchCache = [:]; isConfigured = false
+                credentialRevision = nil; availableTools = []; searchCache = [:]; isConfigured = false; isConnecting = false
+                if !(error is CancellationError) { connectionError = safe(error).localizedDescription }
             }
             throw safe(error)
         }
     }
 
-    /// End a preview and invalidate any in-flight connection or location work.
+    /// Explicit removal revokes every card before attempting Keychain deletion.
     func disconnect() {
+        suspend()
+        do { try credentialStore.remove(); removalNeedsRetry = false }
+        catch { connectionError = safe(error).localizedDescription; removalNeedsRetry = true }
+    }
+
+    /// Ordinary navigation ends transient work but preserves the saved key.
+    func suspend() {
         connectionID = UUID()
         resetTripData()
         credential = ""; endpoint = nil; sessionID = nil
-        availableTools = []; isConfigured = false
+        credentialRevision = nil; availableTools = []; isConfigured = false; isConnecting = false; connectionError = ""
     }
 
     /// Start an empty itinerary in the same connected card. A new trip epoch
     /// also rejects late search/quote results even if their caller did not
-    /// cooperate with cancellation. Connection credentials remain in memory
-    /// until the card is ended, disconnected, or disappears.
+    /// cooperate with cancellation. The current connection remains available;
+    /// saved credentials are independent of temporary itinerary data.
     func resetTripData() {
         tripID = UUID()
         if let token = locationToken { endLocation(token) }
@@ -101,7 +158,7 @@ final class DidiSimulationService: NSObject, ObservableObject, @preconcurrency C
     /// Only called by an explicit location button in Sela. No continuous tracking.
     func requestLocation() {
         guard locationState != .locating else { return }
-        guard isConfigured else {
+        guard isConfigured, credentialRevision == credentialStore.revision else {
             locationState = .failed
             locationError = "请先连接滴滴，再使用设备位置。你也可以搜索上车地址。"
             nearbyPlaces = []
@@ -312,7 +369,10 @@ final class DidiSimulationService: NSObject, ObservableObject, @preconcurrency C
     }
 
     private func rpc(_ method: String, params: [String: Any], connection: UUID) async throws -> [String: Any] {
-        guard connection == connectionID, let endpoint,
+        try Task.checkCancellation()
+        guard connection == connectionID, let revision = credentialRevision,
+              revision == credentialStore.revision else { throw CancellationError() }
+        guard let endpoint,
               method == "tools/list" || (method == "tools/call" && (params["name"] as? String).map(Self.permittedTools.contains) == true) else {
             throw Failure.message("滴滴连接暂不可用，请重新连接。")
         }
@@ -331,7 +391,8 @@ final class DidiSimulationService: NSObject, ObservableObject, @preconcurrency C
             else { loaded = try await Self.load(request) }
             let (data, response) = loaded
             try Task.checkCancellation()
-            guard connection == connectionID else { throw CancellationError() }
+            guard connection == connectionID, credentialRevision == revision,
+                  credentialStore.revision == revision else { throw CancellationError() }
             guard response.url == endpoint, (200...299).contains(response.statusCode) else {
                 switch response.statusCode {
                 case 401, 403: throw Failure.message("滴滴授权未通过，请检查 MCP Key 和权益。")
@@ -451,6 +512,7 @@ final class DidiSimulationService: NSObject, ObservableObject, @preconcurrency C
     private func safe(_ error: Error) -> Error {
         if error is CancellationError { return CancellationError() }
         if let failure = error as? Failure { return failure }
+        if let failure = error as? DidiCredentialStoreError { return failure }
         return Failure.message("滴滴暂时无法连接，请检查网络，或稍后重试。")
     }
 

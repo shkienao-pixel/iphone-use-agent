@@ -67,12 +67,12 @@ import Foundation
         let first = tape.frame(home)
         let firstContext = try object(await runtime.context(for: first))
         expect(firstContext["scene"] as? String == "home", "Home must be recognized from current OCR")
-        tape.queued = [keyboard, results, settings]
+        tape.queued = [keyboard, keyboard, results, settings]
         ModelProbe.calls = 0
         let receipt = try await runtime.execute(PhoneHarnessRequest(operation: .open_app, target: "Settings"),
                                                 frame: first, mappedHome: false, nextFrame: tape.next)
         expect(executor.actions == [.tap, .press_key, .type, .tap], "Open App performs one local search/input/result macro")
-        expect(tape.advances == 3, "Macro verifies search, app result and destination")
+        expect(tape.advances == 4, "Macro verifies search, selection, app result and destination")
         expect(ModelProbe.calls == 0, "Local macro does not make model calls")
         expect(receipt.summary.contains("settings"), "Receipt names the observed destination")
         expect(receipt.lastInputCompletedAt != nil && receipt.verifiedFrame != nil,
@@ -81,6 +81,8 @@ import Foundation
                "Terminal frame is confirmed after the last actual input completed")
         expect(receipt.verifiedFrame!.captureID == first.captureID,
                "Terminal frame remains on the original capture stream")
+        expect(receipt.checkpointFact == nil && receipt.checkpointFrame == nil,
+               "Other operations, including open_app using openSearch internally, do not produce a checkpoint fact")
         expect(FileManager.default.fileExists(atPath: memoryURL.path), "Verified search memory is persisted")
         let stored = try JSONDecoder().decode(PhoneLayoutMemory.self, from: Data(contentsOf: memoryURL))
         expect(stored.controls.contains { $0.name == "home.search" && $0.successes == 1 }, "Only verified search transition is learned")
@@ -106,18 +108,60 @@ import Foundation
         let homeFirstTape = OCRFixtures(), homeFirstExecutor = MouseExecutor()
         let homeFirst = PhoneHarnessRuntime(executor: homeFirstExecutor,
             memoryURL: directory.appendingPathComponent("home-first.json"), recognize: homeFirstTape.recognize)
-        homeFirstTape.queued = [settings, [], home, keyboard, results, settings]
+        homeFirstTape.queued = [settings, [], home, keyboard, keyboard, results, settings]
         _ = try await homeFirst.execute(PhoneHarnessRequest(operation: .open_app, target: "Settings"),
             frame: homeFirstTape.frame(touch), mappedHome: true, nextFrame: homeFirstTape.next)
         expect(homeFirstExecutor.actions == [.press_key, .tap, .press_key, .type, .tap],
                "Opening an app from a child page presses Home only once before the normal macro")
-        expect(homeFirstTape.advances == 6, "App opening waits for confirmed Home before any search input")
+        expect(homeFirstTape.advances == 7, "App opening waits for confirmed Home and verifies the selection before typing")
 
         let idleReceipt = try await delayed.execute(PhoneHarnessRequest(operation: .open_search),
             frame: delayedTape.frame(keyboard), mappedHome: false, nextFrame: delayedTape.next)
         expect(idleReceipt.lastInputCompletedAt == nil && idleReceipt.verifiedFrame == nil,
                "An already-open search issues no input and does not invent a completed input time")
         expect(delayedExecutor.actions.count == 4, "Idempotent search does not dispatch an input")
+        expect(idleReceipt.checkpointFact?.source == .alreadyVisible && idleReceipt.checkpointFact?.inputCompletedAt == nil,
+               "Already visible search records the observed branch without inventing input")
+        expect(idleReceipt.checkpointFact?.verificationScope == .searchSceneOnly && idleReceipt.checkpointFrame?.capturedAt == idleReceipt.checkpointFact?.capturedAt,
+               "Existing classifier proves only a search-like scene and preserves the actual observation")
+
+        // Run actual open_search against deterministic offline OCR and frame
+        // providers. Counts include the old local work; there are no extra
+        // model, frame-provider, OCR or input calls to construct the fact.
+        let checkpointTape = OCRFixtures(), checkpointExecutor = MouseExecutor()
+        let checkpointRuntime = PhoneHarnessRuntime(executor: checkpointExecutor,
+            memoryURL: directory.appendingPathComponent("checkpoint.json"), recognize: checkpointTape.recognize)
+        let sourceFrame = checkpointTape.frame(home)
+        checkpointTape.queued = [keyboard]
+        ModelProbe.calls = 0
+        let opened = try await checkpointRuntime.execute(PhoneHarnessRequest(operation: .open_search),
+            frame: sourceFrame, mappedHome: false, nextFrame: checkpointTape.next)
+        expect(checkpointExecutor.actions == [.tap] && checkpointTape.advances == 1 && checkpointTape.recognitions == 2 && ModelProbe.calls == 0,
+               "Opening search retains one tap, one later frame, two OCR calls and no model calls")
+        expect(opened.checkpointFact?.source == .afterInput && opened.checkpointFact?.verificationScope == .searchSceneOnly,
+               "Search transition preserves its input branch and honest classifier scope")
+        expect(opened.checkpointFact?.captureID == sourceFrame.captureID && opened.checkpointFrame?.capturedAt == opened.checkpointFact?.capturedAt,
+               "Search transition references its actual post-input frame on the original capture stream")
+        expect(opened.checkpointFact?.inputCompletedAt == opened.lastInputCompletedAt && opened.checkpointFact!.capturedAt > opened.lastInputCompletedAt!,
+               "Observed pixels and confirmation follow the actual input boundary")
+        let oldGeneration = opened.checkpointFact!.runtimeGeneration
+        checkpointRuntime.reset()
+        expect(checkpointRuntime.checkpointRuntimeGeneration != oldGeneration,
+               "Reset invalidates the prior runtime generation")
+        let reconnectTape = OCRFixtures(), reconnectExecutor = MouseExecutor()
+        let initialConnection = reconnectExecutor.ble.pointerConnectionGeneration
+        let reconnected = PhoneHarnessRuntime(executor: reconnectExecutor,
+            memoryURL: directory.appendingPathComponent("reconnected.json"), recognize: { frame in
+                reconnectExecutor.ble.pointerConnectionGeneration = UUID()
+                return try reconnectTape.recognize(frame)
+            })
+        try await expectFallback("Same-accessory reconnection during OCR must reject the operation before producing a receipt") {
+            _ = try await reconnected.execute(PhoneHarnessRequest(operation: .open_search),
+                frame: reconnectTape.frame(keyboard), mappedHome: false, nextFrame: reconnectTape.next)
+        }
+        expect(reconnectExecutor.actions.isEmpty && reconnectTape.advances == 0 &&
+               initialConnection != reconnectExecutor.ble.pointerConnectionGeneration,
+               "Reconnection cannot bless old OCR or dispatch another input")
 
         let boundedTape = OCRFixtures(), boundedExecutor = MouseExecutor()
         let bounded = PhoneHarnessRuntime(executor: boundedExecutor,
@@ -230,7 +274,7 @@ import Foundation
         let resultBlockTape = OCRFixtures(), resultBlockExecutor = MouseExecutor()
         let resultBlocked = PhoneHarnessRuntime(executor: resultBlockExecutor,
             memoryURL: directory.appendingPathComponent("blocked-results.json"), recognize: resultBlockTape.recognize)
-        resultBlockTape.queued = [keyboard, results + [permission]]
+        resultBlockTape.queued = [keyboard, keyboard, results + [permission]]
         try await expectFallback("Permission prompt over results must stop result selection") {
             _ = try await resultBlocked.execute(PhoneHarnessRequest(operation: .open_app, target: "Settings"),
                 frame: resultBlockTape.frame(home), mappedHome: false, nextFrame: resultBlockTape.next)
@@ -239,7 +283,7 @@ import Foundation
         let topHitTape = OCRFixtures(), topHitExecutor = MouseExecutor()
         let topHit = PhoneHarnessRuntime(executor: topHitExecutor,
             memoryURL: directory.appendingPathComponent("top-hit.json"), recognize: topHitTape.recognize)
-        topHitTape.queued = [keyboard] + Array(repeating: keyboard + [element("hit", "Top Hit", 0.15, 0.2), element("result", "Settings", 0.3, 0.32)], count: 12)
+        topHitTape.queued = [keyboard, keyboard] + Array(repeating: keyboard + [element("hit", "Top Hit", 0.15, 0.2), element("result", "Settings", 0.3, 0.32)], count: 12)
         try await expectFallback("Top Hit alone is not proof of an installed app result") {
             _ = try await topHit.execute(PhoneHarnessRequest(operation: .open_app, target: "Settings"),
                 frame: topHitTape.frame(home), mappedHome: false, nextFrame: topHitTape.next)
@@ -249,7 +293,7 @@ import Foundation
         let wrongTape = OCRFixtures(), wrongExecutor = MouseExecutor()
         let wrong = PhoneHarnessRuntime(executor: wrongExecutor,
             memoryURL: directory.appendingPathComponent("wrong-app.json"), recognize: wrongTape.recognize)
-        wrongTape.queued = [keyboard, results] + Array(repeating: [element("mail", "Mail", 0.5, 0.08)], count: 12)
+        wrongTape.queued = [keyboard, keyboard, results] + Array(repeating: [element("mail", "Mail", 0.5, 0.08)], count: 12)
         try await expectFallback("Leaving search for an unidentified or incorrect app is not successful app opening") {
             _ = try await wrong.execute(PhoneHarnessRequest(operation: .open_app, target: "Settings"),
                 frame: wrongTape.frame(home), mappedHome: false, nextFrame: wrongTape.next)
@@ -462,6 +506,7 @@ import Foundation
         checks += try await HarnessRuntimeCacheChecks.run(directory: directory, reportURL: cacheReport)
         let metricsReport = ProcessInfo.processInfo.environment["HARNESS_RUNTIME_METRICS_REPORT"].map { URL(fileURLWithPath: $0) }
         checks += try await HarnessRuntimeMetricsChecks.run(directory: directory, reportURL: metricsReport)
+        checks += try await PilotReplayChecks.run(directory: directory, home: home, search: keyboard)
         print("\(checks) production phone-harness runtime checks passed. Injected OCR and offline input/model probes only; no device or network actions.")
     }
 }

@@ -11,6 +11,9 @@ trap finish EXIT
 mkdir -p "$check_dir/Sources/Check"
 cp "$project_dir/PhoneAgent/Services/SelaMemoryModelClient.swift" "$project_dir/PhoneAgent/Services/SelaMemoryService.swift" "$project_dir/PhoneAgent/Services/ConnectedConversationClient.swift" "$project_dir/Tests/MemoryIntegration/Environment.swift" "$check_dir/Sources/Check/"
 cp "$project_dir/Shared/ChatGPTPlanProtocol.swift" "$project_dir/Shared/ChatGPTPlanResponses.swift" "$check_dir/Sources/Check/"
+# The shared memory fixture uses the real message model, including its mutable
+# card metadata. Compile that model and its value-type dependencies here too.
+cp "$project_dir/Shared/ComposerAttachment.swift" "$project_dir/Shared/NativeTaskResult.swift" "$project_dir/Shared/AssistantConversationContext.swift" "$project_dir/Shared/ConversationUnderstanding.swift" "$check_dir/Sources/Check/"
 cp "$project_dir/Tests/PlanMemoryIntegration/Environment.swift" "$check_dir/Sources/Check/PlanEnvironment.swift"
 cp "$project_dir/Tests/PlanMemoryIntegration/main.swift" "$check_dir/Sources/Check/main.swift"
 python3 - "$project_dir" "$check_dir" <<'PY'

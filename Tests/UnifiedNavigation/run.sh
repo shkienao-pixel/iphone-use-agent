@@ -16,3 +16,5 @@ xcrun swiftc -D DEBUG -parse-as-library -module-cache-path "$check_dir/module-ca
  "$check_dir/production/ModelBoundaries.swift" "$project_dir/Tests/UnifiedNavigation/main.swift" \
  -o "$check_dir/unified-navigation"
 "$check_dir/unified-navigation" "$check_dir/result.json"
+
+bash "$project_dir/Tests/ComposerControls/run.sh"

@@ -23,13 +23,6 @@ enum SettingsStore {
     static func load() -> AgentSettings { AgentSettings() }
     static func apiKey(for endpoint: String) -> String { "" }
 }
-struct AssistantMessage {
-    var id = UUID()
-    var role: String
-    var text: String
-    var createdAt = Date()
-    var attachments: [String]? = nil
-}
 enum ModelEndpointPolicy {
     static func url(_ text: String) throws -> URL {
         guard let parts = URLComponents(string: text), parts.scheme == "https", parts.host != nil,

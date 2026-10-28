@@ -117,16 +117,20 @@ final class MouseExecutor {
         try await movePositionUnits(x: moveX - Int(current.x), y: moveY - Int(current.y))
         return CGPoint(x: moveX, y: moveY)
     }
-    func execute(_ action: AgentAction, frame: ScreenFrame, mappedHomeAvailable: Bool = false) async throws {
+    func execute(_ action: AgentAction, frame: ScreenFrame, mappedHomeAvailable: Bool = false,
+                 validateInput: (@MainActor () throws -> Void)? = nil) async throws {
         try action.validate()
         guard ble.ready else { throw AgentError.message("鼠标未就绪，已停止执行") }
         switch action.kind {
         case .tap:
-            try await locate(x: action.x!, y: action.y!, frame: frame); try await click()
+            try await locate(x: action.x!, y: action.y!, frame: frame)
+            try validateInput?()
+            try await click()
         case .long_press:
             let connection = ble.pointerConnectionGeneration
             try await locate(x: action.x!, y: action.y!, frame: frame)
             do {
+                try validateInput?()
                 try await ble.send(.report, buttons: 1)
                 for _ in 0..<max(1, Int((action.seconds ?? 0.8) / 0.3)) {
                     try await sleep(0.3); try await ble.send(.report, buttons: 1)
@@ -144,6 +148,7 @@ final class MouseExecutor {
             guard destinationX < 10000, destinationY < 10000 else { throw AgentError.message("拖动终点异常，请重新校准") }
             let current = pointerUnits ?? .zero
             do {
+                try validateInput?()
                 try await ble.send(.report, buttons: 1)
                 try await movePositionUnits(x: destinationX - Int(current.x), y: destinationY - Int(current.y),
                     buttons: 1, minimumDuration: action.seconds ?? 0.6)
@@ -162,6 +167,7 @@ final class MouseExecutor {
                     try await locate(x: x, y: y, frame: frame)
                 }
                 guard ble.status?.bootMode != true else { throw AgentError.message("系统 Boot 模式不支持滚轮") }
+                try validateInput?()
                 let sequence = try await ble.send(.report, wheel: action.amount!, expectedConnection: connection)
                 try await ble.waitIdle(after: sequence)
             } catch {
@@ -173,10 +179,15 @@ final class MouseExecutor {
             }
         case .type:
             guard ble.keyboardReady else { throw AgentError.message("蓝牙键盘未就绪，请查看设备连接状态或使用屏幕键盘") }
+            let connection = ble.pointerConnectionGeneration
             let text = (action.text ?? "").replacingOccurrences(of: "\r\n", with: "\n")
             // Validate the entire string before sending any keys.
             for character in text { _ = try HIDKeyboard.ascii(character) }
+            // A text operation legitimately changes the pixels as it types.
+            // Validate focus once before its first key, not between characters.
+            try validateInput?()
             for character in text {
+                guard ble.pointerConnectionGeneration == connection else { throw AgentError.message("键盘连接已变化，文字输入已停止") }
                 let (mod, key) = try HIDKeyboard.ascii(character, capsLock: ble.status?.capsLock == true)
                 try await press(modifier: mod, key: key)
             }
@@ -186,9 +197,11 @@ final class MouseExecutor {
                     throw AgentError.message("中键主屏幕映射尚未确认，请通过可见辅助触控菜单返回桌面")
                 }
                 // Configure mouse middle button to "Home" in AssistiveTouch.
+                try validateInput?()
                 try await click(button: 4)
             } else {
                 let (mod, key) = try HIDKeyboard.key(action.text ?? "")
+                try validateInput?()
                 try await press(modifier: mod, key: key)
             }
         case .wait: try await sleep(action.seconds ?? 1)

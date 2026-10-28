@@ -12,14 +12,35 @@ import Foundation
         }
         let row = e("row", "文件传输助手", 0.5, 0.3)
         let list = frame("wechat.list", [row])
-        func transferChat() -> WeChatShortcutFrame {
+        func transferChat(capturedAt: Date = Date()) -> WeChatShortcutFrame {
             frame("wechat.chat", [e("back", "微信", 0.1, 0.08), e("title", "文件传输助手", 0.5, 0.08),
-                e("proof", "可以在手机和电脑间互传文件", 0.5, 0.25, 0.64), e("input", "发送消息", 0.4, 0.9)])
+                e("proof", "可以在手机和电脑间互传文件", 0.5, 0.25, 0.64), e("input", "发送消息", 0.4, 0.9)], capturedAt: capturedAt)
+        }
+        // The synchronous fake tap can finish within one Date clock tick.
+        // Produce a real later timestamp after read() starts; never fabricate
+        // a future frame or weaken production's strict post-input boundary.
+        func freshReadTime() async -> Date {
+            let boundary = Date()
+            var now = Date()
+            while now <= boundary { await Task.yield(); now = Date() }
+            return now
         }
         var tapped: [String] = []
         let result = try await WeChatShortcutNavigation.run(initial: list, name: "文件传输助手", stableID: "wechat.builtin.file-transfer",
-            tap: { tapped.append($0.id) }, read: { transferChat() })
+            tap: { tapped.append($0.id) }, read: { transferChat(capturedAt: await freshReadTime()) })
         precondition(tapped == ["row"] && WeChatShortcutNavigation.transferChat(result.snapshot), "single row then verified chat")
+        for _ in 0..<1000 {
+            tapped = []
+            _ = try await WeChatShortcutNavigation.run(initial: frame("wechat.list", [row]), name: "文件传输助手", stableID: "wechat.builtin.file-transfer",
+                tap: { tapped.append($0.id) }, read: { transferChat(capturedAt: await freshReadTime()) })
+            precondition(tapped == ["row"], "fresh read remains deterministic even when tap completes synchronously")
+        }
+        tapped = []
+        do {
+            _ = try await WeChatShortcutNavigation.run(initial: list, name: "文件传输助手", stableID: "wechat.builtin.file-transfer",
+                tap: { tapped.append($0.id) }, read: { transferChat(capturedAt: list.confirmedAt) })
+            fatalError("even the correct chat must not pass with a pre-input timestamp")
+        } catch { precondition(tapped == ["row"], "stale correct-chat evidence stops after one tap") }
         tapped = []
         _ = try await WeChatShortcutNavigation.run(initial: transferChat(), name: "文件传输助手", stableID: "wechat.builtin.file-transfer",
             tap: { tapped.append($0.id) }, read: { fatalError("already open must not read") })
@@ -53,9 +74,9 @@ import Foundation
         _ = try await WeChatShortcutNavigation.run(initial: profile, name: "Synthetic contact", stableID: account,
             tap: { tapped.append($0.id) }, read: {
                 frame("wechat.chat", [e("back", "微信", 0.1, 0.08), e("title", "Synthetic contact", 0.5, 0.08),
-                    e("input", "发送消息", 0.4, 0.9)], capturedAt: Date().addingTimeInterval(0.1))
+                    e("input", "发送消息", 0.4, 0.9)], capturedAt: await freshReadTime())
             })
         precondition(tapped == ["message"], "matching profile only taps message control")
-        print("WeChat shortcut: 6 offline navigation scenarios passed; no device interaction")
+        print("WeChat shortcut: 7 offline navigation scenarios and 1000 synchronous-tap freshness repetitions passed; no device interaction")
     }
 }

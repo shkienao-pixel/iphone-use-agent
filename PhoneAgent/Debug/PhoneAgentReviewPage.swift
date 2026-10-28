@@ -39,6 +39,7 @@ struct PhoneAgentReviewPage: View {
         case "screen-queue-empty": TaskQueueView(allowsExecution: false)
         case "paotui-chat": PaotuiConversationReview()
         case "ctrip-cards": CtripFlightReview()
+        case "ground-cards": CtripGroundTravelReview()
         case "memory": ContentView(reviewDestination: .memory)
         case "workbench": ContentView(reviewDestination: .workbench)
         case "workflows": WorkflowWorkspaceView(workflows: model.workflowServices)
@@ -138,6 +139,57 @@ private struct CtripFlightReview: View {
                         .accessibilityIdentifier("ctrip.review.selection")
                 }
             }.padding(16).frame(maxWidth: fixture?.width.map { CGFloat($0) } ?? .infinity)
+                .frame(maxWidth: .infinity)
+        }.environment(\.dynamicTypeSize, fixture?.accessibilitySize == true ? .accessibility3 : .large)
+    }
+}
+
+/// The fixture route exercises the production ground-result layout only.
+/// A button records local UI selection; it never invokes an App or a request.
+private struct CtripGroundTravelReview: View {
+    struct Fixture: Decodable {
+        var text: String?
+        var mode: String?
+        var width: Double?
+        var accessibilitySize: Bool?
+    }
+    private let fixture: Fixture?
+    private let mode: CtripGroundTravelMode?
+    @State private var lastSelection = ""
+
+    init() {
+        let arguments = ProcessInfo.processInfo.arguments
+        let selected = arguments.firstIndex(of: "--ctrip-case").flatMap { index in
+            arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+        } ?? "ground-default"
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SelaCtripReview/fixtures.json")
+        let fixtures = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([String: Fixture].self, from: $0) } ?? [:]
+        fixture = fixtures[selected]
+        mode = fixtures[selected]?.mode.flatMap(CtripGroundTravelMode.init(rawValue:))
+    }
+    private var maximumWidth: CGFloat {
+        guard let width = fixture?.width, width.isFinite, width > 0 else { return .infinity }
+        return CGFloat(width)
+    }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("离线地面出行界面回放").font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("ctrip.ground.review")
+                if let fixture, let text = fixture.text, let mode {
+                    CtripGroundTravelResult(text: text, mode: mode) { url in
+                        lastSelection = url == nil ? "普通查询入口" : "已验证链接入口"
+                    }
+                } else {
+                    Text("未加载有效的离线测试资料（需要 text 和 train/bus mode）")
+                        .accessibilityIdentifier("ctrip.fixtureMissing")
+                }
+                if !lastSelection.isEmpty {
+                    Text("测试点击：" + lastSelection + "；未打开其他 App。")
+                        .accessibilityIdentifier("ctrip.review.selection")
+                }
+            }.padding(16).frame(maxWidth: maximumWidth)
                 .frame(maxWidth: .infinity)
         }.environment(\.dynamicTypeSize, fixture?.accessibilitySize == true ? .accessibility3 : .large)
     }

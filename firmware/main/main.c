@@ -90,6 +90,7 @@ static uint16_t move_count, move_index, move_interval, move_owner;
 static uint8_t move_buttons;
 static int64_t move_next_us;
 static uint8_t current_report[4], click_button;
+static uint16_t click_owner = BLE_HS_CONN_HANDLE_NONE;
 static struct ble_npl_callout watchdog_timer, click_timer, move_timer;
 void ble_store_config_init(void);
 static void advertise(void);
@@ -195,6 +196,7 @@ static void keyboard_watchdog_event(struct ble_npl_event *event) {
 static void cancel_click(void) {
     ble_npl_callout_stop(&click_timer);
     pending_click = click_pressed = false;
+    click_owner = BLE_HS_CONN_HANDLE_NONE;
 }
 static void cancel_move(void) {
     ble_npl_callout_stop(&move_timer);
@@ -248,8 +250,10 @@ static void watchdog_event(struct ble_npl_event *event) {
 static void click_event(struct ble_npl_event *event) {
     (void)event;
     if (!pending_click) return;
-    if (!ready()) {
-        cancel_click(); last_error = ERR_NOT_READY; notify_status(); return;
+    if (!ready() || !link_exists(click_owner) || !encrypted(click_owner)) {
+        cancel_click();
+        if (current_report[0] && ready() && send_report(0, 0, 0, 0)) reset_timer(&watchdog_timer, 50);
+        last_error = ERR_NOT_READY; notify_status(); return;
     }
     if (!click_pressed) {
         if (send_report(click_button, 0, 0, 0)) {
@@ -342,7 +346,7 @@ static int control_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_c
         if (pending_click || pending_move) return reject(conn, ERR_BUSY, BLE_ATT_ERR_UNLIKELY);
         if (p[1] == 2) {
             if (current_report[0]) return reject(conn, ERR_BUSY, BLE_ATT_ERR_UNLIKELY);
-            pending_click = true; click_pressed = false; click_button = p[4];
+            pending_click = true; click_pressed = false; click_button = p[4]; click_owner = conn;
             reset_timer(&click_timer, delay_ms);
         } else {
             if (protocol_mode == 0 && p[7]) return reject(conn, ERR_PACKET, BLE_ATT_ERR_UNLIKELY);
@@ -485,9 +489,11 @@ static void clear_all(void) {
     status_led_set_connected(false);
 }
 static void clear_link(uint16_t conn) {
+    const bool owns_click = pending_click && conn == click_owner;
+    if (owns_click || conn == hid_connection) cancel_click();
     if (pending_move && (conn == move_owner || conn == hid_connection)) cancel_move();
-    if (conn == control_connection && conn != hid_connection && current_report[0] && ready())
-        send_report(0, 0, 0, 0);
+    if ((owns_click || conn == control_connection) && conn != hid_connection && current_report[0] && ready())
+        if (send_report(0, 0, 0, 0)) reset_timer(&watchdog_timer, 50);
     if (conn == control_connection && conn != keyboard_connection) release_keyboard();
     if (control_connection == conn) status_led_set_task(AGENT_LED_IDLE);
     forget_link(conn);
@@ -537,7 +543,7 @@ static int gap_event(struct ble_gap_event *event, void *arg) {
                  event->enc_change.status, encrypted(event->enc_change.conn_handle));
         if (ready()) send_report(0, 0, 0, 0);
         if (keyboard_ready()) send_keyboard(0, 0);
-        if ((event->enc_change.conn_handle == hid_connection || event->enc_change.conn_handle == move_owner)
+        if ((event->enc_change.conn_handle == hid_connection || event->enc_change.conn_handle == move_owner || event->enc_change.conn_handle == click_owner)
             && !encrypted(event->enc_change.conn_handle)) { cancel_click(); cancel_move(); }
         notify_status(); return 0;
     case BLE_GAP_EVENT_SUBSCRIBE:

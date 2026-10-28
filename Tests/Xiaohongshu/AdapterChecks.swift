@@ -266,6 +266,29 @@ import Foundation
         let directResult = try await XiaohongshuCollector(store: store("direct")).collect(task: task("direct"), driver: direct)
         expect(directResult.notes.count == 1 && direct.resolutions == 0 && directResult.notes[0].source.shareCapture != nil,
             "A full platform link copied by the controlled UI needs no short-link network resolution")
+        for (index, url) in ["https://xhslink.cn/a/fixture-0", "https://xhslink.com/a/fixture-0",
+                             "http://www.xhslink.com/a/fixture-0"].enumerated() {
+            let fixture = XHSNativeReplay(); fixture.clipboardTextOverride = "分享笔记 " + url
+            let result = try await XiaohongshuCollector(store: store("short-host-\(index)")).collect(task: task("short-host-\(index)"), driver: fixture)
+            expect(result.status == .sampleReached && result.notes.first?.id == fixture.ids[0],
+                "Every accepted short-link host reaches verified note collection: " + url)
+            expect(fixture.resolutions == 1 && fixture.copyTaps == 1 && result.sourceAttempts.first?.stage == .completed,
+                "Short link resolves once and retains the completed copy receipt")
+        }
+        for (index, url) in ["http://xhslink.cn/a/fixture-0", "https://xhslink.cn.evil.example/a/fixture-0",
+                             "https://user@xhslink.cn/a/fixture-0", "https://www.xiaohongshu.com/not-a-note"].enumerated() {
+            let fixture = XHSNativeReplay(); fixture.clipboardTextOverride = url
+            let storage = store("bad-short-host-\(index)")
+            let collector = XiaohongshuCollector(store: storage)
+            await rejects("Untrusted link must fail source acquisition: " + url) {
+                _ = try await collector.collect(task: task("bad-short-host-\(index)"), driver: fixture)
+            }
+            let result = try storage.run(id: task("bad-short-host-\(index)").id)!
+            expect(result.notes.isEmpty && fixture.resolutions == 0 && result.sourceAttempts.first?.stage == .uncertain,
+                "Untrusted or non-note links never reach the resolver or create a note: " + url)
+            _ = try await collector.collect(task: task("bad-short-host-\(index)"), driver: fixture)
+            expect(fixture.copyTaps == 1, "Rejected link keeps the uncertain receipt without repeating Copy")
+        }
         let visual = XHSNativeReplay(); visual.visualShare = true
         let visualResult = try await XiaohongshuCollector(store: store("visual-share")).collect(task: task("visual-share"), driver: visual)
         expect(visualResult.notes.count == 1 && visualResult.notes[0].source.shareCapture?.note.snapshot.element(id: "share")?.source == "local_visual",

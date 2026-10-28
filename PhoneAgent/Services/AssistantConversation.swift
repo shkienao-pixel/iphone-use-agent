@@ -1072,7 +1072,7 @@ final class AssistantConversation: ObservableObject {
     }
 
     @discardableResult
-    func send(settings: AgentSettings, apiKey: String, memories: MemoryStore, observationContext: String = "", taskRecords: [PhoneTaskRecord] = [], attachments: [ComposerAttachment] = []) -> Bool {
+    func send(settings: AgentSettings, apiKey: String, memories: MemoryStore, observationContext: String = "", taskRecords: [PhoneTaskRecord] = [], attachments: [ComposerAttachment] = [], beforeSnapshot: (() -> Void)? = nil) -> Bool {
         guard !loading, liveRequests[currentConversationID] == nil else { return false }
         guard liveRequests.count < Self.maximumParallelConversations else { error = "已有 4 个对话正在处理，请等待其中一个完成后再开始新任务"; return false }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1089,6 +1089,10 @@ final class AssistantConversation: ObservableObject {
         let key = settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines) + "|" + PrivacyConsent.recipient(settings)
         if !recipient.isEmpty, recipient != key { newConversation() }
         recipient = key
+        // A successful task-page send may pause execution while opening chat.
+        // Complete that synchronous host transition before binding control IDs;
+        // subsequent changes must still fail the route's original lease check.
+        beforeSnapshot?()
         let memoryHistory = messages.map(ConversationQueuePresentation.contextMessage)
         let submittedFlightOpeningRevision = flightOpeningPresentationRevision
         let submittedSelectedTaskID = focusedTaskID

@@ -20,7 +20,8 @@ struct SelaMarkdownText: View {
             if !paragraph.isEmpty { append(0, paragraph.joined(separator: "\n")); paragraph = [] }
             if !table.isEmpty { append(4, table.joined(separator: "\n")); table = [] }
         }
-        for raw in text.components(separatedBy: .newlines) {
+        let lines = text.components(separatedBy: .newlines)
+        for (index, raw) in lines.enumerated() {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("```") {
                 flush()
@@ -29,7 +30,10 @@ struct SelaMarkdownText: View {
             }
             if inCode { code.append(raw); continue }
             if line.isEmpty { flush(); continue }
-            if line.hasPrefix("|"), line.contains("|") { if !paragraph.isEmpty { flush() }; table.append(line); continue }
+            let startsTable = SelaMarkdownTable.startsTable(header: line, separator: index + 1 < lines.count ? lines[index + 1] : nil)
+            if line.hasPrefix("|") || startsTable || (!table.isEmpty && line.contains("|")) {
+                if !paragraph.isEmpty { flush() }; table.append(line); continue
+            }
             if !table.isEmpty { flush() }
             let hashes = line.prefix(while: { $0 == "#" }).count
             if (1...6).contains(hashes), line.dropFirst(hashes).first == " " {
@@ -82,9 +86,7 @@ struct SelaMarkdownText: View {
                     ScrollView(.horizontal) { Text(block.text).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).padding(12) }
                         .background(AgentPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                 case 4:
-                    let rows = block.text.components(separatedBy: .newlines).map { line in
-                        line.split(separator: "|", omittingEmptySubsequences: true).map { $0.trimmingCharacters(in: .whitespaces) }
-                    }.filter { !$0.allSatisfy { $0.range(of: #"^:?-+:?$"#, options: .regularExpression) != nil } }
+                    let rows = SelaMarkdownTable.rows(in: block.text)
                     ScrollView(.horizontal) {
                         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
                             ForEach(Array(rows.enumerated()), id: \.offset) { row in

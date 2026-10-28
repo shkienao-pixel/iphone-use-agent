@@ -278,6 +278,9 @@ struct XiaohongshuSource: Codable, Equatable {
               let range = Range(match.range(at: 1), in: components.path) else { return nil }
         return (String(components.path[range]).lowercased(), raw)
     }
+    static func isShortURL(_ url: URL) -> Bool {
+        permittedURL(url) && !["xiaohongshu.com", "www.xiaohongshu.com"].contains(url.host?.lowercased() ?? "")
+    }
     static func copiedURL(in text: String) -> URL? {
         guard let regex = try? NSRegularExpression(pattern: "https?://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+") else { return nil }
         let urls = regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match -> String? in

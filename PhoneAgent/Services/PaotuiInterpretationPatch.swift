@@ -83,7 +83,13 @@ import Foundation
             if result.draft.service != .buy { result.draft.weight = nil; result.draft.category = nil }
             result.keyword = keyword; result.draft.senderID = ""; result.draft.nearby = false; result.draft.service = .buy
         }
+        let previousCity = result.city
         change(city, &result.city, empty: "")
+        if result.draft.service == .buy && result.city != previousCity {
+            // A selected purchase location belongs to its search city. Keep
+            // saved send addresses independent of this purchase search hint.
+            result.draft.senderID = ""
+        }
         switch recipientKeyword {
         case .unchanged: break
         case .clear, .set:

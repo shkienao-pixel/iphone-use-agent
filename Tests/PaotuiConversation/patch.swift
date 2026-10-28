@@ -43,6 +43,22 @@ import Foundation
         expect(!namedStore.draft.nearby && namedStore.draft.senderID.isEmpty && namedStore.keyword == "沃尔玛", "A named-store replacement clears prior nearby purchase mode before selecting a real shop")
         let buyDestination = try patch("换地址", #"{"recipient":"新地址关键词"}"#).applying(to: buy, expected: ticket)
         expect(buyDestination.draft.recipientID.isEmpty && buyDestination.draft.senderID.isEmpty && buyDestination.recipientKeyword == "新地址关键词", "A purchase destination change removes source selection and stores only the new keyword")
+        buy.city = "深圳"
+        let newCity = try patch("城市换广州", #"{"city":"广州"}"#).applying(to: buy, expected: ticket)
+        expect(newCity.city == "广州" && newCity.draft.senderID.isEmpty && newCity.draft.recipientID == buy.draft.recipientID,
+               "Changing purchase city invalidates its selected shop, not the delivery address")
+        expect(newCity.draft.nearby && newCity.inquiryOnly, "Changing purchase city preserves nearby mode and inquiry-only scope")
+        for json in [#"{"city":"深圳"}"#, #"{"city":" 深圳 "}"#, #"{"city":null}"#, #"{"city":""}"#, #"{"city":"  "}"#, "{}"] {
+            let sameCity = try patch("继续", json).applying(to: buy, expected: ticket)
+            expect(sameCity == buy, "Same, absent, null or blank city does not discard an already selected shop")
+        }
+        var implicitCity = buy; implicitCity.city = ""
+        expect(try patch("指定广州", #"{"city":"广州"}"#).applying(to: implicitCity, expected: ticket).draft.senderID.isEmpty,
+               "An explicit purchase city replaces an earlier recipient-derived search city")
+        var send = previous; send.city = "深圳"
+        let sendCity = try patch("城市换广州", #"{"city":"广州"}"#).applying(to: send, expected: ticket)
+        expect(sendCity.city == "广州" && sendCity.draft.senderID == send.draft.senderID && sendCity.draft.recipientID == send.draft.recipientID,
+               "Purchase search city does not discard independently selected send addresses")
         _ = try session.beginTurn()
         do { _ = try unchanged.applying(to: previous, expected: session.ticket); preconditionFailure("Old source patch applied to a new turn") } catch { checks += 1 }
         expect(previous.draft.recipientID == "real-recipient" && previous.inquiryOnly, "Patch projection never mutates its source snapshot")

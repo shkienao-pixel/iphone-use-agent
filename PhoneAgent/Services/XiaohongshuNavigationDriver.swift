@@ -126,7 +126,7 @@ enum XiaohongshuNavigationDriver {
         let final: String
         if XiaohongshuSource.directURL(copiedURL.absoluteString) != nil { resolution = nil; final = copiedURL.absoluteString }
         else {
-            guard ["xhslink.com", "www.xhslink.com"].contains(copiedURL.host?.lowercased() ?? "") else {
+            guard XiaohongshuSource.isShortURL(copiedURL) else {
                 throw XiaohongshuClipboardError.invalidLink
             }
             let resolved = try await resolveShortLink(copiedURL)

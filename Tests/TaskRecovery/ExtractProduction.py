@@ -40,7 +40,7 @@ engine = (root / "PhoneAgent/Services/AgentEngine.swift").read_text()
 assert engine.count("import UIKit") == 1
 (destination / "Engine.swift").write_text(engine.replace("import UIKit", "import CoreGraphics"))
 lease = (root / "PhoneAgent/Services/WorkflowObservationLease.swift").read_text()
-(destination / "LeaseFailure.swift").write_text("import Foundation\n" + lease[lease.index("struct WorkflowLeaseFailure:"):lease.index("/// Pixel recognition reuse only.")])
+(destination / "LeaseFailure.swift").write_text("import Foundation\n" + lease)
 tools = (root / "PhoneAgent/Services/SystemTools.swift").read_text()
 
 def tool_member(signature):

@@ -288,18 +288,8 @@ struct AssistantView: View {
                                             onSelect: { model.conversation.selectPaotui(card, $0) })
                                     } else if message.groundQuery != nil,
                                               let mode = CtripGroundTravelMode(rawValue: message.groundTravelMode ?? "") {
-                                        let offers = CtripGroundTravelParser.offers(text: message.text, mode: mode)
-                                        if offers.isEmpty {
-                                            SelaMarkdownText(text: message.text)
-                                            Button("打开携程查询") { openGroundTravel(nil, mode: mode) }
-                                                .font(.subheadline.weight(.medium)).frame(minHeight: 44)
-                                        } else {
-                                            // Keep source restrictions and route mismatches visible
-                                            // alongside the compact read-only ticket cards.
-                                            SelaMarkdownText(text: message.text)
-                                            CtripGroundTravelCards(offers: offers, onOpen: { offer in
-                                                openGroundTravel(offer.verifiedURL, mode: offer.mode)
-                                            })
+                                        CtripGroundTravelResult(text: message.text, mode: mode) { url in
+                                            openGroundTravel(url, mode: mode)
                                         }
                                     } else {
                                     let offers = model.conversation.flightOffers(for: message)

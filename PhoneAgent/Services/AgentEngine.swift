@@ -9,6 +9,8 @@ struct PhoneHarnessReceipt {
     let verifiedFrame: ScreenFrame?
     let lastInputCompletedAt: Date?
     var requiresUserReview = false
+    var checkpointFact: TaskCheckpointFact? = nil
+    var checkpointFrame: ScreenFrame? = nil
 }
 
 @MainActor
@@ -16,6 +18,7 @@ protocol PhoneHarnessDriving: AnyObject {
     var metrics: RunMetricsRecorder? { get set }
     var hasPendingReview: Bool { get }
     var taskScopeID: UUID? { get set }
+    var checkpointRuntimeGeneration: UUID? { get }
     func reset()
     func context(for frame: ScreenFrame) async throws -> String
     func didExecute(_ action: AgentAction, frame: ScreenFrame) async
@@ -28,6 +31,7 @@ extension PhoneHarnessDriving {
     var metrics: RunMetricsRecorder? { get { nil } set {} }
     var hasPendingReview: Bool { false }
     var taskScopeID: UUID? { get { nil } set {} }
+    var checkpointRuntimeGeneration: UUID? { nil }
 }
 
 struct PhoneHarnessFallback: LocalizedError {
@@ -51,6 +55,14 @@ enum AgentPhase: String {
 }
 
 enum TaskRecoveryMode { case retry, continueTask }
+
+// The independent test diagnostic may be discarded after an emergency stop.
+private final class CheckpointDiagnosticGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var enabled = true
+    func cancel() { lock.lock(); enabled = false; lock.unlock() }
+    func permitsEmission() -> Bool { lock.lock(); defer { lock.unlock() }; return enabled }
+}
 
 @MainActor
 final class AgentEngine: ObservableObject {
@@ -113,6 +125,77 @@ final class AgentEngine: ObservableObject {
         case .paused, .needsUser: metrics?.finish(.partial, evidence: "Execution requires user review; previously applied actions may be partial.")
         case .stopped: metrics?.finish(.cancelled, evidence: "Execution was stopped; inspect current state before resuming.")
         default: metrics?.finish(.unknown, evidence: "No verified terminal task result was established.")
+        }
+    }
+    // An explicit, one-task test hook. No task data or diagnostic enters logs or stores.
+    private struct CheckpointPilot {
+        let taskID: UUID
+        let goalDigest: String
+        let sink: (TaskCheckpointDecision) throws -> Void
+        let gate: CheckpointDiagnosticGate
+    }
+    private struct CheckpointObservation {
+        let fact: TaskCheckpointFact
+        let binding: TaskCheckpointBinding
+        let proof: WorkflowObservationProof?
+    }
+    private var nextCheckpointPilot: CheckpointPilot?
+    private var activeCheckpointPilot: CheckpointPilot?
+    private var checkpointObservation: CheckpointObservation?
+    private var checkpointDiagnosticGate: CheckpointDiagnosticGate?
+    func configureCheckpointPilot(taskID: UUID, goal: String, sink: @escaping (TaskCheckpointDecision) throws -> Void) {
+        guard !running, !releasing else { return }
+        checkpointDiagnosticGate?.cancel()
+        let gate = CheckpointDiagnosticGate(); checkpointDiagnosticGate = gate
+        nextCheckpointPilot = CheckpointPilot(taskID: taskID,
+            goalDigest: TaskCompletionEvidence.digest(goal.trimmingCharacters(in: .whitespacesAndNewlines)), sink: sink, gate: gate)
+    }
+    func disableCheckpointPilot() {
+        checkpointDiagnosticGate?.cancel(); checkpointDiagnosticGate = nil
+        nextCheckpointPilot = nil; activeCheckpointPilot = nil; checkpointObservation = nil
+    }
+    private func receiveCheckpoint(_ receipt: PhoneHarnessReceipt, token: UUID) {
+        guard let pilot = activeCheckpointPilot, let record = currentRecord,
+              pilot.taskID == record.id, pilot.goalDigest == TaskCompletionEvidence.digest(record.effectiveGoal),
+              let fact = receipt.checkpointFact, let frame = receipt.checkpointFrame,
+              fact.captureID == frame.captureID, fact.capturedAt == frame.capturedAt,
+              fact.confirmedAt == frame.confirmedAt, fact.fullDisplay == frame.fullDisplay else { return }
+        let binding = TaskCheckpointBinding(taskID: record.id, sessionID: token,
+            goalDigest: TaskCompletionEvidence.digest(record.effectiveGoal), selectedDeviceID: executor.ble.selectedID,
+            connectionGeneration: executor.ble.pointerConnectionGeneration, runtimeGeneration: fact.runtimeGeneration)
+        let proof = WorkflowObservationProof(frame: frame, runtimeGeneration: fact.runtimeGeneration,
+            selectedDeviceID: fact.selectedDeviceID, connectionGeneration: fact.connectionGeneration)
+        checkpointObservation = CheckpointObservation(fact: fact, binding: binding, proof: proof)
+    }
+    private func diagnoseCheckpoint() {
+        guard let pilot = activeCheckpointPilot, let record = currentRecord,
+              pilot.taskID == record.id, pilot.goalDigest == TaskCompletionEvidence.digest(record.effectiveGoal) else { return }
+        let observation = checkpointObservation
+        activeCheckpointPilot = nil; checkpointObservation = nil
+        let current: TaskCheckpointCurrent?
+        if let record = currentRecord, let observation,
+           let generation = phoneHarness?.checkpointRuntimeGeneration {
+            let binding = TaskCheckpointBinding(taskID: record.id, sessionID: session,
+                goalDigest: TaskCompletionEvidence.digest(record.effectiveGoal), selectedDeviceID: executor.ble.selectedID,
+                connectionGeneration: executor.ble.pointerConnectionGeneration, runtimeGeneration: generation)
+            let matching: Bool
+            if let proof = observation.proof, let frame = capture.frame {
+                let pixelMatches = proof.pixelFailures(frame).isEmpty
+                let age = Date().timeIntervalSince(frame.confirmedAt)
+                matching = pixelMatches && frame.confirmedAt >= observation.fact.confirmedAt &&
+                    frame.confirmedAt >= frame.capturedAt && age.isFinite && (0..<1.5).contains(age)
+            } else { matching = false }
+            current = TaskCheckpointCurrent(binding: binding, runActive: running,
+                captureRunning: capture.running, accessoryReady: executor.ble.ready,
+                currentFrameMatches: matching, pendingReview: phoneHarness?.hasPendingReview)
+        } else { current = nil }
+        let decision = TaskCheckpointPolicy.evaluate(condition: .systemSearchVisible,
+            fact: observation?.fact, binding: observation?.binding, current: current)
+        // The test sink cannot block or re-enter this task's completion path.
+        // Errors are deliberately dropped and never published as task history.
+        DispatchQueue.global(qos: .utility).async {
+            guard pilot.gate.permitsEmission() else { return }
+            try? pilot.sink(decision)
         }
     }
     private var savedGoal = ""
@@ -240,6 +323,7 @@ final class AgentEngine: ObservableObject {
     }
     func approve() { approved = true }
     private func cancelAndRelease() {
+        disableCheckpointPilot()
         if ownsScreenInput { phoneHarness?.reset() }
         let cancelledMetrics = runMetrics
         session = UUID(); let previous = loop; previous?.cancel(); loop = nil
@@ -332,6 +416,11 @@ final class AgentEngine: ObservableObject {
         if currentRecord != nil, savedSettings != nil {
             transition(.stopped, "已切换到新任务")
         }
+        let candidate = nextCheckpointPilot
+        nextCheckpointPilot = nil; checkpointObservation = nil
+        activeCheckpointPilot = candidate.flatMap {
+            $0.taskID == taskID && $0.goalDigest == TaskCompletionEvidence.digest(goal) && subtasks.isEmpty && settings.toolsOnly != true && !settings.previewOnly ? $0 : nil
+        }
         savedGoal = goal; savedSettings = settings
         error = ""; pendingAction = nil; executingAction = nil; logs = []; currentStep = 0; attemptStartStep = 0
         resetActionRepetition()
@@ -354,6 +443,7 @@ final class AgentEngine: ObservableObject {
         let attempt = makeRunMetrics(settings: settings, taskID: record.id)
         do { try attempt.measure(.preparation, label: "queued task readiness") { try checkReady(settings) } }
         catch { attempt.finish(.failed, evidence: "Queued attempt failed readiness; no task action was dispatched."); throw error }
+        disableCheckpointPilot()
         savedGoal = record.effectiveGoal; savedSettings = settings
         currentRecord = record; logs = record.logs; currentStep = step; attemptStartStep = record.attemptStartStep ?? 0
         resetActionRepetition(); approved = false
@@ -386,6 +476,7 @@ final class AgentEngine: ObservableObject {
         let attempt = makeRunMetrics(settings: settings, taskID: record.id)
         do { try attempt.measure(.preparation, label: "explicit selected-task recovery readiness") { try checkReady(settings) } }
         catch { attempt.finish(.failed, evidence: "Selected-task recovery failed readiness; no action was dispatched."); throw error }
+        disableCheckpointPilot()
         savedGoal = record.effectiveGoal; savedSettings = settings
         currentRecord = record; logs = record.logs; currentStep = step; attemptStartStep = base
         resetActionRepetition(); approved = false; pendingAction = nil; executingAction = nil
@@ -418,6 +509,7 @@ final class AgentEngine: ObservableObject {
         launch(goal: savedGoal, settings: savedSettings, resumed: true, resumeDelay: delay, metrics: attempt)
     }
     private func launch(goal: String, settings: AgentSettings, resumed: Bool, resumeDelay: Double? = nil, metrics: RunMetricsRecorder? = nil) {
+        if resumed { disableCheckpointPilot() }
         persistenceBlocked = false
         // Import old task-bound host receipts before the first new operation.
         // Later request/result validation cannot erase this recovered proof.
@@ -493,6 +585,7 @@ final class AgentEngine: ObservableObject {
             transition(.preview, "仅生成结束建议，未执行或核验任务。"); savedSettings = nil; return
         }
         try finishAllowed()
+        diagnoseCheckpoint()
         let evidence = completionEvidence(); currentRecord?.completionEvidence = evidence
         switch TaskCompletionPolicy.decide(goal: currentRecord?.effectiveGoal ?? savedGoal,
             toolsOnly: settings.toolsOnly == true, evidence: evidence) {
@@ -862,6 +955,7 @@ final class AgentEngine: ObservableObject {
                 let identity = "\(action.kind.rawValue)|\(action.x ?? -1)|\(action.y ?? -1)|\(action.x2 ?? -1)|\(action.y2 ?? -1)|\(action.text ?? "")|\(action.amount ?? 0)"
                 log(action.label, action.reason); try stillCurrent(token)
                 if action.kind == .finish { try finish(action, settings: settings); break }
+                if activeCheckpointPilot != nil { checkpointObservation = nil }
                 if action.kind == .ask_user {
                     pendingAction = action; running = false; taskIndicator = .idle; transition(.needsUser, action.reason); break
                 }
@@ -920,7 +1014,7 @@ final class AgentEngine: ObservableObject {
                                 return fresh
                             })
                         toolResult = .completed
-                        try stillCurrent(token); log("手机工具回执", receipt.summary)
+                        try stillCurrent(token); receiveCheckpoint(receipt, token: token); log("手机工具回执", receipt.summary)
                         if receipt.requiresUserReview || phoneHarness.hasPendingReview {
                             toolResult = .failed
                             pendingAction = action; executingAction = nil
