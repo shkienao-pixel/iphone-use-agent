@@ -1,226 +1,147 @@
-# iPhone Use Agent — 当前工作版本
-
-当前源码为 **Sela Build 238**（2026-10-27），同步本地 Build 237 之后的微信修复、滴滴与携程整合。Build 238 是本次源码同步的版本号；手机此前安装的是 Build 237，本次同步没有安装手机。
-
-- 微信：任务卡和模型上下文使用实际执行状态；更新 OCR 时绑定同一张新截图；文件传输助手支持中英文名称，并修复快捷入口重复计算同一会话行的问题。
-- 滴滴：合入会话卡片、地点查询与估价，以及明确标记的本地模拟行程。连续追问保留原打车上下文；模拟进度不代表真实叫车订单。
-- 携程：合入航班卡片的时间、机场、票价解析与指定航班跳转，以及火车、汽车票卡片。未核实的字段保留“待核实”。
-
-运行 `bash scripts/check.sh` 和 `swift test --package-path PhoneAgent/SelaMemoryCore` 验证离线行为。当前版本的构建、回归与仍待真机验证的范围见 [同步记录](docs/sync-20261027.md)。
-
-## 既有修复记录（Build 206）
-
-此前修复源码为 **Sela Build 206**，以 GitHub `main` 的 `d0c6e3fa77a4ace17aa9c0d68850354a2c3e431d`（Build 205）为基线，保留现有功能、Bundle ID、Keychain 标识和 schema 1 数据格式。
-
-本轮统一了任务完成依据与持久提交边界：模型的结束声明必须有宿主执行依据；任务检查点先落盘再发布，保存失败暂停执行；全部未结束及可恢复检查点独立于最近 50 条已结束历史保留；工具回执清理保留可恢复任务和未知写入记录；跑腿报价与草稿按会话和请求隔离。旧记录缺少新的可选完成依据字段时仍可读取，恢复时不会把历史模型文案当成真实回执。
-
-补充页面隔离与侧栏细节：消息区按当前会话 ID 建立独立显示身份；页面转场时，仅当前展示者能清理会话、输入和共享媒体，旧页面的迟到退出不再干扰接替页面。侧栏展开后的主页面使用贯穿状态栏、正文和输入区的同一背景及圆角外壳，保留原安全区和键盘避让。新建会话仍保留原聊天档案、任务和长期记忆；这些显示与生命周期保护不等同于已复现或完成真机上的旧气泡问题验收。
-
-完整离线检查：`bash scripts/check.sh`；另运行 `swift test --package-path PhoneAgent/SelaMemoryCore`。检查不调用真实账号、模型、手机或第三方业务。Build 205 的历史真机记录见 [原生验收](docs/ios-native-acceptance-20261026.json)，不自动代表本轮修复源码的真机验收。
-
-以下保留此前版本记录；Build 77 的界面合并范围见 [合并记录](docs/merge-20261024.md)。
-
-原始基线为 2026-10-23 的工作版本，基于 [boboabw/phone-agent](https://github.com/boboabw/phone-agent) 源码提交 `a90045074afcd4de69f885fba25b0b171d690f45`。基线的真机记录见 [版本说明](docs/version-2026-10-23.md)；本地 Build 75 的新增代码尚未真机验收，不能沿用基线的真机成绩。
-
-本版增加本地手机操作 Harness、已验证布局复用、结束画面复用、页面转换等待和模型历史过滤，并保留静态取屏唤醒、停止后完成记录保护等修复。日常任务由 iPhone App 调用模型，通过 ESP32-S3 蓝牙鼠标/键盘执行；Mac 用于开发、安装与签名更新。ESP32 需要供电，不需要通过 USB 与手机交换控制数据。
-
-- 打开 `PhoneAgent.xcodeproj`，选择自己的签名 Team，并将示例 Bundle ID 改为个人唯一标识。仓库不包含个人签名配置或 API Key。
-- 通用 ESP32-S3 与实测 XIAO ESP32-S3 配置见 [固件说明](docs/firmware.md)。
-- 完整离线检查：`bash scripts/check.sh`；测试不要求真实聊天记录、API Key、手机或开发板。
-- 关键使用流程、缺陷追踪及分层验收见 [测试与修复工程](docs/quality-engineering.md)。目录检查通过不代表产品验收通过。
-- 本地 Harness 的能力、回退与验证边界见 [Harness 说明](docs/phone-harness.md)。
-
-## 稳定性与文件管理（Build 75）
-
-补充结合当前图像与页面结构的弹窗判断、逐文件人工核验及历史、原始关键画面与本地诊断导出、真实内容复用和原件归档/恢复/空间核算。长任务策略与未知提交不重发保持不变。支持条件与离线证据见 [Build 75 说明](docs/reliability-v4.md)；未安装手机或新增真机验收。
-
-## 页面与联系人适配（Build 74）
-
-本轮保留原有长任务功能，补齐普通联系人从真实资料页核号进入聊天、小红书常见中文/英文页面与筛选选中态核验、受控复制链接补来源，以及原生分享中的微信自动发送驱动。工作台的“长任务工作区”可保存准确会话、作者主页和自动发送范围。
-
-自动发送要求实际扩展展示准确账号、完整原件清单、字节数与原件状态。仅有昵称或摘要时停止；本轮没有证明用户当前微信版本满足这些条件。未知提交不自动重发，真实设备、聊天、分享权限和后台行为尚待验收。使用方式与证据范围见 [Build 74 说明](docs/domain-adapters-v3.md)。
-
-## 速度与准确性修改版（Build 71）
-
-本地分支 `codex/speed-accuracy-20261023` 在原始提交 `b04a98f` 上修改。新增可追溯的分层计时、保守页面适配、带持久化回执的文件传输助手短文本流程、事件驱动画面等待、局部画面变化保护，以及手机本机正文保存和剪贴板准备。未知发送结果会暂停自动执行，须在设备页人工核对回执。
-
-这是一版待真机验收的源码。新旧版同条件各三次的 60 秒 / 5 轮目标尚未验收；小红书批量采集、聊天分段总结、批量文件与朋友圈互动未在本轮完成。中文正文已能在手机本机保存及准备，但跨 App 粘贴、保存后全文核验尚未闭环。
-
-- 修改与验收范围：[本轮说明](docs/speed-accuracy-v1.md)。
-- 计时与对照统计：[运行记录](docs/run-metrics.md)；设置页可固定下一次起点并导出记录。
-- 编译并绑定准确源码版本：`bash scripts/build-verified.sh simulator`（真机平台无签名编译使用 `device`）。普通 Xcode 编译若未传入源码标识，会明确记录为不可追溯。
-
-## 长任务模式（Build 72）
-
-默认开启长任务模式，取消任务总步数和执行器内置的 100 步截断。旧设置无需迁移操作；关闭“设置 → 任务执行 → 长任务模式”后，可继续使用 1–100 步的人工上限，达到上限会暂停并保留进度。
-
-原始任务、后续补充及确认过的子任务账本持续传给模型。较早执行记录在本地滚动压缩，优先保存关键回执；压缩状态随任务历史和队列保存。记录省略与截断会明确标记，缺失细节不能当作已完成证据。具体行为和验证边界见 [长任务说明](docs/long-tasks.md)。
-
-## 本地业务流程（Build 73）
-
-保留 Build 72 的默认长任务、滚动历史压缩、原始要求与子任务账本、暂停续跑及停止保护。新增“记录与文件 → 小红书、聊天与文件发送”：
-
-- 小红书：固定采集范围，本地连续读取、真实来源 ID 去重、逐批保存、断点续作；程序复算数量/缺失/比例/分布，模型单独分批处理新增可见文字。
-- 聊天：会话与条数/日期范围、连续消息锚点、原始证据保存、增量读取和分批总结；事实/决定/待办/负责人/期限附原消息引用，未读媒体与范围缺口单列。
-- 文件：查找原件、按选择顺序批量分享、真实 SHA256/大小核查与阶段回执；系统分享目标由用户选择，扩展回调保持待核验，未知项禁止自动重发。
-
-Build 73 当时的边界（Build 74 的进展见上文）：小红书缺真实来源链接时只存待核验；聊天初始身份仍仅自动识别有独立系统说明的文件传输助手，普通联系人需稳定账号适配；微信 GUI 自动发送文件在缺少可信驱动时返回 unsupported。系统分享不会被写成“对方已收到”。使用方法、离线检查和剩余边界见 [本轮说明](docs/business-workflows-v2.md)。
-
-以下保留原项目的功能与安装说明。
-
----
-
 <div align="center">
+  <img src="PhoneAgent/Resources/Assets.xcassets/Brand-Sela.imageset/icon.png" alt="Sela" width="120">
 
-<img src="docs/icon.png" alt="Phone Agent app icon" width="128" height="128">
+# Sela
 
-# Phone Agent
+**看懂屏幕、帮你操作 iPhone 的 AI 助手**
 
-**An AI assistant that sees your screen and operates your iPhone**
+SwiftUI · iPhone · ESP32-S3 · Bluetooth HID
 
-<p>
-  <img src="https://img.shields.io/badge/iOS-27-000000?style=flat-square&logo=apple&logoColor=white" alt="iOS 27">
-  <img src="https://img.shields.io/badge/SwiftUI-Liquid%20Glass-007AFF?style=flat-square&logo=swift&logoColor=white" alt="SwiftUI Liquid Glass">
-  <img src="https://img.shields.io/badge/ESP32-S3-007AFF?style=flat-square" alt="ESP32-S3">
-  <img src="https://img.shields.io/badge/build-70-007AFF?style=flat-square" alt="Build 70">
-</p>
-
-<a href="https://github.com/shkienao-pixel/iphone-use-agent/archive/refs/heads/main.zip"><b>Download Source</b></a> ·
-<a href="#demo">Demo</a> ·
-<a href="#requirements">Requirements</a> ·
-<a href="#install">Install</a> ·
-<a href="docs/firmware.md">Flash Firmware</a>
-
+[快速开始](#快速开始) · [工作原理](#工作原理) · [功能与现状](#功能与现状) · [开发与测试](#开发与测试) · [English](#english)
 </div>
 
-Phone Agent is a native iPhone AI assistant. It understands the screen you choose to share, then uses an ESP32-S3 Bluetooth mouse and keyboard accessory to move, click, and type.
+Sela 是一个原生 iPhone AI 助手项目。你可以用自然语言描述任务，授权共享屏幕，让模型观察画面并决定下一步，再由 ESP32-S3 蓝牙鼠标和键盘配件执行操作。Sela 也提供独立的助手对话、记忆和一些系统工具。
 
-> [!NOTE]
-> This project currently provides development source code. Build and install the app with Xcode. Phone control requires an ESP32-S3 accessory, pointer calibration, full screen sharing, and a model that accepts images.
+本仓库是开发源码，不是开箱即用的 App 安装包。当前源码版本为 **Build 238**；功能是否可用取决于模型、权限、设备、第三方服务和实际页面。请先阅读下面的限制与验证范围。
 
-## Demo
+## 演示
 
-Ask Phone Agent to open Meituan and find a Mixue lemon drink. These GIFs show each stage of the same iPhone recording at its original speed, with the action window visible during execution.
+[观看原始手机操控演示](docs/demo/full-demo.mp4)：从任务输入到打开美团、查看饮品并进入订单确认页面。录制结束于支付之前，画面中的位置和账户余额已模糊处理。该演示来自早期 Phone Agent，不代表 Build 238 的全部功能都已完成真机验收。
 
-[Watch the full demo (MP4)](docs/demo/full-demo.mp4)
+<img src="docs/demo/01-start-task.gif" alt="输入任务" width="210"> <img src="docs/demo/04-open-meituan.gif" alt="打开美团" width="210"> <img src="docs/demo/08-review-order.gif" alt="查看订单" width="210">
 
-<table>
-  <tr>
-    <td align="center"><strong>1. Start a task</strong><br><br><img src="docs/demo/01-start-task.gif" alt="Phone Agent begins a natural language task after a countdown" width="240"><br><sub>Describe what you want to do.</sub></td>
-    <td align="center"><strong>2. Open AssistiveTouch</strong><br><br><img src="docs/demo/02-open-assistivetouch.gif" alt="The pointer opens the AssistiveTouch menu" width="240"><br><sub>Open the system navigation menu.</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><strong>3. Return Home</strong><br><br><img src="docs/demo/03-return-home.gif" alt="Phone Agent uses AssistiveTouch to return to the iPhone Home Screen" width="240"><br><sub>Return to the Home Screen.</sub></td>
-    <td align="center"><strong>4. Open Meituan</strong><br><br><img src="docs/demo/04-open-meituan.gif" alt="The pointer selects Meituan and opens the app" width="240"><br><sub>Find and launch the target app.</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><strong>5. Find drink deals</strong><br><br><img src="docs/demo/05-find-drink-deals.gif" alt="Phone Agent opens the drink promotion listing in Meituan" width="240"><br><sub>Navigate to the relevant offers.</sub></td>
-    <td align="center"><strong>6. Inspect the results</strong><br><br><img src="docs/demo/06-inspect-results.gif" alt="Phone Agent observes the available drink offers" width="240"><br><sub>Observe the screen before the next action.</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><strong>7. Select the lemon drink</strong><br><br><img src="docs/demo/07-select-lemon-drink.gif" alt="The pointer selects the lemon drink offer and opens order review" width="240"><br><sub>Open the matching offer.</sub></td>
-    <td align="center"><strong>8. Review the order</strong><br><br><img src="docs/demo/08-review-order.gif" alt="The order review page displays the selected lemon drink" width="240"><br><sub>View the item and price before payment.</sub></td>
-  </tr>
-</table>
-
-The recording ends at order review, before payment. Location and account balance are blurred; the published clips are silent.
-
-## Features
-
-**Phone control** — Observe the screen, generate an action, execute it, and observe the result. Queue tasks, pause or stop execution, take over manually, and add instructions during a task.
-
-**Conversations** — Chat using text, dictation, shared screen images, or the camera. A separate configuration is available for real-time voice conversations.
-
-**Files and tools** — Web search, memory, file and recording management, meeting notes, fishbone diagrams, and spreadsheets.
-
-**System integration** — Siri and Shortcuts, Live Activities, and an action status window using Picture in Picture. Built with SwiftUI Liquid Glass, with light and dark appearances.
-
-**Bluetooth accessory** — Mouse input, an ASCII keyboard, shortcuts, and pointer calibration in 21 steps. The GPIO48 RGB LED shows connection and task status: blue when disconnected, white when idle, rainbow during execution, red on failure, and green on completion.
-
-## Requirements
-
-- An iPhone running iOS 27.
-- An ESP32-S3 development board and a USB data cable. The default firmware configuration uses 4 MB flash and a WS2812 RGB LED on GPIO48.
-- An OpenAI-compatible model endpoint that accepts images, and your own API key.
-- AssistiveTouch enabled, with accessory pairing, pointer calibration, and screen sharing completed.
-- A Mac and Xcode 27 to build the app. Select your signing team for both targets when installing on an iPhone.
-- ESP-IDF 5.5.4 to build the firmware.
-
-## Install
-
-1. Clone the repository and open the Xcode project:
-
-   ```sh
-   git clone https://github.com/shkienao-pixel/iphone-use-agent.git
-   cd iphone-use-agent
-   open PhoneAgent.xcodeproj
-   ```
-
-2. Select your signing team for the `PhoneAgent` and `PhoneAgentActivity` targets. Choose your iPhone, then build and run.
-3. In a terminal with ESP-IDF activated, run `bash scripts/build-firmware.sh`. Follow the [firmware guide](docs/firmware.md) to flash the ESP32-S3.
-4. In the app's model connection settings, enter your provider name, complete HTTPS endpoint URL, model ID, and API key. Confirm the data sharing consent.
-5. Pair `AgentMouse-S3` in the system AssistiveTouch settings. Connect in the app and complete pointer calibration. Start full screen sharing, enter a task, and begin execution.
-
-See [Setup and Usage](docs/setup.md) for detailed instructions.
-
-## Project Structure
-
-[GestaltEdit](https://github.com/frs0n/GestaltEdit) served as a reference for Swift source organization and README layout.
-
-The Swift app separates its entry point, interface, coordination, services, and local storage. Shared models and the Live Activity extension live alongside the app; ESP32-S3 firmware has its own ESP-IDF project.
+## 工作原理
 
 ```text
-phone-agent/
-├── PhoneAgent.xcodeproj/          # App and Live Activity targets
-├── PhoneAgent/
-│   ├── PhoneAgentApp.swift        # App entry point and shared state
-│   ├── ContentView.swift         # Main workspace and navigation
-│   ├── PhoneAgentViewModel.swift # Task and interaction coordination
-│   ├── Models/                   # Workspace and navigation types
-│   ├── Views/                    # SwiftUI screens and components
-│   ├── Services/                 # Capture, AI, BLE, voice, and tools
-│   ├── Stores/                   # Settings and local persistence
-│   ├── Appearance/               # Theme, glass surfaces, and motion
-│   ├── Resources/                # Assets, strings, and privacy metadata
-│   └── Debug/                    # Development review screens
-├── Shared/                       # Data models and accessory protocol
-├── Activity/                     # Live Activity and Dynamic Island UI
-├── Skills/                       # Bundled phone control instructions
-├── firmware/                     # ESP32-S3 BLE HID and GPIO48 RGB
-├── scripts/                      # Firmware build and check entry points
-├── Tests/                        # Existing offline checks
-└── docs/                         # Setup, architecture, and build records
+用户任务
+   ↓
+iPhone：经用户授权获取屏幕画面 → 发送画面和任务上下文给所配置的模型
+   ↑                                      ↓
+重新观察结果  ←  ESP32-S3 蓝牙 HID  ←  校验并执行模型给出的动作
+                     ↓
+              iPhone 鼠标 / 键盘输入
 ```
 
-### Module Responsibilities
+App 通过屏幕共享获取画面，模型生成下一步动作，App 校验后通过 BLE 控制 ESP32-S3 配件，由配件向同一台 iPhone 发送鼠标或键盘输入。每一步后再次观察画面。**蓝牙 HID 是输入通道，屏幕画面来自 iPhone 的屏幕共享；开发板需要供电，日常操作不需要通过 USB 与手机传输控制数据。** Mac 用于开发、编译、烧录和安装。
 
-| Area | Responsibility |
+详见 [架构说明](docs/architecture.md) 和 [架构图](docs/architecture/2026-10-26/README.md)。
+
+## 功能与现状
+
+- **手机操控**：根据屏幕执行点击、移动、输入等动作，支持任务队列、暂停、停止、人工接管和追加指令。默认长任务模式使用滚动上下文与进度记录；详见 [长任务说明](docs/long-tasks.md)。
+- **助手对话与记忆**：支持文本、语音输入、图片或相机上下文；记忆和会话由本机存储管理，部分实时语音功能需要独立配置。
+- **系统能力与工具**：项目包含日历、提醒、联系人、健康、照片等原生能力的适配，以及网页检索、文件和录音管理等工具；具体能力和权限以应用内实际状态为准。
+- **应用场景**：包含微信相关规则、携程行程卡片和滴滴对话卡片等集成或实验。滴滴本地模拟行程不是真实叫车订单；票价、库存、跳转和第三方页面应以实际服务为准。
+- **系统界面与配件**：包含快捷指令、实时活动和画中画状态界面；ESP32-S3 提供鼠标、ASCII 键盘及指针校准。
+
+Build 238 有模拟器构建和离线回归记录，但没有因这次源码同步而完成手机安装；微信完整自动操作、部分出行跳转和其他设备相关行为仍需真机复测。离线测试、模拟结果和真实业务完成是不同的证据。详见 [Build 238 同步与验证记录](docs/sync-20261027.md)。
+
+## 运行要求
+
+| 项目 | 要求 |
 | --- | --- |
-| App and coordination | `PhoneAgentApp` creates shared state. `ContentView` presents the workspace. `PhoneAgentViewModel` connects user input, task execution, queue state, and services. |
-| Views and appearance | SwiftUI pages present state and route user actions to the coordinator or services. `Appearance` centralizes light and dark themes, glass surfaces, and transitions. |
-| Phone control | `AgentEngine` coordinates `CaptureService`, `VisionClient`, and `MouseExecutor`. `BLETransport` sends mouse and keyboard commands to the ESP32-S3. |
-| Conversations and tools | Services handle assistant conversations, voice, camera input, web research, system actions, and file processing. Corresponding views provide their interfaces. |
-| Local storage | Stores manage settings, task history and queues, memory, recordings, and service preferences. API credentials use the Keychain. |
-| Shared types | `Shared` defines action, protocol, and feature data models. Live Activity attributes and controls are also compiled into the extension. |
-| System surfaces | `Activity` renders Live Activities and Dynamic Island content. App services manage Activity updates, Picture in Picture, Siri, and Shortcuts. |
-| Control instructions | `Skills` contains bundled instructions loaded by `PhoneControlSkill` for the visual phone control loop. |
-| Accessory firmware | `firmware/main` implements BLE services, HID reports, command execution, and RGB status feedback for the ESP32-S3. |
+| 开发环境 | Mac、Xcode 27；工程最低部署目标为 iOS 27.0 |
+| 手机 | iOS 27 iPhone；安装真机版本需要 Apple 开发者签名配置 |
+| 手机操控配件 | ESP32-S3 开发板、用于烧录和供电的 USB 线；iPhone 开启辅助触控 |
+| 固件 | ESP-IDF 5.5.4；默认配置针对 4 MB Flash、GPIO48 WS2812 灯 |
+| 模型 | 支持图像输入的模型及可用连接；API 模式需要自己的服务地址、模型 ID 和密钥 |
 
-### Where to Make Changes
+模拟器可用于开发和部分界面检查，无法替代蓝牙、屏幕共享、语音或跨 App 操作的真机验证。XIAO ESP32-S3 的单独配置见 [固件说明](docs/firmware.md)。
 
-- Add or update a screen in `PhoneAgent/Views`; use `Appearance` for shared styling.
-- Add service behavior in `PhoneAgent/Services`, persistent state in `Stores`, and reusable data types in `Shared`.
-- Update phone control rules in `Skills` and accessory commands in `Shared/MouseProtocol.swift` together with the firmware.
-- Keep extension UI in `Activity`; shared extension types belong in `Shared` with the appropriate target membership.
+## 快速开始
 
-Xcode uses synchronized source folders. Swift files inside those folders are included automatically, subject to target membership exceptions. `Skills` is explicitly bundled as a folder resource. See [Architecture](docs/architecture.md) for the execution flow and detailed component boundaries.
+### 1. 获取并运行 App
 
-## Data and Runtime
+```sh
+git clone https://github.com/shkienao-pixel/iphone-use-agent.git
+cd iphone-use-agent
+open PhoneAgent.xcodeproj
+```
 
-API keys are stored in the iPhone Keychain. Tasks, memory, recordings, and files are stored locally. Shared screen images, task text, and relevant context are sent to your configured model service after the required consent.
+选择 `PhoneAgent` Scheme。在 `PhoneAgent` 和 `PhoneAgentActivity` 两个 Target 的 **Signing & Capabilities** 中选择自己的 Team；如需修改 Bundle Identifier，保持扩展 ID 以 App ID 为前缀。选择模拟器或已解锁的 iPhone，构建并运行。不同 Apple 开发者账户可用的签名能力可能不同。
 
-Voice, Siri, Picture in Picture, BLE, and execution across apps require verification on an actual iPhone. Background execution is subject to iOS scheduling. Continuous listening for a wake word is not implemented. See [Verification](docs/verification.md) for build and offline check records.
+### 2. 编译并烧录配件
 
-## Development Docs
+在已启用 ESP-IDF 5.5.4 的终端中，从仓库根目录运行：
 
-[Architecture](docs/architecture.md) · [Firmware and Protocol](docs/firmware.md) · [Setup and Usage](docs/setup.md) · [Checks and Build Records](docs/verification.md)
+```sh
+bash scripts/build-firmware.sh
+```
+
+选择正确的串口并按 [固件说明](docs/firmware.md) 烧录。该文档也包含 XIAO 板型参数、指示灯及协议说明。
+
+### 3. 配置模型
+
+在 App 侧栏打开「工具与连接 → 模型与记忆 → 模型连接」，选择可用的连接方式并完成授权。API Key 方式需填写服务商、完整 HTTPS 接口地址、模型 ID 和 API Key，再测试连接。手机操控、识屏及相机对话需要支持图像的模型。首次使用或变更服务商后，按界面确认数据接收方。详见 [配置与运行](docs/setup.md) 和 [ChatGPT 计划连接](docs/chatgpt-plan-connection.md)。
+
+### 4. 配对、校准并开始
+
+1. 在 iPhone 设置中开启「辅助触控」，在其设备页面配对 `AgentMouse-S3`。
+2. 返回 Sela 的「设备与校准」，连接配件并完成 21 步指针校准。改变指针速度、设备或相关设置后应重新校准。
+3. 开启屏幕共享，在系统选择器中选择整屏。受保护的页面可能无法捕获。
+4. 进入「操控手机」，输入任务并开始；执行时可以暂停、停止、接管或补充要求。
+
+连接 BLE 不等于全部输入通道都已就绪；首次配对、系统权限和共享选择需要用户在 iPhone 上完成。遇到连接或校准问题，请参阅 [配置与运行](docs/setup.md)。
+
+## 数据、权限与使用边界
+
+API 密钥使用 iPhone Keychain 保存；任务、记忆、录音和文件由相应本地存储管理。使用模型或外部工具时，任务文字、共享画面及相关上下文可能发送给你选择的服务商，具体取决于功能和授权。屏幕可能包含私人信息，请在共享和运行任务前检查画面及服务商的数据政策。
+
+模型和界面识别可能出错，第三方 App 的界面也会变化。涉及发送消息、付款、下单、取消或其他有后果的操作时，请核对对象、内容和实际结果；模型文字、模拟状态或分享回调本身不等于操作成功。iOS 后台运行受系统调度限制，连续唤醒词监听尚未实现。
+
+## 项目结构
+
+```text
+PhoneAgent.xcodeproj/  Xcode 工程与构建配置
+PhoneAgent/            SwiftUI App、服务、本地存储与资源
+Shared/                跨 Target 数据模型与配件协议
+Activity/              Live Activity 扩展
+Skills/                随 App 打包的操作规则
+firmware/              ESP32-S3 BLE HID 固件
+Tests/                 离线检查和测试
+Tools/                 辅助工具与连接验证
+Experiments/           独立实验及其验证资料
+docs/                  安装、设计、架构和验证文档
+scripts/               构建与检查入口
+```
+
+## 开发与测试
+
+```sh
+# 项目离线检查；可能需要本机 Xcode / Swift 等工具
+bash scripts/check.sh
+
+# 记忆核心 Swift 包测试
+swift test --package-path PhoneAgent/SelaMemoryCore
+```
+
+这些检查不能证明真实模型、手机、蓝牙、外部账户或交易流程可用。真机测试前请先备份数据，并按 [iPhone 测试清单](docs/iphone-test-checklist.md) 和 [验证记录](docs/verification.md) 区分构建、离线检查、模拟器与实际设备结果。功能改动请同步对应测试和文档；不要提交 API Key、账户数据、录屏或个人配置。
+
+## 更多文档
+
+- [配置与运行](docs/setup.md) · [ESP32-S3 固件](docs/firmware.md) · [源码结构](docs/architecture.md)
+- [长任务与恢复](docs/long-tasks.md) · [记忆](docs/memory.md) · [手机操作 Harness](docs/phone-harness.md)
+- [微信相关说明](docs/wechat-skill.md) · [携程连接](docs/ctrip-connection.md) · [滴滴模拟](docs/didi-simulation.md)
+- [Build 238 同步记录](docs/sync-20261027.md) · [测试与验证](docs/verification.md)
+
+## 来源与许可
+
+Sela 的早期源码基于 [boboabw/phone-agent](https://github.com/boboabw/phone-agent) 的 `a90045074afcd4de69f885fba25b0b171d690f45`；Swift 源码组织和 README 的早期布局参考了 [GestaltEdit](https://github.com/frs0n/GestaltEdit)。第三方名称和图标属于各自权利人。
+
+本仓库目前未附开源许可证；上游代码与其他第三方素材的授权仍需确认。在明确授权之前，请勿假定本仓库可以按某个开源许可证再分发或商用。
+
+## English
+
+Sela is a native iPhone AI assistant built on the earlier [Phone Agent](https://github.com/boboabw/phone-agent) project. With user-approved screen sharing, a vision-capable model observes the screen and the app sends actions to an ESP32-S3 Bluetooth HID accessory. Screen capture and input are separate paths; a Mac is used for development and installation.
+
+The repository contains development source for Build 238. You need Xcode 27, an iOS 27 iPhone, an ESP32-S3 with ESP-IDF 5.5.4 firmware, and a configured vision-capable model to use phone control. See [setup](docs/setup.md), [firmware](docs/firmware.md), and [architecture](docs/architecture.md). Device behavior and third-party integrations require real-device validation. Simulated ride progress is not a real order. No open-source license is currently included; upstream and third-party rights need clarification.
