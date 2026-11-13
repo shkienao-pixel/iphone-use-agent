@@ -138,10 +138,10 @@ swift test --package-path PhoneAgent/SelaMemoryCore
 
 Sela 的早期源码基于 [boboabw/phone-agent](https://github.com/boboabw/phone-agent) 的 `a90045074afcd4de69f885fba25b0b171d690f45`；Swift 源码组织和 README 的早期布局参考了 [GestaltEdit](https://github.com/frs0n/GestaltEdit)。第三方名称和图标属于各自权利人。
 
-本仓库目前未附开源许可证；上游代码与其他第三方素材的授权仍需确认。在明确授权之前，请勿假定本仓库可以按某个开源许可证再分发或商用。
+本项目采用 [MIT License](LICENSE)。第三方名称、商标及素材的权利归各自权利人所有；MIT 许可不授予其商标使用权。
 
 ## English
 
 Sela is a native iPhone AI assistant built on the earlier [Phone Agent](https://github.com/boboabw/phone-agent) project. With user-approved screen sharing, a vision-capable model observes the screen and the app sends actions to an ESP32-S3 Bluetooth HID accessory. Screen capture and input are separate paths; a Mac is used for development and installation.
 
-The repository contains development source for Build 238. You need Xcode 27, an iOS 27 iPhone, an ESP32-S3 with ESP-IDF 5.5.4 firmware, and a configured vision-capable model to use phone control. See [setup](docs/setup.md), [firmware](docs/firmware.md), and [architecture](docs/architecture.md). Device behavior and third-party integrations require real-device validation. Simulated ride progress is not a real order. No open-source license is currently included; upstream and third-party rights need clarification.
+The repository contains development source for Build 238. You need Xcode 27, an iOS 27 iPhone, an ESP32-S3 with ESP-IDF 5.5.4 firmware, and a configured vision-capable model to use phone control. See [setup](docs/setup.md), [firmware](docs/firmware.md), and [architecture](docs/architecture.md). Device behavior and third-party integrations require real-device validation. Simulated ride progress is not a real order. The project is available under the [MIT License](LICENSE). Third-party names and trademarks belong to their respective owners.
