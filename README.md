@@ -12,7 +12,7 @@ SwiftUI · iPhone · ESP32-S3 · Bluetooth HID
 
 Sela 是一个原生 iPhone AI 助手项目。你可以用自然语言描述任务，授权共享屏幕，让模型观察画面并决定下一步，再由 ESP32-S3 蓝牙鼠标和键盘配件执行操作。Sela 也提供独立的助手对话、记忆和一些系统工具。
 
-本仓库是开发源码，不是开箱即用的 App 安装包。当前源码版本为 **Build 238**；功能是否可用取决于模型、权限、设备、第三方服务和实际页面。请先阅读下面的限制与验证范围。
+本仓库是开发源码，不是开箱即用的 App 安装包。工程构建号为 **238**；此后仓库还合入过源码更新，功能是否可用取决于模型、权限、设备、第三方服务和实际页面。请先阅读下面的限制与验证范围。
 
 ## 演示
 
@@ -44,7 +44,7 @@ App 通过屏幕共享获取画面，模型生成下一步动作，App 校验后
 - **应用场景**：包含微信相关规则、携程行程卡片和滴滴对话卡片等集成或实验。滴滴本地模拟行程不是真实叫车订单；票价、库存、跳转和第三方页面应以实际服务为准。
 - **系统界面与配件**：包含快捷指令、实时活动和画中画状态界面；ESP32-S3 提供鼠标、ASCII 键盘及指针校准。
 
-Build 238 有模拟器构建和离线回归记录，但没有因这次源码同步而完成手机安装；微信完整自动操作、部分出行跳转和其他设备相关行为仍需真机复测。离线测试、模拟结果和真实业务完成是不同的证据。详见 [Build 238 同步与验证记录](docs/sync-20261027.md)。
+此前 Build 238 有模拟器构建和离线回归记录，此后合入的源码更新不能自动沿用该记录作为验收结果。微信完整自动操作、部分出行跳转和其他设备相关行为仍需真机复测。离线测试、模拟结果和真实业务完成是不同的证据。详见 [Build 238 同步与验证记录](docs/sync-20261027.md)。
 
 ## 运行要求
 
@@ -144,4 +144,4 @@ Sela 的早期源码基于 [boboabw/phone-agent](https://github.com/boboabw/phon
 
 Sela is a native iPhone AI assistant built on the earlier [Phone Agent](https://github.com/boboabw/phone-agent) project. With user-approved screen sharing, a vision-capable model observes the screen and the app sends actions to an ESP32-S3 Bluetooth HID accessory. Screen capture and input are separate paths; a Mac is used for development and installation.
 
-The repository contains development source for Build 238. You need Xcode 27, an iOS 27 iPhone, an ESP32-S3 with ESP-IDF 5.5.4 firmware, and a configured vision-capable model to use phone control. See [setup](docs/setup.md), [firmware](docs/firmware.md), and [architecture](docs/architecture.md). Device behavior and third-party integrations require real-device validation. Simulated ride progress is not a real order. The project is available under the [MIT License](LICENSE). Third-party names and trademarks belong to their respective owners.
+The Xcode project uses build number 238; subsequent source updates require their own validation. You need Xcode 27, an iOS 27 iPhone, an ESP32-S3 with ESP-IDF 5.5.4 firmware, and a configured vision-capable model to use phone control. See [setup](docs/setup.md), [firmware](docs/firmware.md), and [architecture](docs/architecture.md). Device behavior and third-party integrations require real-device validation. Simulated ride progress is not a real order. The project is available under the [MIT License](LICENSE). Third-party names and trademarks belong to their respective owners.
